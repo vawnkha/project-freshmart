@@ -1,7 +1,13 @@
 const express = require("express");
 const notifications = require("../controllers/notifications.controller");
+const authMiddleware = require("../middlewares/auth.middleware");
 
 const router = express.Router();
+
+router.use(
+  authMiddleware,
+  authMiddleware.authorizePermissions("notification:manage"),
+);
 
 router
   .route("/")

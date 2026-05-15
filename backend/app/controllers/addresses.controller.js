@@ -1,6 +1,7 @@
 const MongDB = require("../utils/mongodb.util");
 const AddressService = require("../services/addresses.service");
 const ApiError = require("../api-error");
+const authMiddleware = require("../middlewares/auth.middleware");
 
 exports.create = async (req, res, next) => {
   try {
@@ -36,10 +37,19 @@ exports.update = async (req, res, next) => {
   try {
     const { id } = req.params;
     const addressService = new AddressService(MongDB.client);
-    const result = await addressService.update(id, req.body);
-    if (!result) {
+    const existed = await addressService.findById(id);
+
+    if (!existed) {
       return next(new ApiError(404, "Địa chỉ không tồn tại"));
     }
+
+    if (
+      !authMiddleware.canAccessOwner(req, existed.user_id, "address:manage:any")
+    ) {
+      return next(new ApiError(403, "Bạn không có quyền cập nhật địa chỉ này"));
+    }
+
+    const result = await addressService.update(id, req.body);
     return res.send({
       message: "Cập nhật địa chỉ thành công",
       data: result,
@@ -53,10 +63,19 @@ exports.delete = async (req, res, next) => {
   try {
     const { id } = req.params;
     const addressService = new AddressService(MongDB.client);
-    const result = await addressService.delete(id);
-    if (!result) {
+    const existed = await addressService.findById(id);
+
+    if (!existed) {
       return next(new ApiError(404, "Địa chỉ không tồn tại"));
     }
+
+    if (
+      !authMiddleware.canAccessOwner(req, existed.user_id, "address:manage:any")
+    ) {
+      return next(new ApiError(403, "Bạn không có quyền xóa địa chỉ này"));
+    }
+
+    const result = await addressService.delete(id);
     return res.send({
       message: "Xóa địa chỉ thành công",
     });

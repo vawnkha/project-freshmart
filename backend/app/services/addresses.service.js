@@ -48,6 +48,12 @@ class AddressService {
       .toArray();
   }
 
+  async findById(id) {
+    return await this.Address.findOne({
+      _id: ObjectId.isValid(id) ? new ObjectId(id) : null,
+    });
+  }
+
   async update(id, payload) {
     const filter = {
       _id: ObjectId.isValid(id) ? new ObjectId(id) : null,

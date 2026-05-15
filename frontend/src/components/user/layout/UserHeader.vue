@@ -39,14 +39,18 @@ const menuItems = [
 const cartPreviewItems = computed(() => items.value.slice(0, 3));
 
 async function bootstrapUserData() {
-  if (!authStore.userId) {
+  if (!authStore.accessToken) {
     cartStore.items = [];
-    cartStore.subtotal = 0;
     wishlistStore.items = [];
     return;
   }
 
   try {
+    if (!authStore.userId) {
+      const decoded = JSON.parse(atob(authStore.accessToken.split(".")[1]));
+      authStore.userId = decoded.id;
+    }
+
     if (!authStore.user) {
       await authStore.fetchProfile();
     }

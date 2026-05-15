@@ -1,8 +1,13 @@
 const MongoDB = require("../utils/mongodb.util");
 const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 const ApiError = require("../api-error");
 const UserService = require("../services/users.service");
+const RbacService = require("../services/rbac.service");
 const { sendResetPasswordEmail } = require("../utils/mailer.util");
+const { sanitizeUser } = require("../utils/user.util");
+
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1d";
 
 exports.login = async (req, res, next) => {
   try {
@@ -31,10 +36,31 @@ exports.login = async (req, res, next) => {
         ),
       );
     }
+    const rbacService = new RbacService(MongoDB.client);
+    const authContext = await rbacService.getAuthContextForUser(user);
+    const token = jwt.sign(
+      {
+        id: String(user._id),
+        role_id: authContext.role_id,
+        role: authContext.role,
+        permissions: authContext.permissions,
+      },
+      process.env.JWT_SECRET || "secretkey",
+      { expiresIn: JWT_EXPIRES_IN },
+    );
+
     return res.send({
       message: "Đăng nhập thành công",
-      userId: user._id,
-      role: user.role,
+      accessToken: token,
+      tokenType: "Bearer",
+      expiresIn: JWT_EXPIRES_IN,
+      user: sanitizeUser({
+        ...user,
+        role_id: authContext.role_id,
+        role: authContext.role,
+        roleName: authContext.roleName,
+        permissions: authContext.permissions,
+      }),
     });
   } catch (error) {
     return next(new ApiError(500, "Lỗi đăng nhập"));
@@ -43,7 +69,8 @@ exports.login = async (req, res, next) => {
 
 exports.changePassword = async (req, res, next) => {
   try {
-    const { userId, oldPassword, newPassword } = req.body;
+    const userId = req.user.id;
+    const { oldPassword, newPassword } = req.body;
     if (!userId || !oldPassword || !newPassword) {
       return next(new ApiError(400, "Mật khẩu cũ và mật khẩu mới là bắt buộc"));
     }
@@ -85,12 +112,14 @@ exports.forgotPassword = async (req, res, next) => {
       resetLink,
       expiresMinutes: 15,
     });
-
     return res.send({
       message: "Yêu cầu đặt lại mật khẩu đã được gửi, vui lòng kiểm tra email.",
     });
   } catch (error) {
-    return next(new ApiError(500, "Lỗi yêu cầu đặt lại mật khẩu"));
+    console.error("Forgot password error:", error);
+    return next(
+      new ApiError(500, error.message || "Lỗi yêu cầu đặt lại mật khẩu"),
+    );
   }
 };
 

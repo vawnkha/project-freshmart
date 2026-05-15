@@ -22,9 +22,11 @@ class AuthService {
     return res.data;
   }
 
-  async changePassword(data) {
-    const res = await this.api.post("/change-password", data);
-    return res.data;
+  async changePassword(oldPassword, newPassword) {
+    return (await this.api.post("/change-password", {
+      oldPassword,
+      newPassword,
+    })).data;
   }
 }
 

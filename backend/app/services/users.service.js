@@ -1,15 +1,19 @@
 const { ObjectId } = require("mongodb");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
+const RbacService = require("./rbac.service");
 
 class UsersService {
   constructor(client) {
+    this.client = client;
     this.User = client.db().collection("users");
     this.User.createIndex({ email: 1 }, { unique: true });
     this.User.createIndex({ created_at: -1 });
+    this.User.createIndex({ role_id: 1 });
   }
 
-  extractData(payload) {
+  extractData(payload, options = {}) {
+    const includeCreatedAt = options.includeCreatedAt !== false;
     const user = {
       name: payload.name,
       email: payload.email,
@@ -17,11 +21,12 @@ class UsersService {
       phone: payload.phone,
       avatar_url: payload.avatar_url,
       address: payload.address,
+      role_id: payload.role_id,
       role: payload.role,
       status: payload.status,
       activation_token: payload.activation_token,
       activation_token_expires: payload.activation_token_expires,
-      created_at: new Date(),
+      created_at: includeCreatedAt ? new Date() : undefined,
       updated_at: new Date(),
     };
 
@@ -43,9 +48,14 @@ class UsersService {
       const salt = await bcrypt.genSalt(10);
       data.password = await bcrypt.hash(data.password, salt);
     }
+    const rbacService = new RbacService(this.client);
+    await rbacService.ensureDefaults();
+    const defaultRole = await rbacService.findRoleByCode("user");
+
     data.activation_token = tokenHash;
     data.activation_token_expires = expiresAt;
     data.status = "pending";
+    data.role_id = defaultRole?._id;
     data.role = "user";
     data.phone = "";
     data.avatar_url = "";
@@ -171,7 +181,7 @@ class UsersService {
   }
 
   async update(id, payload) {
-    const update = this.extractData(payload);
+    const update = this.extractData(payload, { includeCreatedAt: false });
 
     if (update.password) {
       const salt = await bcrypt.genSalt(10);

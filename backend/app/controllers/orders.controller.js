@@ -3,6 +3,7 @@ const MongoDB = require("../utils/mongodb.util");
 const OrdersService = require("../services/orders.service");
 const { sendInvoiceEmail } = require("../utils/mailer.util");
 const { notifyAdmin } = require("../utils/notify-admin.util");
+const authMiddleware = require("../middlewares/auth.middleware");
 
 exports.create = async (req, res, next) => {
   try {
@@ -86,6 +87,10 @@ exports.findOne = async (req, res, next) => {
       return next(new ApiError(404, "Đơn hàng không tồn tại"));
     }
 
+    if (!authMiddleware.canAccessOwner(req, doc.user_id, "order:read:any")) {
+      return next(new ApiError(403, "Bạn không có quyền xem đơn hàng này"));
+    }
+
     return res.send(doc);
   } catch (error) {
     return next(
@@ -128,6 +133,10 @@ exports.cancel = async (req, res, next) => {
       return next(new ApiError(404, "Đơn hàng không tồn tại"));
     }
 
+    if (!authMiddleware.canAccessOwner(req, current.user_id, "order:update")) {
+      return next(new ApiError(403, "Bạn không có quyền hủy đơn hàng này"));
+    }
+
     if (current.status !== "pending") {
       return next(new ApiError(400, "Chỉ được hủy đơn đang chờ xác nhận"));
     }
@@ -163,6 +172,12 @@ exports.complete = async (req, res, next) => {
 
     if (!current) {
       return next(new ApiError(404, "Đơn hàng không tồn tại"));
+    }
+
+    if (!authMiddleware.canAccessOwner(req, current.user_id, "order:update")) {
+      return next(
+        new ApiError(403, "Bạn không có quyền cập nhật đơn hàng này"),
+      );
     }
 
     if (current.status !== "shipping") {

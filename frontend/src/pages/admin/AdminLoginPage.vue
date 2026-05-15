@@ -2,6 +2,7 @@
 import { reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/user/auth";
+import { decodeJwtPayload, hasJwtPermission } from "@/utils/jwt.util";
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -17,13 +18,19 @@ const form = reactive({
 async function handleLogin() {
   errorMessage.value = "";
   loading.value = true;
+
   try {
     const res = await authStore.login(form);
-    if (res.role !== "admin") {
+
+    const token = res.accessToken;
+    const decoded = decodeJwtPayload(token);
+
+    if (!hasJwtPermission(decoded, "admin:access")) {
       authStore.logout();
       errorMessage.value = "Tài khoản không có quyền admin";
       return;
     }
+
     router.push({ name: "admin-dashboard" });
   } catch (error) {
     errorMessage.value = error?.response?.data?.message || "Đăng nhập thất bại";

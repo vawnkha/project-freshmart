@@ -34,6 +34,15 @@ const menus = [
     icon: "fa-solid fa-users",
     to: { name: "admin-users" },
     names: ["admin-users"],
+    permission: "user:read",
+  },
+  {
+    key: "roles",
+    label: "Phan quyen",
+    icon: "fa-solid fa-user-shield",
+    to: { name: "admin-roles" },
+    names: ["admin-roles"],
+    permission: "role:manage",
   },
   {
     key: "categories",
@@ -41,6 +50,7 @@ const menus = [
     icon: "fa-solid fa-lock",
     to: null,
     names: ["admin-categories", "admin-category-create", "admin-category-edit"],
+    permission: "category:manage",
     children: [
       {
         label: "Thêm danh mục",
@@ -60,6 +70,7 @@ const menus = [
     icon: "fa-solid fa-desktop",
     to: null,
     names: ["admin-products", "admin-product-create", "admin-product-edit"],
+    permission: "product:manage",
     children: [
       {
         label: "Thêm sản phẩm",
@@ -79,6 +90,7 @@ const menus = [
     icon: "fa-solid fa-pen-to-square",
     to: { name: "admin-orders" },
     names: ["admin-orders", "admin-order-detail"],
+    permission: "order:read:any",
   },
   {
     key: "contacts",
@@ -86,6 +98,7 @@ const menus = [
     icon: "fa-solid fa-envelope",
     to: { name: "admin-contacts" },
     names: ["admin-contacts"],
+    permission: "contact:read",
   },
   {
     key: "notifications",
@@ -93,8 +106,35 @@ const menus = [
     icon: "fa-solid fa-bell",
     to: { name: "admin-notifications" },
     names: ["admin-notifications"],
+    permission: "notification:manage",
   },
 ];
+
+function hasPermission(permission) {
+  if (!permission) return true;
+
+  return (
+    authStore.role === "admin" ||
+    authStore.permissions.includes("*") ||
+    authStore.permissions.includes(permission)
+  );
+}
+
+const visibleMenus = computed(() =>
+  menus
+    .filter((item) => hasPermission(item.permission))
+    .map((item) => {
+      if (!item.children) return item;
+
+      return {
+        ...item,
+        children: item.children.filter((child) =>
+          hasPermission(child.permission || item.permission),
+        ),
+      };
+    })
+    .filter((item) => !item.children || item.children.length),
+);
 
 function isActive(item) {
   return item.names?.includes(route.name);
@@ -154,7 +194,7 @@ watch(
     <div class="admin-sidebar__section">Tổng quan</div>
 
     <ul class="admin-menu">
-      <li v-for="item in menus" :key="item.key" class="admin-menu__item">
+      <li v-for="item in visibleMenus" :key="item.key" class="admin-menu__item">
         <template v-if="!item.children">
           <RouterLink
             :to="item.to"

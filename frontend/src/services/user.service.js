@@ -27,6 +27,10 @@ class UserService {
     return res.data;
   }
 
+  async getProfile() {
+    return (await this.api.get("/me")).data;
+  }
+
   async updateUser(id, data) {
     const res = await this.api.put(`/${id}`, data);
     return res.data;

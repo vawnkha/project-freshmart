@@ -1,17 +1,22 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
 import userService from "@/services/user.service";
+import roleService from "@/services/role.service";
 import AdminPagination from "@/components/common/AdminPagination.vue";
 
 const users = ref([]);
+const roles = ref([]);
 const loading = ref(false);
 const currentPage = ref(1);
 const pageSize = ref(12);
 const keyword = ref("");
 const selectedRole = ref("");
 const selectedStatus = ref("");
+const assigningRoleUserId = ref("");
 
 function resolveType(role) {
+  const matchedRole = roles.value.find((item) => item.code === role);
+  if (matchedRole) return matchedRole.name;
   if (role === "admin") return "ADMIN";
   return "Khách hàng";
 }
@@ -41,6 +46,39 @@ async function fetchUsers() {
     alert(error?.message || "Không thể tải danh sách người dùng");
   } finally {
     loading.value = false;
+  }
+}
+
+async function fetchRoles() {
+  try {
+    roles.value = await roleService.getRoles();
+  } catch (error) {
+    roles.value = [];
+  }
+}
+
+function roleIdForUser(user) {
+  return (
+    user.role_id ||
+    roles.value.find((role) => role.code === user.role)?._id ||
+    ""
+  );
+}
+
+async function changeUserRole(user, event) {
+  const roleId = event.target.value;
+  if (!roleId || roleId === roleIdForUser(user)) return;
+
+  assigningRoleUserId.value = user._id;
+
+  try {
+    await roleService.assignRoleToUser(user._id, roleId);
+    await fetchUsers();
+  } catch (error) {
+    alert(error?.response?.data?.message || "Khong the gan role cho nguoi dung");
+    event.target.value = roleIdForUser(user);
+  } finally {
+    assigningRoleUserId.value = "";
   }
 }
 
@@ -132,7 +170,11 @@ watch(filteredUsers, (list) => {
   }
 });
 
-onMounted(fetchUsers);
+async function initialize() {
+  await Promise.all([fetchUsers(), fetchRoles()]);
+}
+
+onMounted(initialize);
 </script>
 
 <template>
@@ -191,8 +233,9 @@ onMounted(fetchUsers);
 
           <select v-model="selectedRole" class="admin-user-toolbar__select">
             <option value="">Tất cả vai trò</option>
-            <option value="admin">Admin</option>
-            <option value="user">Khách hàng</option>
+            <option v-for="role in roles" :key="role._id" :value="role.code">
+              {{ role.name }}
+            </option>
           </select>
 
           <select v-model="selectedStatus" class="admin-user-toolbar__select">
@@ -250,6 +293,28 @@ onMounted(fetchUsers);
                   <span>Số điện thoại:</span>
                   <strong>{{ item.phone || "---" }}</strong>
                 </div>
+
+                <div class="admin-user-card__meta">
+                  <span>Vai trò:</span>
+                  <strong>{{ resolveType(item.role) }}</strong>
+                </div>
+
+                <select
+                  v-if="roles.length"
+                  class="admin-user-card__role-select"
+                  :value="roleIdForUser(item)"
+                  :disabled="assigningRoleUserId === item._id"
+                  @change="changeUserRole(item, $event)"
+                >
+                  <option
+                    v-for="role in roles"
+                    :key="role._id"
+                    :value="role._id"
+                    :disabled="role.status === 'inactive'"
+                  >
+                    {{ role.name }}
+                  </option>
+                </select>
               </div>
             </div>
 
@@ -429,6 +494,18 @@ onMounted(fetchUsers);
 .admin-user-card__meta strong {
   color: #5c7088;
   word-break: break-word;
+}
+
+.admin-user-card__role-select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid #d8e0e8;
+  border-radius: 6px;
+  background: #fff;
+  color: #5c7088;
+  padding: 7px 10px;
+  font-size: 13px;
+  outline: none;
 }
 
 .admin-user-card__actions--modern {

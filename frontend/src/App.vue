@@ -9,7 +9,7 @@ const cartStore = useCartStore();
 const wishlistStore = useWishlistStore();
 
 onMounted(async () => {
-  if (!authStore.userId) return;
+  if (!authStore.accessToken) return;
 
   try {
     await authStore.fetchProfile();

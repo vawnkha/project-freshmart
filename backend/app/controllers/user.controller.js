@@ -1,9 +1,15 @@
 const fs = require("fs");
 const path = require("path");
 const UserService = require("../services/users.service");
+const RbacService = require("../services/rbac.service");
 const MongoDB = require("../utils/mongodb.util");
 const { sendActivationEmail } = require("../utils/mailer.util");
 const ApiError = require("../api-error");
+const authMiddleware = require("../middlewares/auth.middleware");
+const {
+  pickUserUpdate,
+  sanitizeUser,
+} = require("../utils/user.util");
 
 async function safeDeleteLocalImage(imageUrl) {
   if (!imageUrl || typeof imageUrl !== "string") return;
@@ -14,6 +20,25 @@ async function safeDeleteLocalImage(imageUrl) {
   try {
     await fs.promises.unlink(filePath);
   } catch (_) {}
+}
+
+async function sanitizeUserWithRbac(user) {
+  if (!user) return user;
+
+  const rbacService = new RbacService(MongoDB.client);
+  const authContext = await rbacService.getAuthContextForUser(user);
+
+  return sanitizeUser({
+    ...user,
+    role_id: authContext.role_id,
+    role: authContext.role,
+    roleName: authContext.roleName,
+    permissions: authContext.permissions,
+  });
+}
+
+async function sanitizeUsersWithRbac(users = []) {
+  return Promise.all(users.map((user) => sanitizeUserWithRbac(user)));
 }
 
 exports.create = async (req, res, next) => {
@@ -106,7 +131,7 @@ exports.findAll = async (req, res, next) => {
   try {
     const userService = new UserService(MongoDB.client);
     const users = await userService.findAll();
-    res.send(users);
+    res.send(await sanitizeUsersWithRbac(users));
   } catch (error) {
     next(error);
   }
@@ -121,23 +146,33 @@ exports.findOne = async (req, res, next) => {
       return res.status(404).send({ message: "User not found" });
     }
 
-    res.send(user);
+    res.send(await sanitizeUserWithRbac(user));
   } catch (error) {
     next(error);
   }
 };
 
 exports.update = async (req, res, next) => {
-  if (Object.keys(req.body).length === 0) {
+  const canUpdateAdminFields = authMiddleware.hasPermission(req.user, [
+    "user:update",
+  ]);
+  const updatePayload = pickUserUpdate(req.body, {
+    allowAdminFields: canUpdateAdminFields,
+  });
+
+  if (Object.keys(updatePayload).length === 0) {
     return next(new ApiError(400, "Data to update can not be empty"));
   }
   try {
     const userService = new UserService(MongoDB.client);
-    const result = await userService.update(req.params.id, req.body);
+    const result = await userService.update(req.params.id, updatePayload);
     if (!result) {
       return next(new ApiError(404, "User not found"));
     }
-    return res.send({ message: "User updated successfully" });
+    return res.send({
+      message: "User updated successfully",
+      data: await sanitizeUserWithRbac(result),
+    });
   } catch (error) {
     return next(
       new ApiError(500, `Error updating user with id=${req.params.id}`),
@@ -191,12 +226,27 @@ exports.updateAvatar = async (req, res, next) => {
 
     return res.send({
       message: "Cập nhật ảnh đại diện thành công",
-      data: result,
+      data: await sanitizeUserWithRbac(result),
     });
   } catch (error) {
     if (req.file) {
       await safeDeleteLocalImage(`/uploads/users/${req.file.filename}`);
     }
     return next(new ApiError(500, error.message || "Lỗi cập nhật avatar"));
+  }
+};
+
+exports.getProfile = async (req, res, next) => {
+  try {
+    const userService = new UserService(MongoDB.client);
+    const user = await userService.findById(req.user.id);
+    if (!user) {
+      return res.status(404).send({
+        message: "Không tìm thấy user",
+      });
+    }
+    res.send(await sanitizeUserWithRbac(user));
+  } catch (error) {
+    next(error);
   }
 };

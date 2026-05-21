@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { ObjectId } = require("mongodb");
 const ApiError = require("../api-error");
 const CategoryService = require("../services/categories.service");
 const MongoDB = require("../utils/mongodb.util");
@@ -71,7 +72,9 @@ exports.findAll = async (req, res, next) => {
 exports.findOne = async (req, res, next) => {
   try {
     const categoryService = new CategoryService(MongoDB.client);
-    const document = await categoryService.findBySlug(req.params.slug);
+    const document = ObjectId.isValid(req.params.slug)
+      ? await categoryService.findById(req.params.slug)
+      : await categoryService.findBySlug(req.params.slug);
     if (!document) {
       return next(new ApiError(404, "Danh mục không tồn tại"));
     }

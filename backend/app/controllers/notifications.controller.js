@@ -33,10 +33,7 @@ exports.findAll = async (req, res, next) => {
     const notificationsService = new NotificationsService(MongoDB.client);
     const filter = notificationsService.buildFilter(req.query);
 
-    const result = await notificationsService.find(filter, {
-      page: req.query.page,
-      limit: req.query.limit,
-    });
+    const result = await notificationsService.find(filter);
 
     return res.send(result);
   } catch (error) {

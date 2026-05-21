@@ -4,8 +4,6 @@ class WishlistService {
   constructor(client) {
     this.Wishlist = client.db().collection("wishlists");
     this.Product = client.db().collection("products");
-
-    this.Wishlist.createIndex({ user_id: 1 }, { unique: true });
   }
 
   async findByUserId(userId) {

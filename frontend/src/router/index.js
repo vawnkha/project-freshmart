@@ -2,6 +2,10 @@ import { createRouter, createWebHistory } from "vue-router";
 import { useAppLoading } from "@/stores/user/appLoading";
 import { useAuthStore } from "@/stores/user/auth";
 import { isJwtExpired } from "@/utils/jwt.util";
+import {
+  hasAllPermissions,
+  hasPermission,
+} from "@/utils/permission.util";
 import userRoutes from "./user";
 import adminRoutes from "./admin";
 
@@ -17,24 +21,6 @@ const router = createRouter({
     },
   ],
 });
-
-function hasStorePermission(authStore, permission) {
-  const permissions = Array.isArray(authStore.permissions)
-    ? authStore.permissions
-    : [];
-
-  return (
-    authStore.role === "admin" ||
-    permissions.includes("*") ||
-    permissions.includes(permission)
-  );
-}
-
-function hasAllStorePermissions(authStore, permissions = []) {
-  return permissions.every((permission) =>
-    hasStorePermission(authStore, permission),
-  );
-}
 
 router.beforeEach(async (to, from, next) => {
   const { showLoading } = useAppLoading();
@@ -70,12 +56,14 @@ router.beforeEach(async (to, from, next) => {
 
       if (!decoded) {
         authStore.logout();
-        return next("/login");
+        return next(isAdminArea ? "/admin-login" : "/login");
       }
 
       if (isJwtExpired(decoded)) {
         authStore.logout();
-        return to.meta.requiresAuth ? next("/login") : next();
+        return to.meta.requiresAuth
+          ? next(isAdminArea ? "/admin-login" : "/login")
+          : next();
       }
 
       if (!authStore.user) {
@@ -84,20 +72,20 @@ router.beforeEach(async (to, from, next) => {
 
       if (["login", "register", "admin-login"].includes(to.name)) {
         return next(
-          hasStorePermission(authStore, "admin:access") ? "/admin" : "/",
+          hasPermission(authStore, "admin:access") ? "/admin" : "/",
         );
       }
 
       if (
         requiredPermissions.length &&
-        !hasAllStorePermissions(authStore, requiredPermissions)
+        !hasAllPermissions(authStore, requiredPermissions)
       ) {
         return next("/");
       }
 
       if (
         to.matched.some((r) => r.meta.requiresAdmin) &&
-        !hasStorePermission(authStore, "admin:access")
+        !hasPermission(authStore, "admin:access")
       ) {
         return next("/");
       }
@@ -107,7 +95,8 @@ router.beforeEach(async (to, from, next) => {
   } catch (err) {
     console.error(err);
     authStore.logout();
-    return next("/login");
+    const isAdminArea = to.path.startsWith("/admin");
+    return next(isAdminArea ? "/admin-login" : "/login");
   }
 });
 

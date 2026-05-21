@@ -3,9 +3,6 @@ const { ObjectId } = require("mongodb");
 class PaymentsService {
   constructor(client) {
     this.Payment = client.db().collection("payments");
-    this.Payment.createIndex({ order_id: 1 }, { unique: true });
-    this.Payment.createIndex({ transaction_id: 1 });
-    this.Payment.createIndex({ status: 1, created_at: -1 });
   }
 
   async findByOrderId(orderId) {

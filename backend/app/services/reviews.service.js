@@ -6,9 +6,6 @@ class ReviewsService {
     this.Product = client.db().collection("products");
     this.User = client.db().collection("users");
     this.Order = client.db().collection("orders");
-
-    this.Review.createIndex({ product_id: 1, created_at: -1 });
-    this.Review.createIndex({ user_id: 1, product_id: 1 }, { unique: true });
   }
 
   extractData(payload) {
@@ -158,7 +155,6 @@ class ReviewsService {
     return await this.Review.aggregate([
       { $match: { product_id: pid } },
       { $sort: { created_at: -1 } },
-      { $limit: 10 },
       {
         $lookup: {
           from: "users",

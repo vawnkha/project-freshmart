@@ -29,11 +29,14 @@ exports.getMyCartDetailed = async (req, res, next) => {
 exports.addItem = async (req, res, next) => {
   try {
     const { userId } = req.params;
-    const { productId, quantity } = req.body;
-    if (!productId) return next(new ApiError(400, "productId là bắt buộc"));
+    const productId = req.body.product_id || req.body.productId;
+    const { quantity } = req.body;
+    if (!productId) return next(new ApiError(400, "product_id là bắt buộc"));
+
     const cartService = new CartsService(MongoDB.client);
     const result = await cartService.addItem(userId, productId, quantity);
     if (result.error) return next(new ApiError(400, result.error));
+
     return res.send({ message: "Thêm sản phẩm vào giỏ hàng thành công" });
   } catch (error) {
     return next(
@@ -49,7 +52,10 @@ exports.updateItem = async (req, res, next) => {
     const cartService = new CartsService(MongoDB.client);
     const result = await cartService.updateItem(userId, productId, quantity);
     if (result.error) return next(new ApiError(400, result.error));
-    return res.send({ message: "Cập nhật sản phẩm trong giỏ hàng thành công" });
+
+    return res.send({
+      message: "Cập nhật sản phẩm trong giỏ hàng thành công",
+    });
   } catch (error) {
     return next(
       new ApiError(
@@ -66,6 +72,7 @@ exports.removeItem = async (req, res, next) => {
     const cartService = new CartsService(MongoDB.client);
     const result = await cartService.removeItem(userId, productId);
     if (result.error) return next(new ApiError(400, result.error));
+
     return res.send({ message: "Xóa sản phẩm khỏi giỏ hàng thành công" });
   } catch (error) {
     return next(
@@ -80,6 +87,7 @@ exports.clearCart = async (req, res, next) => {
     const cartService = new CartsService(MongoDB.client);
     const result = await cartService.clearCart(userId);
     if (result.error) return next(new ApiError(400, result.error));
+
     return res.send({
       message: "Xóa tất cả sản phẩm khỏi giỏ hàng thành công",
     });

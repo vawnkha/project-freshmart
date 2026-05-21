@@ -3,8 +3,6 @@ const { ObjectId } = require("mongodb");
 class CategoriesService {
   constructor(client) {
     this.Category = client.db().collection("categories");
-    this.Category.createIndex({ slug: 1 }, { unique: true });
-    this.Category.createIndex({ created_at: -1 });
   }
   extractCreate(payload) {
     const category = {

@@ -56,29 +56,12 @@ class NotificationsService {
     };
   }
 
-  async find(filter = {}, options = {}) {
-    const page = Math.max(parseInt(options.page, 10) || 1, 1);
-    const limit = Math.max(parseInt(options.limit, 10) || 10, 1);
-    const skip = (page - 1) * limit;
+  async find(filter = {}) {
+    const items = await this.Notification.find(filter)
+      .sort({ created_at: -1 })
+      .toArray();
 
-    const [items, totalItems] = await Promise.all([
-      this.Notification.find(filter)
-        .sort({ created_at: -1 })
-        .skip(skip)
-        .limit(limit)
-        .toArray(),
-      this.Notification.countDocuments(filter),
-    ]);
-
-    return {
-      items,
-      pagination: {
-        page,
-        limit,
-        totalItems,
-        totalPages: Math.ceil(totalItems / limit) || 1,
-      },
-    };
+    return { items };
   }
 
   async findById(id) {

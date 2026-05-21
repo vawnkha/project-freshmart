@@ -141,19 +141,9 @@ exports.cancel = async (req, res, next) => {
       return next(new ApiError(400, "Chỉ được hủy đơn đang chờ xác nhận"));
     }
 
-    for (const item of current.items || []) {
-      await service.Product.updateOne(
-        { _id: item.product_id },
-        {
-          $inc: { stock: Number(item.quantity || 0) },
-          $set: { updated_at: new Date() },
-        },
-      );
-    }
-
-    const doc = await service.pushStatus(
+    const doc = await service.cancelOrder(
       id,
-      "canceled",
+      req.currentUser || req.user,
       "Người dùng hủy đơn hàng",
     );
 

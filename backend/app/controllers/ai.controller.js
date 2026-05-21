@@ -147,7 +147,7 @@ exports.chat = async (req, res, next) => {
       return res.status(400).json({ message: "Thiếu nội dung câu hỏi." });
     }
 
-    const allProducts = await productService.find({});
+    const allProducts = await productService.getProductsForAI();
     const normalizedMessage = normalizeText(message);
     const keywords = getKeywords(message);
 

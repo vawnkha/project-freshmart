@@ -25,39 +25,44 @@ function buildUrl(file) {
   return `/uploads/products/${file.filename}`;
 }
 
+function isApiError(error) {
+  return error && Number.isInteger(error.statusCode);
+}
+
 exports.create = async (req, res, next) => {
   try {
-    const { name, category_id, price, stock, unit, description } = req.body;
+    const { name, category_id, inventoryItemId } = req.body;
     if (!name) return next(new ApiError(400, "name là bắt buộc"));
-    if (!category_id) return next(new ApiError(400, "category_id là bắt buộc"));
+    if (!category_id && !inventoryItemId) {
+      return next(new ApiError(400, "category_id là bắt buộc"));
+    }
 
     const thumbFile = req.files?.thumbnail?.[0];
     const imageFiles = req.files?.images || [];
 
-    if (!thumbFile)
+    if (!thumbFile) {
       return next(new ApiError(400, "Vui lòng chọn thumbnail cho sản phẩm"));
-    if (imageFiles.length > 4)
+    }
+    if (imageFiles.length > 4) {
       return next(new ApiError(400, "Images tối đa 4 ảnh"));
+    }
+
     const service = new ProductsService(MongoDB.client);
     const thumbnail = buildUrl(thumbFile);
     const images = imageFiles.map(buildUrl);
 
     const created = await service.create({
-      name,
-      category_id,
-      price,
-      stock,
-      unit,
-      description,
+      ...req.body,
       thumbnail,
       images,
     });
+
     return res.status(201).send({
       message: "Tạo sản phẩm thành công",
       data: created,
     });
   } catch (error) {
-    return next(new ApiError(400, error.message || "Lỗi tạo sản phẩm"));
+    return next(isApiError(error) ? error : new ApiError(400, error.message));
   }
 };
 
@@ -72,7 +77,6 @@ exports.findAll = async (req, res, next) => {
       if (!cat) {
         return res.send({
           data: [],
-          pagination: { page: 1, limit: 12, total: 0, totalPages: 0 },
         });
       }
 
@@ -83,16 +87,12 @@ exports.findAll = async (req, res, next) => {
 
     return res.send({
       data: result.data || [],
-      pagination: result.pagination || {
-        page: 1,
-        limit: 12,
-        total: 0,
-        totalPages: 0,
-      },
     });
   } catch (error) {
     return next(
-      new ApiError(500, error.message || "Lỗi khi truy xuất sản phẩm"),
+      isApiError(error)
+        ? error
+        : new ApiError(500, error.message || "Lỗi khi truy xuất sản phẩm"),
     );
   }
 };
@@ -106,7 +106,11 @@ exports.findByCategory = async (req, res, next) => {
     );
     return res.send(result);
   } catch (error) {
-    return next(new ApiError(500, "Lỗi khi truy xuất sản phẩm"));
+    return next(
+      isApiError(error)
+        ? error
+        : new ApiError(500, "Lỗi khi truy xuất sản phẩm"),
+    );
   }
 };
 
@@ -117,7 +121,11 @@ exports.findOne = async (req, res, next) => {
     if (!document) return next(new ApiError(404, "Sản phẩm không tồn tại"));
     return res.send(document);
   } catch (error) {
-    return next(new ApiError(500, "Lỗi khi truy xuất sản phẩm"));
+    return next(
+      isApiError(error)
+        ? error
+        : new ApiError(500, "Lỗi khi truy xuất sản phẩm"),
+    );
   }
 };
 
@@ -132,6 +140,7 @@ exports.update = async (req, res, next) => {
   if (Object.keys(req.body).length === 0) {
     return next(new ApiError(400, "Dữ liệu để cập nhật không được để trống"));
   }
+
   try {
     const productService = new ProductsService(MongoDB.client);
     const existed = await productService.findById(req.params.id);
@@ -140,14 +149,7 @@ exports.update = async (req, res, next) => {
       return next(new ApiError(404, "Sản phẩm không tồn tại"));
     }
 
-    const payload = {
-      name: req.body.name,
-      category_id: req.body.category_id,
-      price: req.body.price,
-      stock: req.body.stock,
-      unit: req.body.unit,
-      description: req.body.description,
-    };
+    const payload = { ...req.body };
     const newThumbFile = req.files?.thumbnail?.[0];
     const newImageFiles = req.files?.images || [];
     if (newImageFiles.length > 4) {
@@ -164,11 +166,13 @@ exports.update = async (req, res, next) => {
       await safeDeleteLocalImages(existed.images);
       payload.images = newImages;
     }
+
     const result = await productService.update(req.params.id, payload);
     if (!result) {
       await cleanUploadedFiles(req);
       return next(new ApiError(500, "Lỗi khi cập nhật sản phẩm"));
     }
+
     return res.send({
       message: "Cập nhật sản phẩm thành công",
       data: result,
@@ -176,7 +180,9 @@ exports.update = async (req, res, next) => {
   } catch (error) {
     await cleanUploadedFiles(req);
     return next(
-      new ApiError(500, error.message || "Lỗi khi cập nhật sản phẩm"),
+      isApiError(error)
+        ? error
+        : new ApiError(500, error.message || "Lỗi khi cập nhật sản phẩm"),
     );
   }
 };
@@ -188,12 +194,16 @@ exports.delete = async (req, res, next) => {
     if (!existed) {
       return next(new ApiError(404, "Sản phẩm không tồn tại"));
     }
+
     await safeDeleteLocalImage(existed.thumbnail);
     await safeDeleteLocalImages(existed.images);
     await productService.delete(req.params.id);
+
     return res.send({ message: "Xóa sản phẩm thành công" });
   } catch (error) {
-    return next(new ApiError(500, "Lỗi khi xóa sản phẩm"));
+    return next(
+      isApiError(error) ? error : new ApiError(500, "Lỗi khi xóa sản phẩm"),
+    );
   }
 };
 
@@ -209,7 +219,6 @@ exports.search = async (req, res, next) => {
         return res.send({
           message: "Tìm kiếm sản phẩm thành công",
           data: [],
-          pagination: { page: 1, limit: 12, total: 0, totalPages: 0 },
         });
       }
 
@@ -219,11 +228,30 @@ exports.search = async (req, res, next) => {
     const result = await productService.search(req.query);
     return res.send({
       message: "Tìm kiếm sản phẩm thành công",
-      ...result,
+      data: result.data || [],
     });
   } catch (error) {
     return next(
-      new ApiError(500, error.message || "Lỗi khi tìm kiếm sản phẩm"),
+      isApiError(error)
+        ? error
+        : new ApiError(500, error.message || "Lỗi khi tìm kiếm sản phẩm"),
     );
+  }
+};
+
+exports.createFromInventory = async (req, res, next) => {
+  try {
+    const productService = new ProductsService(MongoDB.client);
+    const document = await productService.createFromInventory(
+      req.params.inventoryItemId,
+      req.body || {},
+    );
+
+    return res.status(201).send({
+      message: "Tạo sản phẩm từ hàng kho thành công",
+      data: document,
+    });
+  } catch (error) {
+    return next(error);
   }
 };

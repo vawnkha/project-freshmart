@@ -3,8 +3,11 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import ordersService from "@/services/orders.service";
 import AdminPagination from "@/components/common/AdminPagination.vue";
+import { useAuthStore } from "@/stores/user/auth";
+import { hasPermission } from "@/utils/permission.util";
 
 const router = useRouter();
+const authStore = useAuthStore();
 const orders = ref([]);
 const activeShipping = ref(null);
 const activeItems = ref(null);
@@ -12,6 +15,7 @@ const loading = ref(false);
 const keyword = ref("");
 const selectedStatus = ref("");
 const selectedPayment = ref("");
+const canUpdateOrders = computed(() => hasPermission(authStore, "order:update"));
 
 const currentPage = ref(1);
 const pageSize = ref(12);
@@ -58,6 +62,11 @@ function formatDate(value) {
 }
 
 async function confirmOrder(item) {
+  if (!canUpdateOrders.value) {
+    alert("Ban khong co quyen cap nhat don hang");
+    return;
+  }
+
   try {
     let nextStatus = "";
 
@@ -320,6 +329,12 @@ onMounted(fetchOrders);
                         item.status === 'processing'
                       "
                       class="admin-btn admin-btn--success"
+                      :disabled="!canUpdateOrders"
+                      :title="
+                        !canUpdateOrders
+                          ? 'Ban khong co quyen cap nhat don hang'
+                          : ''
+                      "
                       @click="confirmOrder(item)"
                     >
                       {{

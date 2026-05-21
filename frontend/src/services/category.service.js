@@ -1,5 +1,9 @@
 import api from "./api.service";
 
+function isFormData(payload) {
+  return typeof FormData !== "undefined" && payload instanceof FormData;
+}
+
 class CategoryService {
   constructor(baseUrl = "/api/categories") {
     this.api = api(baseUrl);
@@ -15,23 +19,34 @@ class CategoryService {
     return res.data;
   }
 
-  async create(formData) {
-    const res = await this.api.post("/", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
+  async getById(id) {
+    const res = await this.api.get(`/${id}`);
     return res.data;
   }
 
-  async update(id, formData) {
-    const res = await this.api.put(`/${id}`, formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
+  async create(payload) {
+    const config = isFormData(payload)
+      ? { headers: { "Content-Type": "multipart/form-data" } }
+      : undefined;
+    const res = await this.api.post("/", payload, config);
+    return res.data;
+  }
+
+  async update(id, payload) {
+    const config = isFormData(payload)
+      ? { headers: { "Content-Type": "multipart/form-data" } }
+      : undefined;
+    const res = await this.api.put(`/${id}`, payload, config);
+    return res.data;
+  }
+
+  async remove(id) {
+    const res = await this.api.delete(`/${id}`);
     return res.data;
   }
 
   async delete(id) {
-    const res = await this.api.delete(`/${id}`);
-    return res.data;
+    return this.remove(id);
   }
 }
 

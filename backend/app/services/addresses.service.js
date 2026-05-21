@@ -3,8 +3,6 @@ const { ObjectId } = require("mongodb");
 class AddressService {
   constructor(client) {
     this.Address = client.db().collection("addresses");
-    this.Address.createIndex({ user_id: 1, created_at: -1 });
-    this.Address.createIndex({ user_id: 1, is_default: 1 });
   }
 
   extractData(payload) {

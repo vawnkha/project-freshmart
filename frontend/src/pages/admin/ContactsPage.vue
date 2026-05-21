@@ -1,7 +1,10 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from "vue";
 import contactService from "@/services/contact.service";
+import { useAuthStore } from "@/stores/user/auth";
+import { hasPermission } from "@/utils/permission.util";
 
+const authStore = useAuthStore();
 const contacts = ref([]);
 const loading = ref(false);
 const sending = ref(false);
@@ -16,6 +19,9 @@ const filters = reactive({
 const reply = reactive({
   body: "",
 });
+const canReplyContacts = computed(() =>
+  hasPermission(authStore, "contact:reply"),
+);
 
 function formatDateTime(value) {
   if (!value) return "---";
@@ -104,6 +110,11 @@ function selectContact(item) {
 }
 
 function openReplyBox() {
+  if (!canReplyContacts.value) {
+    alert("Ban khong co quyen phan hoi lien he");
+    return;
+  }
+
   if (!selectedContact.value) return;
   reply.body = selectedContact.value.admin_reply || "";
   showReplyBox.value = true;
@@ -115,6 +126,11 @@ function closeReplyBox() {
 }
 
 async function sendReply() {
+  if (!canReplyContacts.value) {
+    alert("Ban khong co quyen phan hoi lien he");
+    return;
+  }
+
   if (!selectedContact.value) return;
 
   if (!reply.body.trim()) {
@@ -308,6 +324,7 @@ onMounted(fetchContacts);
 
               <div class="contact-detail__actions">
                 <button
+                  v-if="canReplyContacts"
                   class="admin-btn admin-btn--primary"
                   @click="openReplyBox"
                 >

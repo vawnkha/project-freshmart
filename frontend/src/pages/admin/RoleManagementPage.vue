@@ -1,7 +1,10 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from "vue";
 import roleService from "@/services/role.service";
+import { useAuthStore } from "@/stores/user/auth";
+import { hasPermission } from "@/utils/permission.util";
 
+const authStore = useAuthStore();
 const roles = ref([]);
 const permissions = ref([]);
 const loading = ref(false);
@@ -39,10 +42,21 @@ const isEditing = computed(() => Boolean(editingRole.value));
 const isEditingSystemRole = computed(() => Boolean(editingRole.value?.is_system));
 const isEditingAdminRole = computed(() => editingRole.value?.code === "admin");
 
+const assignablePermissionIds = computed(
+  () =>
+    new Set(
+      permissions.value
+        .filter((permission) => canAssignPermission(permission))
+        .map((permission) => permission._id),
+    ),
+);
+
 async function fetchData() {
   loading.value = true;
 
   try {
+    await authStore.fetchProfile();
+
     const [roleList, permissionList] = await Promise.all([
       roleService.getRoles(),
       roleService.getPermissions(),
@@ -86,19 +100,29 @@ function closeForm() {
   resetForm();
 }
 
-function groupPermissionIds(items = []) {
-  return items.map((permission) => permission._id);
+function canAssignPermission(permission) {
+  return hasPermission(authStore, permission.key);
+}
+
+function groupPermissionIds(items = [], options = {}) {
+  const filteredItems = options.assignableOnly
+    ? items.filter((permission) => canAssignPermission(permission))
+    : items;
+
+  return filteredItems.map((permission) => permission._id);
 }
 
 function isGroupChecked(items = []) {
-  const ids = groupPermissionIds(items);
+  const ids = groupPermissionIds(items, { assignableOnly: true });
   return ids.length && ids.every((id) => form.permissionIds.includes(id));
 }
 
 function toggleGroup(items = []) {
   if (isEditingAdminRole.value) return;
 
-  const ids = groupPermissionIds(items);
+  const ids = groupPermissionIds(items, { assignableOnly: true });
+  if (!ids.length) return;
+
   const selected = new Set(form.permissionIds);
   const shouldSelectAll = !ids.every((id) => selected.has(id));
 
@@ -108,6 +132,20 @@ function toggleGroup(items = []) {
   });
 
   form.permissionIds = [...selected];
+}
+
+function getAssignableFormPermissionIds() {
+  return form.permissionIds.filter((id) => assignablePermissionIds.value.has(id));
+}
+
+function resolveSaveError(error) {
+  const message = error?.response?.data?.message || "Khong the luu role";
+
+  if (message.includes("khong the gan permission")) {
+    return "Ban chi co the gan cac permission ma tai khoan hien tai dang so huu. Cac permission khong so huu da duoc khoa o dang chi xem.";
+  }
+
+  return message;
 }
 
 async function submitRole() {
@@ -135,7 +173,7 @@ async function submitRole() {
     }
 
     if (!isEditingAdminRole.value) {
-      payload.permissionIds = form.permissionIds;
+      payload.permissionIds = getAssignableFormPermissionIds();
     }
 
     if (isEditing.value) {
@@ -147,7 +185,7 @@ async function submitRole() {
     await fetchData();
     closeForm();
   } catch (error) {
-    alert(error?.response?.data?.message || "Khong the luu role");
+    alert(resolveSaveError(error));
   } finally {
     saving.value = false;
   }
@@ -346,7 +384,10 @@ onMounted(fetchData);
                 <button
                   type="button"
                   class="admin-btn admin-btn--secondary admin-role-permission-group__toggle"
-                  :disabled="isEditingAdminRole"
+                  :disabled="
+                    isEditingAdminRole ||
+                    !groupPermissionIds(items, { assignableOnly: true }).length
+                  "
                   @click="toggleGroup(items)"
                 >
                   {{ isGroupChecked(items) ? "Bo chon nhom" : "Chon nhom" }}
@@ -357,16 +398,33 @@ onMounted(fetchData);
                 v-for="permission in items"
                 :key="permission._id"
                 class="admin-role-permission"
+                :class="{
+                  'admin-role-permission--readonly':
+                    !canAssignPermission(permission),
+                }"
+                :title="
+                  !canAssignPermission(permission)
+                    ? 'Ban khong so huu permission nay nen chi co the xem'
+                    : ''
+                "
               >
                 <input
                   v-model="form.permissionIds"
                   type="checkbox"
                   :value="permission._id"
-                  :disabled="isEditingAdminRole"
+                  :disabled="
+                    isEditingAdminRole || !canAssignPermission(permission)
+                  "
                 />
                 <span>
                   <strong>{{ permission.label || permission.key }}</strong>
                   <small>{{ permission.key }}</small>
+                  <small
+                    v-if="!canAssignPermission(permission)"
+                    class="admin-role-permission__readonly"
+                  >
+                    Chi xem - ban khong so huu quyen nay
+                  </small>
                 </span>
               </label>
             </div>
@@ -557,6 +615,12 @@ onMounted(fetchData);
   margin-top: 3px;
 }
 
+.admin-role-permission--readonly {
+  cursor: not-allowed;
+  background: #f8fafc;
+  opacity: 0.72;
+}
+
 .admin-role-permission strong,
 .admin-role-permission small {
   display: block;
@@ -571,6 +635,11 @@ onMounted(fetchData);
   margin-top: 3px;
   color: #8092a7;
   word-break: break-word;
+}
+
+.admin-role-permission__readonly {
+  color: #b15f00 !important;
+  font-weight: 700;
 }
 
 @media (max-width: 992px) {

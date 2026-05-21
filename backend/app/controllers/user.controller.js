@@ -43,6 +43,15 @@ async function sanitizeUsersWithRbac(users = []) {
 
 exports.create = async (req, res, next) => {
   try {
+    const { name, email, password } = req.body || {};
+    const missingRequiredFields = [name, email, password].some(
+      (value) => value === undefined || value === null || String(value).trim() === "",
+    );
+
+    if (missingRequiredFields) {
+      return next(new ApiError(400, "name, email va password la bat buoc"));
+    }
+
     const userService = new UserService(MongoDB.client);
     const existed = await userService.findByEmail(req.body.email);
     if (existed) {

@@ -1,12 +1,16 @@
 <script setup>
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import ordersService from "@/services/orders.service";
+import { useAuthStore } from "@/stores/user/auth";
+import { hasPermission } from "@/utils/permission.util";
 
 const route = useRoute();
+const authStore = useAuthStore();
 const order = ref(null);
 const sendingInvoice = ref(false);
 const invoiceRef = ref(null);
+const canUpdateOrders = computed(() => hasPermission(authStore, "order:update"));
 
 async function fetchOrder() {
   order.value = await ordersService.getById(route.params.id);
@@ -22,6 +26,11 @@ function formatDate(value) {
 }
 
 async function handleSendInvoice() {
+  if (!canUpdateOrders.value) {
+    alert("Ban khong co quyen cap nhat don hang");
+    return;
+  }
+
   try {
     sendingInvoice.value = true;
 
@@ -180,7 +189,12 @@ onMounted(fetchOrder);
               <button
                 v-if="!order?.invoice_sent"
                 class="admin-btn admin-btn--success"
-                :disabled="sendingInvoice"
+                :disabled="sendingInvoice || !canUpdateOrders"
+                :title="
+                  !canUpdateOrders
+                    ? 'Ban khong co quyen cap nhat don hang'
+                    : ''
+                "
                 @click="handleSendInvoice"
               >
                 <i class="fa-solid fa-paper-plane"></i>

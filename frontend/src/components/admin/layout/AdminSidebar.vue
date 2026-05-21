@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/user/auth";
+import { hasPermission as hasUserPermission } from "@/utils/permission.util";
 
 const route = useRoute();
 const router = useRouter();
@@ -16,7 +17,8 @@ const avatar = computed(() => {
 });
 
 const openGroups = ref({
-  categories: false,
+  catalog: false,
+  inventory: false,
   products: false,
 });
 
@@ -38,29 +40,49 @@ const menus = [
   },
   {
     key: "roles",
-    label: "Phan quyen",
+    label: "Phân quyền",
     icon: "fa-solid fa-user-shield",
     to: { name: "admin-roles" },
     names: ["admin-roles"],
     permission: "role:manage",
   },
   {
-    key: "categories",
+    key: "catalog",
     label: "Quản lý danh mục",
-    icon: "fa-solid fa-lock",
+    icon: "fa-solid fa-layer-group",
     to: null,
-    names: ["admin-categories", "admin-category-create", "admin-category-edit"],
-    permission: "category:manage",
+    names: [
+      "admin-categories",
+      "admin-category-create",
+      "admin-category-edit",
+      "admin-brands",
+      "admin-manufacturers",
+      "admin-suppliers",
+    ],
     children: [
       {
-        label: "Thêm danh mục",
-        to: { name: "admin-category-create" },
-        names: ["admin-category-create"],
+        label: "Danh mục",
+        to: { name: "admin-categories" },
+        names: ["admin-categories", "admin-category-create", "admin-category-edit"],
+        permission: "category:manage",
       },
       {
-        label: "Danh sách danh mục",
-        to: { name: "admin-categories" },
-        names: ["admin-categories", "admin-category-edit"],
+        label: "Thương hiệu",
+        to: { name: "admin-brands" },
+        names: ["admin-brands"],
+        permission: "brand:manage",
+      },
+      {
+        label: "Nhà sản xuất",
+        to: { name: "admin-manufacturers" },
+        names: ["admin-manufacturers"],
+        permission: "manufacturer:manage",
+      },
+      {
+        label: "Nhà cung cấp",
+        to: { name: "admin-suppliers" },
+        names: ["admin-suppliers"],
+        permission: "supplier:manage",
       },
     ],
   },
@@ -72,15 +94,66 @@ const menus = [
     names: ["admin-products", "admin-product-create", "admin-product-edit"],
     permission: "product:manage",
     children: [
-      {
-        label: "Thêm sản phẩm",
-        to: { name: "admin-product-create" },
-        names: ["admin-product-create"],
-      },
+      // {
+      //   label: "Thêm sản phẩm",
+      //   to: { name: "admin-product-create" },
+      //   names: ["admin-product-create"],
+      // },
       {
         label: "Danh sách sản phẩm",
         to: { name: "admin-products" },
         names: ["admin-products", "admin-product-edit"],
+      },
+    ],
+  },
+  {
+    key: "inventory",
+    label: "Kho hàng",
+    icon: "fa-solid fa-boxes-stacked",
+    to: null,
+    names: [
+      "admin-inventory-items",
+      "admin-inventory-batches",
+      "admin-inventory-summaries",
+      "admin-inventory-transactions",
+      "admin-purchase-orders",
+      "admin-purchase-order-create",
+      "admin-purchase-order-detail",
+    ],
+    children: [
+      {
+        label: "Hàng kho",
+        to: { name: "admin-inventory-items" },
+        names: ["admin-inventory-items"],
+        permission: "inventory:manage",
+      },
+      {
+        label: "Lo hang",
+        to: { name: "admin-inventory-batches" },
+        names: ["admin-inventory-batches"],
+        permission: "inventory:manage",
+      },
+      {
+        label: "Ton kho tong",
+        to: { name: "admin-inventory-summaries" },
+        names: ["admin-inventory-summaries"],
+        permission: "inventory:manage",
+      },
+      {
+        label: "Giao dich kho",
+        to: { name: "admin-inventory-transactions" },
+        names: ["admin-inventory-transactions"],
+        permission: "inventory:manage",
+      },
+      {
+        label: "Phiếu nhập kho",
+        to: { name: "admin-purchase-orders" },
+        names: [
+          "admin-purchase-orders",
+          "admin-purchase-order-create",
+          "admin-purchase-order-detail",
+        ],
+        permission: "purchase-order:manage",
       },
     ],
   },
@@ -111,13 +184,7 @@ const menus = [
 ];
 
 function hasPermission(permission) {
-  if (!permission) return true;
-
-  return (
-    authStore.role === "admin" ||
-    authStore.permissions.includes("*") ||
-    authStore.permissions.includes(permission)
-  );
+  return hasUserPermission(authStore, permission);
 }
 
 const visibleMenus = computed(() =>
@@ -149,16 +216,29 @@ function toggleGroup(key) {
 }
 
 function syncOpenGroupsByRoute() {
-  openGroups.value.categories = [
+  openGroups.value.catalog = [
     "admin-categories",
     "admin-category-create",
     "admin-category-edit",
+    "admin-brands",
+    "admin-manufacturers",
+    "admin-suppliers",
   ].includes(route.name);
 
   openGroups.value.products = [
     "admin-products",
     "admin-product-create",
     "admin-product-edit",
+  ].includes(route.name);
+
+  openGroups.value.inventory = [
+    "admin-inventory-items",
+    "admin-inventory-batches",
+    "admin-inventory-summaries",
+    "admin-inventory-transactions",
+    "admin-purchase-orders",
+    "admin-purchase-order-create",
+    "admin-purchase-order-detail",
   ].includes(route.name);
 }
 

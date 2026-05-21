@@ -3,7 +3,10 @@ import { computed, onMounted, ref, watch } from "vue";
 import userService from "@/services/user.service";
 import roleService from "@/services/role.service";
 import AdminPagination from "@/components/common/AdminPagination.vue";
+import { useAuthStore } from "@/stores/user/auth";
+import { hasPermission } from "@/utils/permission.util";
 
+const authStore = useAuthStore();
 const users = ref([]);
 const roles = ref([]);
 const loading = ref(false);
@@ -13,6 +16,9 @@ const keyword = ref("");
 const selectedRole = ref("");
 const selectedStatus = ref("");
 const assigningRoleUserId = ref("");
+const canUpdateUsers = computed(() => hasPermission(authStore, "user:update"));
+const canDeleteUsers = computed(() => hasPermission(authStore, "user:delete"));
+const canManageRoles = computed(() => hasPermission(authStore, "role:manage"));
 
 function resolveType(role) {
   const matchedRole = roles.value.find((item) => item.code === role);
@@ -50,6 +56,11 @@ async function fetchUsers() {
 }
 
 async function fetchRoles() {
+  if (!canManageRoles.value) {
+    roles.value = [];
+    return;
+  }
+
   try {
     roles.value = await roleService.getRoles();
   } catch (error) {
@@ -66,6 +77,12 @@ function roleIdForUser(user) {
 }
 
 async function changeUserRole(user, event) {
+  if (!canManageRoles.value) {
+    alert("Ban khong co quyen gan vai tro cho nguoi dung");
+    event.target.value = roleIdForUser(user);
+    return;
+  }
+
   const roleId = event.target.value;
   if (!roleId || roleId === roleIdForUser(user)) return;
 
@@ -89,6 +106,11 @@ const paginatedUser = computed(() => {
 });
 
 async function blockUser(user) {
+  if (!canUpdateUsers.value) {
+    alert("Ban khong co quyen cap nhat nguoi dung");
+    return;
+  }
+
   try {
     await userService.updateUser(user._id, { status: "blocked" });
     await fetchUsers();
@@ -98,6 +120,11 @@ async function blockUser(user) {
 }
 
 async function restoreUser(user) {
+  if (!canUpdateUsers.value) {
+    alert("Ban khong co quyen cap nhat nguoi dung");
+    return;
+  }
+
   try {
     await userService.updateUser(user._id, { status: "active" });
     await fetchUsers();
@@ -107,6 +134,11 @@ async function restoreUser(user) {
 }
 
 async function removeUser(user) {
+  if (!canDeleteUsers.value) {
+    alert("Ban khong co quyen xoa nguoi dung");
+    return;
+  }
+
   if (!window.confirm("Bạn có chắc muốn xóa người dùng này?")) return;
 
   try {
@@ -300,7 +332,7 @@ onMounted(initialize);
                 </div>
 
                 <select
-                  v-if="roles.length"
+                  v-if="canManageRoles && roles.length"
                   class="admin-user-card__role-select"
                   :value="roleIdForUser(item)"
                   :disabled="assigningRoleUserId === item._id"
@@ -322,7 +354,7 @@ onMounted(initialize);
               class="admin-user-card__actions admin-user-card__actions--modern"
             >
               <button
-                v-if="item.status !== 'blocked'"
+                v-if="canUpdateUsers && item.status !== 'blocked'"
                 class="admin-btn admin-btn--warning"
                 @click="blockUser(item)"
               >
@@ -331,7 +363,7 @@ onMounted(initialize);
               </button>
 
               <button
-                v-if="item.status === 'blocked'"
+                v-if="canUpdateUsers && item.status === 'blocked'"
                 class="admin-btn admin-btn--success"
                 @click="restoreUser(item)"
               >
@@ -340,7 +372,7 @@ onMounted(initialize);
               </button>
 
               <button
-                v-if="item.status !== 'blocked'"
+                v-if="canDeleteUsers && item.status !== 'blocked'"
                 class="admin-btn admin-btn--danger"
                 @click="removeUser(item)"
               >

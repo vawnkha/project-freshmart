@@ -43,7 +43,7 @@ router.delete(
 
 router.patch(
   "/users/:id/role",
-  authMiddleware.authorizePermissions("user:update"),
+  authMiddleware.authorizePermissions("role:manage"),
   rbac.assignRoleToUser,
 );
 

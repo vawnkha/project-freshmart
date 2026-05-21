@@ -41,32 +41,7 @@ class RbacService {
 
   async ensureIndexes() {
     if (RbacService.indexesReady) return;
-
-    await Promise.all([
-      this.Roles.createIndex(
-        { code: 1 },
-        {
-          unique: true,
-          partialFilterExpression: { code: { $type: "string" } },
-        },
-      ),
-      this.Roles.createIndex({ status: 1 }),
-      this.Permissions.createIndex(
-        { key: 1 },
-        {
-          unique: true,
-          partialFilterExpression: { key: { $type: "string" } },
-        },
-      ),
-      this.Permissions.createIndex({ group: 1, key: 1 }),
-      this.RolePermissions.createIndex(
-        { role_id: 1, permission_id: 1 },
-        { unique: true },
-      ),
-      this.RolePermissions.createIndex({ permission_id: 1 }),
-      this.Users.createIndex({ role_id: 1 }),
-    ]);
-
+    // Index creation is centralized in app/database/indexes.js.
     RbacService.indexesReady = true;
   }
 
@@ -405,6 +380,18 @@ class RbacService {
     return permissions.map((permission) => permission._id);
   }
 
+  async getActorUnownedRolePermissionIds(roleId, actor = null) {
+    if (!actor) return [];
+
+    const actorPermissions = new Set(normalizePermissions(actor.permissions));
+    if (actorPermissions.has("*")) return [];
+
+    const rolePermissions = await this.getRolePermissions(roleId);
+    return rolePermissions
+      .filter((permission) => !actorPermissions.has(permission.key))
+      .map((permission) => permission._id);
+  }
+
   async createRole(payload = {}, actor = null) {
     await this.ensureDefaults();
 
@@ -504,7 +491,14 @@ class RbacService {
         payload.permissionIds,
         actor,
       );
-      await this.replaceRolePermissions(roleObjectId, permissionIds);
+      const preservedPermissionIds = await this.getActorUnownedRolePermissionIds(
+        roleObjectId,
+        actor,
+      );
+      await this.replaceRolePermissions(roleObjectId, [
+        ...preservedPermissionIds,
+        ...permissionIds,
+      ]);
     }
 
     return this.getRoleWithPermissions(roleObjectId);

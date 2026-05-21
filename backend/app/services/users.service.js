@@ -7,9 +7,6 @@ class UsersService {
   constructor(client) {
     this.client = client;
     this.User = client.db().collection("users");
-    this.User.createIndex({ email: 1 }, { unique: true });
-    this.User.createIndex({ created_at: -1 });
-    this.User.createIndex({ role_id: 1 });
   }
 
   extractData(payload, options = {}) {

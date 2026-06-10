@@ -1,8 +1,19 @@
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
+import { useForm } from "vee-validate";
+import { toTypedSchema } from "@vee-validate/zod";
 import categoryService from "@/services/category.service";
 import productService from "@/services/product.service";
 import AdminPagination from "@/components/common/AdminPagination.vue";
+import {
+  imageFileSchema,
+  optionalNonNegativeNumberSchema,
+  optionalObjectIdSchema,
+  optionalString,
+  requiredString,
+  z,
+} from "@/validators/common.validator";
+import { mapBackendValidationErrors } from "@/utils/validation-error.util";
 
 const products = ref([]);
 const categories = ref([]);
@@ -12,7 +23,6 @@ const saving = ref(false);
 
 const currentPage = ref(1);
 const pageSize = ref(12);
-const totalItems = ref(0);
 
 const thumbnailInputRef = ref(null);
 const imagesInputRef = ref(null);
@@ -30,31 +40,75 @@ const editForm = reactive({
   price: "",
   stock: "",
   unit: "",
+  inventoryItemId: "",
   thumbnail: null,
   images: [],
 });
 
-const totalProducts = computed(() => totalItems.value);
+const productEditSchema = toTypedSchema(
+  z.object({
+    name: requiredString("Ten san pham la bat buoc"),
+    category_id: optionalObjectIdSchema,
+    description: optionalString,
+    price: optionalNonNegativeNumberSchema,
+    stock: optionalNonNegativeNumberSchema,
+    unit: optionalString,
+    inventoryItemId: optionalObjectIdSchema,
+    thumbnail: imageFileSchema.optional(),
+    images: z.array(imageFileSchema).max(4, "Anh chi tiet toi da 4 file"),
+  }),
+);
+
+const {
+  errors: editErrors,
+  resetForm: resetEditValidation,
+  setErrors: setEditErrors,
+  setValues: setEditValues,
+  validate: validateEditVee,
+} = useForm({
+  validationSchema: productEditSchema,
+});
+
+const filteredProducts = computed(() => {
+  const q = keyword.value.trim().toLowerCase();
+  if (!q) return products.value;
+
+  return products.value.filter((item) =>
+    [
+      item.name,
+      item.description,
+      item.category_name,
+      item.category?.name,
+      item.category_id,
+      item.productCode,
+    ]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(q)),
+  );
+});
+
+const paginatedProducts = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  return filteredProducts.value.slice(start, start + pageSize.value);
+});
+
+const totalProducts = computed(() => products.value.length);
 const inStockProducts = computed(
   () => products.value.filter((item) => Number(item.stock) > 0).length,
 );
 const outOfStockProducts = computed(
   () => products.value.filter((item) => Number(item.stock) <= 0).length,
 );
+const isEditingInventoryProduct = computed(() => Boolean(editForm.inventoryItemId));
 
 async function fetchData() {
   try {
     const [productRes, categoryRes] = await Promise.all([
-      productService.getAll({
-        page: currentPage.value,
-        limit: pageSize.value,
-        keyword: keyword.value.trim() || undefined,
-      }),
+      productService.getAll(),
       categoryService.getAll(),
     ]);
 
     products.value = productRes?.data || [];
-    totalItems.value = productRes?.pagination?.total || 0;
     categories.value = categoryRes?.data || categoryRes || [];
   } catch (error) {
     console.error("Lỗi tải dữ liệu sản phẩm:", error);
@@ -62,7 +116,19 @@ async function fetchData() {
   }
 }
 
+function normalizeId(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (value.$oid) return value.$oid;
+  return String(value);
+}
+
+function hasInventoryLink(item) {
+  return Boolean(normalizeId(item?.inventoryItemId));
+}
+
 function openEditModal(item) {
+  resetEditValidation();
   editForm._id = item._id || item.id;
   editForm.name = item.name || "";
   editForm.category_id = item.category_id || "";
@@ -70,6 +136,7 @@ function openEditModal(item) {
   editForm.price = item.price ?? "";
   editForm.stock = item.stock ?? "";
   editForm.unit = item.unit || "";
+  editForm.inventoryItemId = normalizeId(item.inventoryItemId);
   editForm.thumbnail = null;
   editForm.images = [];
 
@@ -88,6 +155,7 @@ function openEditModal(item) {
 
 function closeEditModal() {
   showEditModal.value = false;
+  resetEditValidation();
 }
 
 function triggerThumbnailInput() {
@@ -135,7 +203,26 @@ function clearAllNewImages() {
   }
 }
 
+async function validateEditForm() {
+  setEditValues({
+    name: editForm.name,
+    category_id: editForm.category_id,
+    description: editForm.description,
+    price: editForm.price,
+    stock: isEditingInventoryProduct.value ? "" : editForm.stock,
+    unit: editForm.unit,
+    inventoryItemId: editForm.inventoryItemId,
+    thumbnail: editForm.thumbnail,
+    images: [...editForm.images],
+  });
+  const result = await validateEditVee();
+  return result.valid;
+}
+
 async function submitEdit() {
+  const valid = await validateEditForm();
+  if (!valid) return;
+
   saving.value = true;
   try {
     const data = new FormData();
@@ -143,7 +230,9 @@ async function submitEdit() {
     data.append("category_id", editForm.category_id);
     data.append("description", editForm.description);
     data.append("price", String(editForm.price));
-    data.append("stock", String(editForm.stock));
+    if (!isEditingInventoryProduct.value) {
+      data.append("stock", String(editForm.stock));
+    }
     data.append("unit", editForm.unit);
 
     if (editForm.thumbnail) {
@@ -162,6 +251,7 @@ async function submitEdit() {
     alert("Cập nhật sản phẩm thành công");
   } catch (error) {
     console.error("Lỗi cập nhật sản phẩm:", error);
+    setEditErrors(mapBackendValidationErrors(error));
     alert(error?.response?.data?.message || "Cập nhật sản phẩm thất bại");
   } finally {
     saving.value = false;
@@ -174,7 +264,7 @@ async function removeProduct(id) {
   try {
     await productService.delete(id);
 
-    if (products.value.length === 1 && currentPage.value > 1) {
+    if (paginatedProducts.value.length === 1 && currentPage.value > 1) {
       currentPage.value -= 1;
     }
 
@@ -192,12 +282,15 @@ function resolveStatus(stock) {
 
 function handlePageChange(page) {
   currentPage.value = page;
-  fetchData();
 }
 
 watch(keyword, () => {
   currentPage.value = 1;
-  fetchData();
+});
+
+watch(filteredProducts, (list) => {
+  const maxPage = Math.max(1, Math.ceil(list.length / pageSize.value));
+  if (currentPage.value > maxPage) currentPage.value = maxPage;
 });
 
 onMounted(fetchData);
@@ -257,7 +350,7 @@ onMounted(fetchData);
           />
         </div>
 
-        <div v-if="!products.length" class="admin-empty-state">
+        <div v-if="!filteredProducts.length" class="admin-empty-state">
           Không có sản phẩm phù hợp
         </div>
 
@@ -278,7 +371,7 @@ onMounted(fetchData);
             </thead>
 
             <tbody>
-              <tr v-for="item in products" :key="item._id || item.id">
+              <tr v-for="item in paginatedProducts" :key="item._id || item.id">
                 <td>
                   <div class="admin-product-thumb-wrap">
                     <img
@@ -292,6 +385,18 @@ onMounted(fetchData);
                 <td>
                   <div class="admin-product-info">
                     <strong>{{ item.name }}</strong>
+                    <div class="mt-2">
+                      <span
+                        class="admin-badge"
+                        :class="
+                          hasInventoryLink(item)
+                            ? 'admin-badge--info'
+                            : 'admin-badge--warning'
+                        "
+                      >
+                        {{ hasInventoryLink(item) ? "Từ kho" : "Legacy" }}
+                      </span>
+                    </div>
                   </div>
                 </td>
 
@@ -310,7 +415,12 @@ onMounted(fetchData);
                   </div>
                 </td>
 
-                <td>{{ item.stock }}</td>
+                <td>
+                  <strong>{{ item.stock }}</strong>
+                  <div v-if="hasInventoryLink(item)" class="admin-note">
+                    Từ tổng tồn
+                  </div>
+                </td>
 
                 <td class="admin-price-cell">
                   {{ Number(item.price || 0).toLocaleString("vi-VN") }} VND
@@ -356,7 +466,7 @@ onMounted(fetchData);
 
           <AdminPagination
             v-model="currentPage"
-            :total-items="totalItems"
+            :total-items="filteredProducts.length"
             :page-size="pageSize"
             @change="handlePageChange"
           />
@@ -384,7 +494,16 @@ onMounted(fetchData);
         <div class="admin-modal__body">
           <div class="admin-form__row">
             <label class="admin-form__label">Tên sản phẩm *</label>
-            <input v-model="editForm.name" class="admin-form__control" />
+            <div>
+              <input
+                v-model="editForm.name"
+                class="admin-form__control"
+                :class="{ 'is-invalid': editErrors.name }"
+              />
+              <div v-if="editErrors.name" class="admin-form__error">
+                {{ editErrors.name }}
+              </div>
+            </div>
           </div>
 
           <div class="admin-form__row">
@@ -412,12 +531,18 @@ onMounted(fetchData);
 
           <div class="admin-form__row">
             <label class="admin-form__label">Giá</label>
-            <input
-              v-model="editForm.price"
-              type="number"
-              min="0"
-              class="admin-form__control"
-            />
+            <div>
+              <input
+                v-model="editForm.price"
+                type="number"
+                min="0"
+                class="admin-form__control"
+                :class="{ 'is-invalid': editErrors.price }"
+              />
+              <div v-if="editErrors.price" class="admin-form__error">
+                {{ editErrors.price }}
+              </div>
+            </div>
           </div>
 
           <div class="admin-form__row">
@@ -427,7 +552,15 @@ onMounted(fetchData);
               type="number"
               min="0"
               class="admin-form__control"
+              :class="{ 'is-invalid': editErrors.stock }"
+              :disabled="isEditingInventoryProduct"
             />
+            <div v-if="editErrors.stock" class="admin-form__error">
+              {{ editErrors.stock }}
+            </div>
+            <div v-if="isEditingInventoryProduct" class="admin-note mt-2">
+              Tồn kho được quản lý bằng lô hàng và tổng tồn, không sửa trực tiếp tại sản phẩm.
+            </div>
           </div>
 
           <div class="admin-form__row">

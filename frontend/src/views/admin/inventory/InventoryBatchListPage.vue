@@ -2,11 +2,14 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import inventoryBatchService from "@/services/inventory-batch.service";
+import inventoryItemService from "@/services/inventory-item.service";
 import AdminPagination from "@/components/common/AdminPagination.vue";
 
 const route = useRoute();
 const batches = ref([]);
+const inventoryItems = ref([]);
 const loading = ref(false);
+const itemLoading = ref(false);
 const actionLoadingId = ref("");
 const currentPage = ref(1);
 const pageSize = ref(12);
@@ -88,10 +91,21 @@ function formatPrice(value) {
 }
 
 function statusText(status) {
-  if (status === "available") return "Available";
-  if (status === "locked") return "Locked";
-  if (status === "sold_out") return "Sold out";
+  if (status === "available") return "Có sẵn";
+  if (status === "locked") return "Đang khóa";
+  if (status === "sold_out") return "Hết hàng";
   return status || "---";
+}
+
+function itemOptionLabel(item) {
+  return [item.itemCode, item.itemName].filter(Boolean).join(" - ") || getId(item);
+}
+
+function selectedInventoryItemLabel() {
+  const item = inventoryItems.value.find(
+    (entry) => getId(entry) === filters.inventoryItemId,
+  );
+  return item ? itemOptionLabel(item) : filters.inventoryItemId;
 }
 
 function statusClass(status) {
@@ -113,39 +127,52 @@ async function fetchBatches() {
     batches.value = normalizeList(res);
   } catch (error) {
     console.error(error);
-    alert(error?.response?.data?.message || "Khong the tai lo hang");
+    alert(error?.response?.data?.message || "Không thể tải lô hàng");
   } finally {
     loading.value = false;
   }
 }
 
+async function fetchInventoryItems() {
+  itemLoading.value = true;
+  try {
+    const res = await inventoryItemService.getAll();
+    inventoryItems.value = normalizeList(res);
+  } catch (error) {
+    console.error(error);
+    inventoryItems.value = [];
+  } finally {
+    itemLoading.value = false;
+  }
+}
+
 async function lockBatch(item) {
-  if (!window.confirm("Khoa lo hang nay?")) return;
+  if (!window.confirm("Khóa lô hàng này?")) return;
 
   actionLoadingId.value = getId(item);
   try {
     await inventoryBatchService.lock(getId(item));
     await fetchBatches();
-    alert("Khoa lo hang thanh cong");
+    alert("Khóa lô hàng thành công");
   } catch (error) {
     console.error(error);
-    alert(error?.response?.data?.message || "Khong the khoa lo hang");
+    alert(error?.response?.data?.message || "Không thể khóa lô hàng");
   } finally {
     actionLoadingId.value = "";
   }
 }
 
 async function unlockBatch(item) {
-  if (!window.confirm("Mo khoa lo hang nay?")) return;
+  if (!window.confirm("Mở khóa lô hàng này?")) return;
 
   actionLoadingId.value = getId(item);
   try {
     await inventoryBatchService.unlock(getId(item));
     await fetchBatches();
-    alert("Mo khoa lo hang thanh cong");
+    alert("Mở khóa lô hàng thành công");
   } catch (error) {
     console.error(error);
-    alert(error?.response?.data?.message || "Khong the mo khoa lo hang");
+    alert(error?.response?.data?.message || "Không thể mở khóa lô hàng");
   } finally {
     actionLoadingId.value = "";
   }
@@ -172,31 +199,34 @@ watch(filteredBatches, (list) => {
   if (currentPage.value > maxPage) currentPage.value = maxPage;
 });
 
-onMounted(fetchBatches);
+onMounted(() => {
+  fetchBatches();
+  fetchInventoryItems();
+});
 </script>
 
 <template>
   <div class="admin-page">
     <div class="admin-page-title admin-page-title--stack">
-      <h1>Lo hang</h1>
-      <p>Theo doi batch theo FEFO, han dung va trang thai khoa/mo khoa.</p>
+      <h1>Lô hàng</h1>
+      <p>Theo dõi batch theo FEFO, hạn dùng và trạng thái khóa/mở khóa.</p>
     </div>
 
     <div class="admin-stat-row admin-stat-row--orders">
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Tong lo</div>
+        <div class="admin-stat-card__label">Tổng lô</div>
         <div class="admin-stat-card__value">{{ filteredBatches.length }}</div>
       </div>
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Available</div>
+        <div class="admin-stat-card__label">Có sẵn</div>
         <div class="admin-stat-card__value">{{ availableCount }}</div>
       </div>
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Locked</div>
+        <div class="admin-stat-card__label">Đang khóa</div>
         <div class="admin-stat-card__value">{{ lockedCount }}</div>
       </div>
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Tong SL</div>
+        <div class="admin-stat-card__label">Tổng SL</div>
         <div class="admin-stat-card__value">{{ totalQuantity }}</div>
       </div>
     </div>
@@ -204,13 +234,13 @@ onMounted(fetchBatches);
     <section class="admin-panel">
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
-          <div class="admin-panel__header-title">Danh sach lo hang</div>
+          <div class="admin-panel__header-title">Danh sách lô hàng</div>
           <div class="admin-panel__header-subtitle">
-            Load toan bo du lieu va loc/phien trang tai frontend.
+            Load toàn bộ dữ liệu và lọc/phân trang tại frontend.
           </div>
         </div>
         <button class="admin-btn admin-btn--secondary" @click="fetchBatches">
-          Lam moi
+          Làm mới
         </button>
       </div>
 
@@ -221,48 +251,56 @@ onMounted(fetchBatches);
               v-model="filters.keyword"
               type="text"
               class="admin-toolbar__input"
-              placeholder="Tim ma lo, ma hang, ten hang, vi tri"
+              placeholder="Tìm mã lô, mã hàng, tên hàng, vị trí"
             />
           </div>
           <div class="col-md-3">
             <select v-model="filters.status" class="admin-toolbar__select">
-              <option value="">Tat ca trang thai</option>
-              <option value="available">Available</option>
-              <option value="locked">Locked</option>
-              <option value="sold_out">Sold out</option>
+              <option value="">Tất cả trạng thái</option>
+              <option value="available">Có sẵn</option>
+              <option value="locked">Đang khóa</option>
+              <option value="sold_out">Hết hàng</option>
             </select>
           </div>
           <div class="col-md-4">
-            <input
+            <select
               v-model="filters.inventoryItemId"
-              type="text"
-              class="admin-toolbar__input"
-              placeholder="Loc theo inventoryItemId"
-            />
+              class="admin-toolbar__select"
+              :disabled="itemLoading"
+            >
+              <option value="">Tất cả hàng kho</option>
+              <option
+                v-for="item in inventoryItems"
+                :key="getId(item)"
+                :value="getId(item)"
+              >
+                {{ itemOptionLabel(item) }}
+              </option>
+            </select>
           </div>
         </div>
 
         <div v-if="filters.inventoryItemId" class="inventory-filter-chip">
-          Dang loc inventoryItemId: <strong>{{ filters.inventoryItemId }}</strong>
+          Đang lọc hàng kho: <strong>{{ selectedInventoryItemLabel() }}</strong>
         </div>
 
-        <div v-if="loading" class="admin-empty-state">Dang tai lo hang...</div>
+        <div v-if="loading" class="admin-empty-state">Đang tải lô hàng...</div>
         <div v-else-if="!filteredBatches.length" class="admin-empty-state">
-          Chua co lo hang phu hop
+          Chưa có lô hàng phù hợp
         </div>
 
         <div v-else class="table-responsive">
           <table class="admin-table admin-table--orders">
             <thead>
               <tr>
-                <th>Lo</th>
-                <th>Hang kho</th>
-                <th>So luong</th>
-                <th>Gia nhap</th>
-                <th>Han dung</th>
-                <th>Vi tri</th>
-                <th>Trang thai</th>
-                <th>Ngay tao</th>
+                <th>Lô</th>
+                <th>Hàng kho</th>
+                <th>Số lượng</th>
+                <th>Giá nhập</th>
+                <th>Hạn dùng</th>
+                <th>Vị trí</th>
+                <th>Trạng thái</th>
+                <th>Ngày tạo</th>
                 <th></th>
               </tr>
             </thead>
@@ -295,7 +333,7 @@ onMounted(fetchBatches);
                       :disabled="actionLoadingId === getId(item)"
                       @click="unlockBatch(item)"
                     >
-                      Unlock
+                      Mở khóa
                     </button>
                     <button
                       v-else-if="item.status !== 'sold_out'"
@@ -303,7 +341,7 @@ onMounted(fetchBatches);
                       :disabled="actionLoadingId === getId(item)"
                       @click="lockBatch(item)"
                     >
-                      Lock
+                      Khóa
                     </button>
                   </div>
                 </td>

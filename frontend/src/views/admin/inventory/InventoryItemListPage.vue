@@ -1,7 +1,11 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useForm } from "vee-validate";
+import { toTypedSchema } from "@vee-validate/zod";
+import { useRouter } from "vue-router";
 import inventoryItemService from "@/services/inventory-item.service";
 import adminProductService from "@/services/admin-product.service";
+import productService from "@/services/product.service";
 import uploadService from "@/services/upload.service";
 import categoryService from "@/services/category.service";
 import brandService from "@/services/brand.service";
@@ -9,13 +13,25 @@ import manufacturerService from "@/services/manufacturer.service";
 import AdminPagination from "@/components/common/AdminPagination.vue";
 import { useAuthStore } from "@/stores/user/auth";
 import { hasPermission } from "@/utils/permission.util";
+import {
+  nonNegativeNumberSchema,
+  optionalNonNegativeNumberSchema,
+  optionalObjectIdSchema,
+  optionalSlugSchema,
+  optionalString,
+  requiredString,
+  z,
+} from "@/validators/common.validator";
+import { mapBackendValidationErrors } from "@/utils/validation-error.util";
 
 const PRODUCT_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const PRODUCT_IMAGE_MAX_SIZE = 10 * 1024 * 1024;
 const PRODUCT_DETAIL_IMAGE_LIMIT = 4;
 
+const router = useRouter();
 const authStore = useAuthStore();
 const inventoryItems = ref([]);
+const products = ref([]);
 const categories = ref([]);
 const brands = ref([]);
 const manufacturers = ref([]);
@@ -36,6 +52,7 @@ const productThumbnailFile = ref(null);
 const productThumbnailPreview = ref("");
 const productImageFiles = ref([]);
 const productImagePreviews = ref([]);
+const createdProduct = ref(null);
 
 const filters = reactive({
   keyword: "",
@@ -59,6 +76,36 @@ const itemForm = reactive({
   status: "active",
 });
 
+const inventoryItemSchema = toTypedSchema(
+  z.object({
+    categoryId: optionalObjectIdSchema,
+    brandId: optionalObjectIdSchema,
+    manufacturerId: optionalObjectIdSchema,
+    itemCode: requiredString("Ma hang kho la bat buoc"),
+    itemName: requiredString("Ten hang kho la bat buoc"),
+    itemType: optionalString,
+    barcode: optionalString,
+    packageSize: optionalString,
+    unit: requiredString("Don vi tinh la bat buoc"),
+    storageInstruction: optionalString,
+    expiryMonths: nonNegativeNumberSchema.optional(),
+    note: optionalString,
+    status: z.enum(["active", "inactive", "discontinued"], {
+      message: "Trang thai hang kho khong hop le",
+    }),
+  }),
+);
+
+const {
+  errors: itemErrors,
+  resetForm: resetItemValidation,
+  setErrors: setItemErrors,
+  setValues: setItemValues,
+  validate: validateItemVee,
+} = useForm({
+  validationSchema: inventoryItemSchema,
+});
+
 const productForm = reactive({
   name: "",
   slug: "",
@@ -66,6 +113,29 @@ const productForm = reactive({
   shortDescription: "",
   description: "",
   status: "draft",
+});
+
+const productFromInventorySchema = toTypedSchema(
+  z.object({
+    name: optionalString,
+    slug: optionalSlugSchema,
+    sellingPrice: optionalNonNegativeNumberSchema,
+    shortDescription: optionalString,
+    description: optionalString,
+    status: z.enum(["draft", "active", "inactive"], {
+      message: "Trang thai san pham khong hop le",
+    }),
+  }),
+);
+
+const {
+  errors: productErrors,
+  resetForm: resetProductValidation,
+  setErrors: setProductErrors,
+  setValues: setProductValues,
+  validate: validateProductVee,
+} = useForm({
+  validationSchema: productFromInventorySchema,
 });
 
 const totalItems = computed(() => inventoryItems.value.length);
@@ -78,6 +148,17 @@ const inactiveItems = computed(
 const canCreateProductFromInventory = computed(() =>
   hasPermission(authStore, "product:manage"),
 );
+
+const productByInventoryItemId = computed(() => {
+  const map = new Map();
+
+  products.value.forEach((product) => {
+    const inventoryItemId = normalizeId(product.inventoryItemId);
+    if (inventoryItemId) map.set(inventoryItemId, product);
+  });
+
+  return map;
+});
 
 const itemTypes = computed(() => {
   return [
@@ -152,6 +233,19 @@ function activeCatalogOptions(list) {
   return list.filter((item) => item.status !== "inactive");
 }
 
+function getLinkedProduct(item) {
+  return productByInventoryItemId.value.get(getItemId(item)) || null;
+}
+
+function hasLinkedProduct(item) {
+  return Boolean(getLinkedProduct(item));
+}
+
+function linkedProductLabel(item) {
+  const product = getLinkedProduct(item);
+  return product?.name || product?.productCode || "Đã tạo sản phẩm";
+}
+
 function resetItemForm() {
   Object.assign(itemForm, {
     categoryId: "",
@@ -168,9 +262,12 @@ function resetItemForm() {
     note: "",
     status: "active",
   });
+  resetItemValidation();
 }
 
 function resetProductForm() {
+  createdProduct.value = null;
+  resetProductValidation();
   Object.assign(productForm, {
     name: selectedItem.value?.itemName || "",
     slug: "",
@@ -244,27 +341,22 @@ function buildProductPayload(uploadedImages = {}) {
   return payload;
 }
 
-function validateItemForm() {
-  if (!trimValue(itemForm.itemCode)) return "Ma hang kho la bat buoc";
-  if (!trimValue(itemForm.itemName)) return "Ten hang kho la bat buoc";
-  if (!trimValue(itemForm.unit)) return "Don vi tinh la bat buoc";
-
-  if (
-    trimValue(itemForm.expiryMonths) &&
-    Number(itemForm.expiryMonths) < 0
-  ) {
-    return "Han su dung theo thang khong hop le";
-  }
-
-  return "";
+async function validateItemForm() {
+  setItemValues({ ...itemForm });
+  const result = await validateItemVee();
+  return result.valid;
 }
 
-function validateProductForm() {
+async function validateProductForm() {
+  setProductValues({ ...productForm });
+  const result = await validateProductVee();
+  if (!result.valid) return false;
+
   if (
     trimValue(productForm.sellingPrice) &&
     Number(productForm.sellingPrice) < 0
   ) {
-    return "Gia ban khong hop le";
+    return "Giá bán không hợp lệ";
   }
 
   const files = [
@@ -273,10 +365,13 @@ function validateProductForm() {
   ].filter(Boolean);
   for (const file of files) {
     const message = validateImageFile(file);
-    if (message) return message;
+    if (message) {
+      setProductErrors({ thumbnail: message });
+      return false;
+    }
   }
 
-  return "";
+  return true;
 }
 
 function formatFileSize(size) {
@@ -350,7 +445,7 @@ function onProductImagesChange(event) {
   }
 
   if (files.length > PRODUCT_DETAIL_IMAGE_LIMIT) {
-    alert(`Anh chi tiet toi da ${PRODUCT_DETAIL_IMAGE_LIMIT} file`);
+    alert(`Ảnh chi tiết tối đa ${PRODUCT_DETAIL_IMAGE_LIMIT} file`);
   }
 
   const nextFiles = files.slice(0, PRODUCT_DETAIL_IMAGE_LIMIT);
@@ -416,10 +511,20 @@ async function fetchItems() {
     const res = await inventoryItemService.getAll();
     inventoryItems.value = normalizeList(res);
   } catch (error) {
-    console.error("Loi tai danh sach hang kho:", error);
-    alert(error?.response?.data?.message || "Khong the tai danh sach hang kho");
+    console.error("Lỗi tải danh sách hàng kho:", error);
+    alert(error?.response?.data?.message || "Không thể tải danh sách hàng kho");
   } finally {
     loading.value = false;
+  }
+}
+
+async function fetchProducts() {
+  try {
+    const res = await productService.getAll();
+    products.value = normalizeList(res);
+  } catch (error) {
+    console.error("Lỗi tải danh sách sản phẩm:", error);
+    products.value = [];
   }
 }
 
@@ -436,15 +541,15 @@ async function fetchCatalogOptions() {
     brands.value = normalizeList(brandRes);
     manufacturers.value = normalizeList(manufacturerRes);
   } catch (error) {
-    console.error("Loi tai danh muc du lieu:", error);
-    alert(error?.response?.data?.message || "Khong the tai danh muc du lieu");
+    console.error("Lỗi tải danh mục dữ liệu:", error);
+    alert(error?.response?.data?.message || "Không thể tải danh mục dữ liệu");
   } finally {
     catalogLoading.value = false;
   }
 }
 
 async function loadPageData() {
-  await Promise.all([fetchItems(), fetchCatalogOptions()]);
+  await Promise.all([fetchItems(), fetchCatalogOptions(), fetchProducts()]);
 }
 
 function openCreateModal() {
@@ -480,11 +585,8 @@ function closeItemModal() {
 }
 
 async function submitItemForm() {
-  const message = validateItemForm();
-  if (message) {
-    alert(message);
-    return;
-  }
+  const valid = await validateItemForm();
+  if (!valid) return;
 
   saving.value = true;
   try {
@@ -492,17 +594,18 @@ async function submitItemForm() {
 
     if (itemModalMode.value === "create") {
       await inventoryItemService.create(payload);
-      alert("Tao hang kho thanh cong");
+      alert("Tạo hàng kho thành công");
     } else {
       await inventoryItemService.update(currentItemId.value, payload);
-      alert("Cap nhat hang kho thanh cong");
+      alert("Cập nhật hàng kho thành công");
     }
 
     closeItemModal();
     await fetchItems();
   } catch (error) {
-    console.error("Loi luu hang kho:", error);
-    alert(error?.response?.data?.message || "Khong the luu hang kho");
+    console.error("Lỗi lưu hàng kho:", error);
+    setItemErrors(mapBackendValidationErrors(error));
+    alert(error?.response?.data?.message || "Không thể lưu hàng kho");
   } finally {
     saving.value = false;
   }
@@ -511,23 +614,28 @@ async function submitItemForm() {
 async function removeItem(item) {
   if (item.status === "inactive") return;
 
-  if (!window.confirm("Ban co chac muon ngung hoat dong hang kho nay?")) {
+  if (!window.confirm("Bạn có chắc muốn xóa hàng kho này?")) {
     return;
   }
 
   try {
     await inventoryItemService.remove(getItemId(item));
     await fetchItems();
-    alert("Da ngung hoat dong hang kho");
+    alert("Đã xóa hàng kho");
   } catch (error) {
-    console.error("Loi xoa hang kho:", error);
-    alert(error?.response?.data?.message || "Khong the ngung hoat dong hang kho");
+    console.error("Lỗi xóa hàng kho:", error);
+    alert(error?.response?.data?.message || "Không thể xóa hàng kho");
   }
 }
 
 function openProductModal(item) {
   if (!canCreateProductFromInventory.value) {
-    alert("Ban khong co quyen tao san pham tu hang kho");
+    alert("Bạn không có quyền tạo sản phẩm từ hàng kho");
+    return;
+  }
+
+  if (hasLinkedProduct(item)) {
+    alert("Hàng kho này đã được đưa lên website");
     return;
   }
 
@@ -544,40 +652,47 @@ function closeProductModal() {
 
 async function submitProductForm() {
   if (!canCreateProductFromInventory.value) {
-    alert("Ban khong co quyen tao san pham tu hang kho");
+    alert("Bạn không có quyền tạo sản phẩm từ hàng kho");
     return;
   }
 
-  const message = validateProductForm();
-  if (message) {
-    alert(message);
+  if (createdProduct.value || hasLinkedProduct(selectedItem.value)) {
+    alert("Hàng kho này đã được tạo sản phẩm");
     return;
   }
+
+  const valid = await validateProductForm();
+  if (!valid) return;
 
   productSaving.value = true;
   try {
     const uploadedImages = await uploadSelectedProductImages();
-    await adminProductService.createFromInventory(
+    const res = await adminProductService.createFromInventory(
       getItemId(selectedItem.value),
       buildProductPayload(uploadedImages),
     );
-    alert("Tao san pham tu hang kho thanh cong");
-    closeProductModal();
-    await fetchItems();
+    createdProduct.value = res?.data || res || null;
+    await Promise.all([fetchItems(), fetchProducts()]);
+    alert("Tạo sản phẩm từ hàng kho thành công");
   } catch (error) {
-    console.error("Loi tao san pham tu hang kho:", error);
+    console.error("Lỗi tạo sản phẩm từ hàng kho:", error);
+    setProductErrors(mapBackendValidationErrors(error));
     alert(
       error?.response?.data?.message ||
-        "Khong the tao san pham tu hang kho nay",
+        "Không thể tạo sản phẩm từ hàng kho này",
     );
   } finally {
     productSaving.value = false;
   }
 }
 
+function goToProducts() {
+  router.push({ name: "admin-products" });
+}
+
 function statusText(status) {
-  if (status === "active") return "Dang hoat dong";
-  if (status === "inactive") return "Ngung hoat dong";
+  if (status === "active") return "Đang hoạt động";
+  if (status === "inactive") return "Ngừng hoạt động";
   return status || "---";
 }
 
@@ -607,28 +722,28 @@ onMounted(loadPageData);
 <template>
   <div class="admin-page inventory-items-page">
     <div class="admin-page-title admin-page-title--stack">
-      <h1>Quan ly hang kho</h1>
-      <p>Quan ly inventory items va tao san pham website tu hang kho.</p>
+      <h1>Quản lý hàng kho</h1>
+      <p>Quản lý inventory items và tạo sản phẩm website từ hàng kho.</p>
     </div>
 
     <div class="admin-stat-row admin-stat-row--products">
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Tong hang kho</div>
+        <div class="admin-stat-card__label">Tổng hàng kho</div>
         <div class="admin-stat-card__value">{{ totalItems }}</div>
       </div>
 
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Dang hoat dong</div>
+        <div class="admin-stat-card__label">Đang hoạt động</div>
         <div class="admin-stat-card__value">{{ activeItems }}</div>
       </div>
 
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Ngung hoat dong</div>
+        <div class="admin-stat-card__label">Ngừng hoạt động</div>
         <div class="admin-stat-card__value">{{ inactiveItems }}</div>
       </div>
 
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Dang loc</div>
+        <div class="admin-stat-card__label">Đang lọc</div>
         <div class="admin-stat-card__value">{{ filteredItems.length }}</div>
       </div>
     </div>
@@ -636,20 +751,20 @@ onMounted(loadPageData);
     <section class="admin-panel">
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
-          <div class="admin-panel__header-title">Danh sach hang kho</div>
+          <div class="admin-panel__header-title">Danh sách hàng kho</div>
           <div class="admin-panel__header-subtitle">
-            Du lieu lay tu /api/inventory-items, filter va phan trang duoc xu ly
-            o frontend.
+            Dữ liệu lấy từ /api/inventory-items, filter và phân trang được xử lý
+            ở frontend.
           </div>
         </div>
 
         <div class="inventory-header-actions">
           <button class="admin-btn admin-btn--secondary" @click="loadPageData">
-            Lam moi
+            Làm mới
           </button>
           <button class="admin-btn admin-btn--primary" @click="openCreateModal">
             <i class="fa-solid fa-plus me-1"></i>
-            Them hang kho
+            Thêm hàng kho
           </button>
         </div>
       </div>
@@ -661,13 +776,13 @@ onMounted(loadPageData);
               v-model="filters.keyword"
               type="text"
               class="admin-toolbar__input"
-              placeholder="Tim theo ma, ten, barcode, don vi"
+              placeholder="Tìm theo mã, tên, barcode, đơn vị"
             />
           </div>
 
           <div class="col-md-3 col-lg-3">
             <select v-model="filters.itemType" class="admin-toolbar__select">
-              <option value="">Tat ca loai hang</option>
+              <option value="">Tất cả loại hàng</option>
               <option v-for="type in itemTypes" :key="type" :value="type">
                 {{ type }}
               </option>
@@ -676,37 +791,38 @@ onMounted(loadPageData);
 
           <div class="col-md-3 col-lg-3">
             <select v-model="filters.status" class="admin-toolbar__select">
-              <option value="">Tat ca trang thai</option>
-              <option value="active">Dang hoat dong</option>
-              <option value="inactive">Ngung hoat dong</option>
+              <option value="">Tất cả trạng thái</option>
+              <option value="active">Đang hoạt động</option>
+              <option value="inactive">Ngừng hoạt động</option>
             </select>
           </div>
         </div>
 
         <div v-if="loading" class="admin-empty-state">
-          Dang tai danh sach hang kho...
+          Đang tải danh sách hàng kho...
         </div>
         <div v-else-if="catalogLoading" class="admin-empty-state">
-          Dang tai danh muc, thuong hieu va nha san xuat...
+          Đang tải danh mục, thương hiệu và nhà sản xuất...
         </div>
 
         <div v-else-if="!filteredItems.length" class="admin-empty-state">
-          Khong co hang kho phu hop
+          Không có hàng kho phù hợp
         </div>
 
         <div v-else class="table-responsive">
           <table class="admin-table admin-table--products">
             <thead>
               <tr>
-                <th>Ma hang</th>
-                <th>Ten hang</th>
-                <th>Loai</th>
-                <th>Danh muc</th>
-                <th>Thuong hieu</th>
-                <th>Nha san xuat</th>
-                <th>Don vi</th>
-                <th>Quy cach</th>
-                <th>Trang thai</th>
+                <th>Mã hàng</th>
+                <th>Tên hàng</th>
+                <th>Loại</th>
+                <th>Danh mục</th>
+                <th>Thương hiệu</th>
+                <th>Nhà sản xuất</th>
+                <th>Đơn vị</th>
+                <th>Quy cách</th>
+                <th>Website</th>
+                <th>Trạng thái</th>
                 <th></th>
               </tr>
             </thead>
@@ -734,6 +850,21 @@ onMounted(loadPageData);
 
                 <td>
                   <span
+                    v-if="hasLinkedProduct(item)"
+                    class="admin-badge admin-badge--success"
+                  >
+                    Đã đưa lên website
+                  </span>
+                  <span v-else class="admin-badge admin-badge--info">
+                    Chưa đưa lên website
+                  </span>
+                  <div v-if="hasLinkedProduct(item)" class="inventory-cell-sub">
+                    {{ linkedProductLabel(item) }}
+                  </div>
+                </td>
+
+                <td>
+                  <span
                     class="admin-badge"
                     :class="statusBadgeClass(item.status)"
                   >
@@ -747,35 +878,41 @@ onMounted(loadPageData);
                       class="admin-btn admin-btn--primary"
                       :disabled="
                         item.status !== 'active' ||
-                        !canCreateProductFromInventory
+                        !canCreateProductFromInventory ||
+                        hasLinkedProduct(item)
                       "
                       :title="
                         !canCreateProductFromInventory
-                          ? 'Ban can quyen product:manage de dua hang len website'
+                          ? 'Bạn cần quyền product:manage để đưa hàng lên website'
+                          : hasLinkedProduct(item)
+                            ? 'Hàng kho này đã tạo sản phẩm website'
                           : ''
                       "
                       @click="openProductModal(item)"
                     >
                       <i class="fa-solid fa-store me-1"></i>
-                      Dua len website
+                      {{ hasLinkedProduct(item) ? "Đã tạo sản phẩm" : "Đưa lên website" }}
                     </button>
 
                     <button
+                      type="button"
                       class="admin-btn admin-btn--success"
-                      @click="openEditModal(item)"
+                      @click.stop="openEditModal(item)"
                     >
                       <i class="fa-solid fa-pen-to-square me-1"></i>
-                      Sua
+                      Sửa
                     </button>
 
                     <button
+                      v-if="item.status !== 'inactive'"
+                      type="button"
                       class="admin-btn admin-btn--danger"
-                      :disabled="item.status === 'inactive'"
-                      @click="removeItem(item)"
+                      @click.stop="removeItem(item)"
                     >
                       <i class="fa-solid fa-trash me-1"></i>
-                      Ngung
+                      Xóa
                     </button>
+                    <span v-else class="admin-badge admin-badge--danger">Đã xóa</span>
                   </div>
                 </td>
               </tr>
@@ -799,7 +936,7 @@ onMounted(loadPageData);
       <div class="admin-modal admin-modal--wide">
         <div class="admin-modal__header">
           <div class="admin-modal__title">
-            {{ itemModalMode === "create" ? "Them hang kho" : "Cap nhat hang kho" }}
+            {{ itemModalMode === "create" ? "Thêm hàng kho" : "Cập nhật hàng kho" }}
           </div>
           <button
             type="button"
@@ -813,23 +950,50 @@ onMounted(loadPageData);
         <form class="admin-form inventory-form" @submit.prevent="submitItemForm">
           <div class="admin-modal__body">
             <div class="admin-form__row">
-              <label class="admin-form__label">Ma hang *</label>
-              <input v-model="itemForm.itemCode" class="admin-form__control" />
+              <label class="admin-form__label">Mã hàng *</label>
+              <div>
+                <input
+                  v-model="itemForm.itemCode"
+                  class="admin-form__control"
+                  :class="{ 'is-invalid': itemErrors.itemCode }"
+                />
+                <div v-if="itemErrors.itemCode" class="admin-form__error">
+                  {{ itemErrors.itemCode }}
+                </div>
+              </div>
             </div>
 
             <div class="admin-form__row">
-              <label class="admin-form__label">Ten hang *</label>
-              <input v-model="itemForm.itemName" class="admin-form__control" />
+              <label class="admin-form__label">Tên hàng *</label>
+              <div>
+                <input
+                  v-model="itemForm.itemName"
+                  class="admin-form__control"
+                  :class="{ 'is-invalid': itemErrors.itemName }"
+                />
+                <div v-if="itemErrors.itemName" class="admin-form__error">
+                  {{ itemErrors.itemName }}
+                </div>
+              </div>
             </div>
 
             <div class="admin-form__row">
-              <label class="admin-form__label">Loai hang</label>
+              <label class="admin-form__label">Loại hàng</label>
               <input v-model="itemForm.itemType" class="admin-form__control" />
             </div>
 
             <div class="admin-form__row">
-              <label class="admin-form__label">Don vi *</label>
-              <input v-model="itemForm.unit" class="admin-form__control" />
+              <label class="admin-form__label">Đơn vị *</label>
+              <div>
+                <input
+                  v-model="itemForm.unit"
+                  class="admin-form__control"
+                  :class="{ 'is-invalid': itemErrors.unit }"
+                />
+                <div v-if="itemErrors.unit" class="admin-form__error">
+                  {{ itemErrors.unit }}
+                </div>
+              </div>
             </div>
 
             <div class="admin-form__row">
@@ -888,7 +1052,7 @@ onMounted(loadPageData);
             </div>
 
             <div class="admin-form__row">
-              <label class="admin-form__label">Bao quan</label>
+              <label class="admin-form__label">Bảo quản</label>
               <textarea
                 v-model="itemForm.storageInstruction"
                 class="admin-form__textarea"
@@ -897,25 +1061,29 @@ onMounted(loadPageData);
             </div>
 
             <div class="admin-form__row">
-              <label class="admin-form__label">Han SD thang</label>
+              <label class="admin-form__label">Hạn SD theo tháng</label>
               <input
                 v-model="itemForm.expiryMonths"
                 type="number"
                 min="0"
                 class="admin-form__control"
+                :class="{ 'is-invalid': itemErrors.expiryMonths }"
               />
+              <div v-if="itemErrors.expiryMonths" class="admin-form__error">
+                {{ itemErrors.expiryMonths }}
+              </div>
             </div>
 
             <div class="admin-form__row">
-              <label class="admin-form__label">Trang thai</label>
+              <label class="admin-form__label">Trạng thái</label>
               <select v-model="itemForm.status" class="admin-form__select">
-                <option value="active">Dang hoat dong</option>
-                <option value="inactive">Ngung hoat dong</option>
+                <option value="active">Đang hoạt động</option>
+                <option value="inactive">Ngừng hoạt động</option>
               </select>
             </div>
 
             <div class="admin-form__row">
-              <label class="admin-form__label">Ghi chu</label>
+              <label class="admin-form__label">Ghi chú</label>
               <textarea
                 v-model="itemForm.note"
                 class="admin-form__textarea"
@@ -930,14 +1098,14 @@ onMounted(loadPageData);
               class="admin-btn admin-btn--secondary"
               @click="closeItemModal"
             >
-              Quay lai
+              Quay lại
             </button>
             <button
               type="submit"
               class="admin-btn admin-btn--primary"
               :disabled="saving"
             >
-              {{ saving ? "Dang luu..." : "Luu hang kho" }}
+              {{ saving ? "Đang lưu..." : "Lưu hàng kho" }}
             </button>
           </div>
         </form>
@@ -951,7 +1119,7 @@ onMounted(loadPageData);
     >
       <div class="admin-modal admin-modal--wide">
         <div class="admin-modal__header">
-          <div class="admin-modal__title">Dua hang kho len website</div>
+          <div class="admin-modal__title">Đưa hàng kho lên website</div>
           <button
             type="button"
             class="admin-btn admin-btn--secondary"
@@ -965,41 +1133,79 @@ onMounted(loadPageData);
           <div class="admin-modal__body">
             <div class="inventory-source-box">
               <div>
-                <span>Hang kho</span>
+                <span>Hàng kho</span>
                 <strong>{{ selectedItem?.itemName || "---" }}</strong>
               </div>
               <div>
-                <span>Ma hang</span>
+                <span>Mã hàng</span>
                 <strong>{{ selectedItem?.itemCode || "---" }}</strong>
               </div>
               <div>
-                <span>Don vi</span>
+                <span>Đơn vị</span>
                 <strong>{{ selectedItem?.unit || "---" }}</strong>
               </div>
             </div>
 
+            <div v-if="createdProduct" class="inventory-product-created">
+              <div>
+                <strong>Đã tạo sản phẩm từ hàng kho.</strong>
+                <span>
+                  {{ createdProduct.name || createdProduct.productCode || "Sản phẩm mới" }}
+                </span>
+              </div>
+              <button
+                type="button"
+                class="admin-btn admin-btn--success"
+                @click="goToProducts"
+              >
+                Xem sản phẩm
+              </button>
+            </div>
+
             <div class="admin-form__row">
-              <label class="admin-form__label">Ten san pham</label>
-              <input v-model="productForm.name" class="admin-form__control" />
+              <label class="admin-form__label">Tên sản phẩm</label>
+              <div>
+                <input
+                  v-model="productForm.name"
+                  class="admin-form__control"
+                  :class="{ 'is-invalid': productErrors.name }"
+                />
+                <div v-if="productErrors.name" class="admin-form__error">
+                  {{ productErrors.name }}
+                </div>
+              </div>
             </div>
 
             <div class="admin-form__row">
               <label class="admin-form__label">Slug</label>
-              <input v-model="productForm.slug" class="admin-form__control" />
+              <div>
+                <input
+                  v-model="productForm.slug"
+                  class="admin-form__control"
+                  :class="{ 'is-invalid': productErrors.slug }"
+                />
+                <div v-if="productErrors.slug" class="admin-form__error">
+                  {{ productErrors.slug }}
+                </div>
+              </div>
             </div>
 
             <div class="admin-form__row">
-              <label class="admin-form__label">Gia ban</label>
+              <label class="admin-form__label">Giá bán</label>
               <input
                 v-model="productForm.sellingPrice"
                 type="number"
                 min="0"
                 class="admin-form__control"
+                :class="{ 'is-invalid': productErrors.sellingPrice }"
               />
+              <div v-if="productErrors.sellingPrice" class="admin-form__error">
+                {{ productErrors.sellingPrice }}
+              </div>
             </div>
 
             <div class="admin-form__row">
-              <label class="admin-form__label">Anh dai dien</label>
+              <label class="admin-form__label">Ảnh đại diện</label>
               <div class="inventory-upload-block">
                 <input
                   ref="productThumbnailInputRef"
@@ -1008,6 +1214,9 @@ onMounted(loadPageData);
                   class="admin-form__control"
                   @change="onProductThumbnailChange"
                 />
+                <div v-if="productErrors.thumbnail" class="admin-form__error">
+                  {{ productErrors.thumbnail }}
+                </div>
 
                 <div
                   v-if="productThumbnailFile"
@@ -1025,14 +1234,14 @@ onMounted(loadPageData);
                     class="admin-btn admin-btn--danger"
                     @click="clearProductThumbnail"
                   >
-                    Xoa anh
+                    Xóa ảnh
                   </button>
                 </div>
               </div>
             </div>
 
             <div class="admin-form__row">
-              <label class="admin-form__label">Anh chi tiet</label>
+              <label class="admin-form__label">Ảnh chi tiết</label>
               <div class="inventory-upload-block">
                 <input
                   ref="productImagesInputRef"
@@ -1042,6 +1251,9 @@ onMounted(loadPageData);
                   class="admin-form__control"
                   @change="onProductImagesChange"
                 />
+                <div v-if="productErrors.images" class="admin-form__error">
+                  {{ productErrors.images }}
+                </div>
 
                 <div
                   v-if="productImagePreviews.length"
@@ -1064,7 +1276,7 @@ onMounted(loadPageData);
                       class="admin-btn admin-btn--danger"
                       @click="removeProductImage(index)"
                     >
-                      Xoa
+                      Xóa
                     </button>
                   </div>
                 </div>
@@ -1075,21 +1287,21 @@ onMounted(loadPageData);
                   class="admin-btn admin-btn--secondary"
                   @click="clearProductImages"
                 >
-                  Xoa tat ca anh chi tiet
+                  Xóa tất cả ảnh chi tiết
                 </button>
               </div>
             </div>
 
             <div class="admin-form__row">
-              <label class="admin-form__label">Trang thai</label>
+              <label class="admin-form__label">Trạng thái</label>
               <select v-model="productForm.status" class="admin-form__select">
-                <option value="draft">Draft</option>
-                <option value="active">Active</option>
+                <option value="draft">Nháp</option>
+                <option value="active">Đang hoạt động</option>
               </select>
             </div>
 
             <div class="admin-form__row">
-              <label class="admin-form__label">Mo ta ngan</label>
+              <label class="admin-form__label">Mô tả ngắn</label>
               <textarea
                 v-model="productForm.shortDescription"
                 class="admin-form__textarea"
@@ -1098,7 +1310,7 @@ onMounted(loadPageData);
             </div>
 
             <div class="admin-form__row">
-              <label class="admin-form__label">Mo ta</label>
+              <label class="admin-form__label">Mô tả</label>
               <textarea
                 v-model="productForm.description"
                 class="admin-form__textarea"
@@ -1113,14 +1325,22 @@ onMounted(loadPageData);
               class="admin-btn admin-btn--secondary"
               @click="closeProductModal"
             >
-              Quay lai
+              Quay lại
+            </button>
+            <button
+              v-if="createdProduct"
+              type="button"
+              class="admin-btn admin-btn--success"
+              @click="goToProducts"
+            >
+              Xem sản phẩm
             </button>
             <button
               type="submit"
               class="admin-btn admin-btn--primary"
-              :disabled="productSaving"
+              :disabled="productSaving || Boolean(createdProduct)"
             >
-              {{ productSaving ? "Dang tao..." : "Tao san pham" }}
+              {{ productSaving ? "Đang tạo..." : "Tạo sản phẩm" }}
             </button>
           </div>
         </form>
@@ -1178,6 +1398,29 @@ onMounted(loadPageData);
 .inventory-source-box strong {
   color: #23364d;
   font-size: 14px;
+}
+
+.inventory-product-created {
+  align-items: center;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+  color: #166534;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  padding: 12px;
+}
+
+.inventory-product-created div {
+  display: grid;
+  gap: 4px;
+}
+
+.inventory-product-created span {
+  font-size: 13px;
 }
 
 .inventory-upload-block {

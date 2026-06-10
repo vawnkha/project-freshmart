@@ -124,6 +124,6 @@ async function handleResetPassword() {
 </template>
 <style>
 #breadcrumb {
-  background: url(../../img/bg-breadcrumb.jpg) no-repeat scroll 0 0 !important;
+  background: url("/img/bg-breadcrumb.jpg") no-repeat scroll 0 0 !important;
 }
 </style>

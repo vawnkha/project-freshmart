@@ -9,12 +9,8 @@ export const useAdminNotificationStore = defineStore("adminNotification", {
     loading: false,
     initialized: false,
     socketHandler: null,
-    pagination: {
-      page: 1,
-      limit: 12,
-      totalItems: 0,
-      totalPages: 1,
-    },
+    currentPage: 1,
+    pageSize: 12,
     filters: {
       keyword: "",
       type: "",
@@ -29,31 +25,22 @@ export const useAdminNotificationStore = defineStore("adminNotification", {
       try {
         this.loading = true;
 
-        const page = custom.page ?? this.pagination.page;
-        const limit = custom.limit ?? this.pagination.limit;
         const keyword = custom.keyword ?? this.filters.keyword;
         const type = custom.type ?? this.filters.type;
         const is_read = custom.is_read ?? this.filters.is_read;
 
         const res = await notificationService.getAll({
-          page,
-          limit,
           keyword,
           type,
           is_read,
         });
 
-        this.items = (res?.items || []).map((item) => ({
+        const list = res?.items || res?.data || (Array.isArray(res) ? res : []);
+        this.items = list.map((item) => ({
           ...item,
           id: item._id,
         }));
-
-        this.pagination = {
-          page: res?.pagination?.page || 1,
-          limit: res?.pagination?.limit || 10,
-          totalItems: res?.pagination?.totalItems || 0,
-          totalPages: res?.pagination?.totalPages || 1,
-        };
+        this.currentPage = custom.keepPage ? this.currentPage : 1;
 
         this.filters = {
           keyword,
@@ -122,22 +109,11 @@ export const useAdminNotificationStore = defineStore("adminNotification", {
             .toLowerCase()
             .includes(keyword);
 
-        if (
-          this.pagination.page === 1 &&
-          stillMatchesType &&
-          stillMatchesRead &&
-          stillMatchesKeyword
-        ) {
+        if (stillMatchesType && stillMatchesRead && stillMatchesKeyword) {
           this.items.unshift(item);
-          if (this.items.length > this.pagination.limit) {
-            this.items.pop();
-          }
         }
 
         this.unreadCount += 1;
-        this.pagination.totalItems += 1;
-        this.pagination.totalPages =
-          Math.ceil(this.pagination.totalItems / this.pagination.limit) || 1;
 
         this.pushToast(item);
       };
@@ -163,18 +139,20 @@ export const useAdminNotificationStore = defineStore("adminNotification", {
       }
     },
 
-    toggleSelectAllCurrentPage() {
-      const currentIds = this.items.map((item) => item._id || item.id);
-      const allSelected = currentIds.every((id) =>
+    toggleSelectAllCurrentPage(currentIds = null) {
+      const ids = Array.isArray(currentIds)
+        ? currentIds
+        : this.items.map((item) => item._id || item.id);
+      const allSelected = ids.every((id) =>
         this.selectedIds.includes(id),
       );
 
       if (allSelected) {
         this.selectedIds = this.selectedIds.filter(
-          (id) => !currentIds.includes(id),
+          (id) => !ids.includes(id),
         );
       } else {
-        this.selectedIds = [...new Set([...this.selectedIds, ...currentIds])];
+        this.selectedIds = [...new Set([...this.selectedIds, ...ids])];
       }
     },
 
@@ -219,9 +197,6 @@ export const useAdminNotificationStore = defineStore("adminNotification", {
         this.unreadCount = Math.max(0, this.unreadCount - 1);
       }
 
-      this.pagination.totalItems = Math.max(0, this.pagination.totalItems - 1);
-      this.pagination.totalPages =
-        Math.ceil(this.pagination.totalItems / this.pagination.limit) || 1;
     },
 
     async removeSelected() {
@@ -240,13 +215,6 @@ export const useAdminNotificationStore = defineStore("adminNotification", {
       );
 
       this.unreadCount = Math.max(0, this.unreadCount - removedUnreadCount);
-      this.pagination.totalItems = Math.max(
-        0,
-        this.pagination.totalItems - this.selectedIds.length,
-      );
-      this.pagination.totalPages =
-        Math.ceil(this.pagination.totalItems / this.pagination.limit) || 1;
-
       this.selectedIds = [];
     },
 
@@ -257,7 +225,7 @@ export const useAdminNotificationStore = defineStore("adminNotification", {
         is_read: this.filters.is_read,
       });
 
-      await this.fetchNotifications({ page: 1 });
+      await this.fetchNotifications();
       await this.fetchUnreadCount();
     },
   },

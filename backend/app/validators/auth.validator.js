@@ -1,3 +1,6 @@
+const { z } = require("zod");
+const { emailSchema, nonEmptyString } = require("./common.validator");
+
 function hasValue(value) {
   return value !== undefined && value !== null && String(value).trim() !== "";
 }
@@ -39,6 +42,10 @@ function validateResetPassword(req) {
 }
 
 module.exports = {
+  loginBodySchema: z.object({
+    email: emailSchema,
+    password: nonEmptyString,
+  }),
   validateLogin,
   validateChangePassword,
   validateForgotPassword,

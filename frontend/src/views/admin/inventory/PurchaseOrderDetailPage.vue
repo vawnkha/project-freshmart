@@ -22,6 +22,26 @@ const importedRows = computed(() => {
   return Array.isArray(rows) ? rows : [];
 });
 
+const purchaseItems = computed(() => {
+  const items = purchaseOrder.value?.items || [];
+  return Array.isArray(items) ? items : [];
+});
+
+const firstInventoryItemId = computed(() => {
+  const fromImportedRows = importedRows.value
+    .map((row) => normalizeId(row.summary?.inventoryItemId || row.batch?.inventoryItemId))
+    .find(Boolean);
+  if (fromImportedRows) return fromImportedRows;
+
+  return purchaseItems.value
+    .map((item) => normalizeId(item.inventoryItemId))
+    .find(Boolean) || "";
+});
+
+const canShowInventoryShortcuts = computed(
+  () => purchaseOrder.value?.status === "imported" || importedRows.value.length > 0,
+);
+
 function normalizeList(res) {
   return Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
 }
@@ -47,10 +67,17 @@ function formatDate(value) {
 }
 
 function statusText(status) {
-  if (status === "draft") return "Nhap nhap";
-  if (status === "imported") return "Da nhap kho";
-  if (status === "cancelled") return "Da huy";
+  if (status === "draft") return "Nháp";
+  if (status === "imported") return "Đã nhập kho";
+  if (status === "cancelled") return "Đã hủy";
   return status || "---";
+}
+
+function goToInventoryRoute(name) {
+  const query = firstInventoryItemId.value
+    ? { inventoryItemId: firstInventoryItemId.value }
+    : {};
+  router.push({ name, query });
 }
 
 function statusClass(status) {
@@ -72,40 +99,40 @@ async function fetchData() {
     suppliers.value = normalizeList(supplierRes);
   } catch (error) {
     console.error(error);
-    alert(error?.response?.data?.message || "Khong the tai chi tiet phieu nhap");
+    alert(error?.response?.data?.message || "Không thể tải chi tiết phiếu nhập");
   } finally {
     loading.value = false;
   }
 }
 
 async function confirmImport() {
-  if (!window.confirm("Xac nhan nhap kho phieu nay?")) return;
+  if (!window.confirm("Xác nhận nhập kho phiếu này?")) return;
 
   actionLoading.value = true;
   try {
     const res = await purchaseOrderService.confirmImport(route.params.id);
     importResult.value = res?.data || null;
     purchaseOrder.value = importResult.value?.purchaseOrder || purchaseOrder.value;
-    alert(res?.message || "Nhap kho thanh cong");
+    alert(res?.message || "Nhập kho thành công");
   } catch (error) {
     console.error(error);
-    alert(error?.response?.data?.message || "Khong the nhap kho");
+    alert(error?.response?.data?.message || "Không thể nhập kho");
   } finally {
     actionLoading.value = false;
   }
 }
 
 async function cancelOrder() {
-  if (!window.confirm("Huy phieu nhap nay?")) return;
+  if (!window.confirm("Hủy phiếu nhập này?")) return;
 
   actionLoading.value = true;
   try {
     const res = await purchaseOrderService.cancel(route.params.id);
     purchaseOrder.value = res?.data || purchaseOrder.value;
-    alert(res?.message || "Huy phieu nhap thanh cong");
+    alert(res?.message || "Hủy phiếu nhập thành công");
   } catch (error) {
     console.error(error);
-    alert(error?.response?.data?.message || "Khong the huy phieu nhap");
+    alert(error?.response?.data?.message || "Không thể hủy phiếu nhập");
   } finally {
     actionLoading.value = false;
   }
@@ -147,7 +174,7 @@ onMounted(fetchData);
               :disabled="actionLoading"
               @click="confirmImport"
             >
-              {{ actionLoading ? "Đang nhập..." : "Confirm import" }}
+              {{ actionLoading ? "Đang nhập..." : "Xác nhận nhập kho" }}
             </button>
             <button
               v-if="purchaseOrder.status === 'draft'"
@@ -156,6 +183,27 @@ onMounted(fetchData);
               @click="cancelOrder"
             >
               Hủy phiếu
+            </button>
+            <button
+              v-if="canShowInventoryShortcuts"
+              class="admin-btn admin-btn--primary"
+              @click="goToInventoryRoute('admin-inventory-batches')"
+            >
+              Xem lô hàng
+            </button>
+            <button
+              v-if="canShowInventoryShortcuts"
+              class="admin-btn admin-btn--secondary"
+              @click="goToInventoryRoute('admin-inventory-summaries')"
+            >
+              Xem tồn kho
+            </button>
+            <button
+              v-if="canShowInventoryShortcuts"
+              class="admin-btn admin-btn--secondary"
+              @click="goToInventoryRoute('admin-inventory-transactions')"
+            >
+              Xem giao dịch kho
             </button>
           </div>
         </div>
@@ -179,7 +227,7 @@ onMounted(fetchData);
             </div>
             <div class="purchase-order-detail-card">
               <span>Tổng dòng</span>
-              <strong>{{ purchaseOrder.items?.length || 0 }}</strong>
+              <strong>{{ purchaseItems.length }}</strong>
             </div>
             <div class="purchase-order-detail-card">
               <span>Tổng tiền</span>
@@ -212,7 +260,7 @@ onMounted(fetchData);
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(item, index) in purchaseOrder.items || []" :key="item._id || index">
+                <tr v-for="(item, index) in purchaseItems" :key="item._id || index">
                   <td>{{ index + 1 }}</td>
                   <td>
                     <strong>{{ item.itemCode }}</strong>

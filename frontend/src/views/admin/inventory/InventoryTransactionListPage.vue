@@ -2,11 +2,14 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import inventoryTransactionService from "@/services/inventory-transaction.service";
+import inventoryItemService from "@/services/inventory-item.service";
 import AdminPagination from "@/components/common/AdminPagination.vue";
 
 const route = useRoute();
 const transactions = ref([]);
+const inventoryItems = ref([]);
 const loading = ref(false);
+const itemLoading = ref(false);
 const currentPage = ref(1);
 const pageSize = ref(12);
 
@@ -88,9 +91,9 @@ function formatDate(value) {
 }
 
 function typeText(type) {
-  if (type === "import") return "Import";
-  if (type === "export") return "Export";
-  if (type === "cancel") return "Cancel";
+  if (type === "import") return "Nhập kho";
+  if (type === "export") return "Xuất kho";
+  if (type === "cancel") return "Hoàn kho";
   return type || "---";
 }
 
@@ -111,6 +114,17 @@ function formatReference(reference) {
   return [type, code, id].filter(Boolean).join(" / ");
 }
 
+function itemOptionLabel(item) {
+  return [item.itemCode, item.itemName].filter(Boolean).join(" - ") || getId(item);
+}
+
+function selectedInventoryItemLabel() {
+  const item = inventoryItems.value.find(
+    (entry) => getId(entry) === filters.inventoryItemId,
+  );
+  return item ? itemOptionLabel(item) : filters.inventoryItemId;
+}
+
 function syncQueryFilter() {
   const itemId = route.query.inventoryItemId;
   filters.inventoryItemId = typeof itemId === "string" ? itemId : "";
@@ -123,9 +137,22 @@ async function fetchTransactions() {
     transactions.value = normalizeList(res);
   } catch (error) {
     console.error(error);
-    alert(error?.response?.data?.message || "Khong the tai giao dich kho");
+    alert(error?.response?.data?.message || "Không thể tải giao dịch kho");
   } finally {
     loading.value = false;
+  }
+}
+
+async function fetchInventoryItems() {
+  itemLoading.value = true;
+  try {
+    const res = await inventoryItemService.getAll();
+    inventoryItems.value = normalizeList(res);
+  } catch (error) {
+    console.error(error);
+    inventoryItems.value = [];
+  } finally {
+    itemLoading.value = false;
   }
 }
 
@@ -150,31 +177,34 @@ watch(filteredTransactions, (list) => {
   if (currentPage.value > maxPage) currentPage.value = maxPage;
 });
 
-onMounted(fetchTransactions);
+onMounted(() => {
+  fetchTransactions();
+  fetchInventoryItems();
+});
 </script>
 
 <template>
   <div class="admin-page">
     <div class="admin-page-title admin-page-title--stack">
-      <h1>Giao dich kho</h1>
-      <p>Theo doi import, export va cancel transaction cua inventory.</p>
+      <h1>Giao dịch kho</h1>
+      <p>Theo dõi nhập kho, xuất kho và hoàn kho của inventory.</p>
     </div>
 
     <div class="admin-stat-row admin-stat-row--orders">
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Tong giao dich</div>
+        <div class="admin-stat-card__label">Tổng giao dịch</div>
         <div class="admin-stat-card__value">{{ filteredTransactions.length }}</div>
       </div>
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Import</div>
+        <div class="admin-stat-card__label">Nhập kho</div>
         <div class="admin-stat-card__value">{{ importQuantity }}</div>
       </div>
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Export</div>
+        <div class="admin-stat-card__label">Xuất kho</div>
         <div class="admin-stat-card__value">{{ exportQuantity }}</div>
       </div>
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Cancel</div>
+        <div class="admin-stat-card__label">Hoàn kho</div>
         <div class="admin-stat-card__value">{{ cancelQuantity }}</div>
       </div>
     </div>
@@ -182,13 +212,13 @@ onMounted(fetchTransactions);
     <section class="admin-panel">
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
-          <div class="admin-panel__header-title">Lich su giao dich</div>
+          <div class="admin-panel__header-title">Lịch sử giao dịch</div>
           <div class="admin-panel__header-subtitle">
-            Transaction type gom import/export/cancel, khong dung variant.
+            Transaction type gồm import/export/cancel, không dùng variant.
           </div>
         </div>
         <button class="admin-btn admin-btn--secondary" @click="fetchTransactions">
-          Lam moi
+          Làm mới
         </button>
       </div>
 
@@ -199,48 +229,56 @@ onMounted(fetchTransactions);
               v-model="filters.keyword"
               type="text"
               class="admin-toolbar__input"
-              placeholder="Tim ma hang, ten hang, batch, reference"
+              placeholder="Tìm mã hàng, tên hàng, batch, reference"
             />
           </div>
           <div class="col-md-3">
             <select v-model="filters.type" class="admin-toolbar__select">
-              <option value="">Tat ca loai</option>
-              <option value="import">Import</option>
-              <option value="export">Export</option>
-              <option value="cancel">Cancel</option>
+              <option value="">Tất cả loại</option>
+              <option value="import">Nhập kho</option>
+              <option value="export">Xuất kho</option>
+              <option value="cancel">Hoàn kho</option>
             </select>
           </div>
           <div class="col-md-4">
-            <input
+            <select
               v-model="filters.inventoryItemId"
-              type="text"
-              class="admin-toolbar__input"
-              placeholder="Loc theo inventoryItemId"
-            />
+              class="admin-toolbar__select"
+              :disabled="itemLoading"
+            >
+              <option value="">Tất cả hàng kho</option>
+              <option
+                v-for="item in inventoryItems"
+                :key="getId(item)"
+                :value="getId(item)"
+              >
+                {{ itemOptionLabel(item) }}
+              </option>
+            </select>
           </div>
         </div>
 
         <div v-if="filters.inventoryItemId" class="inventory-filter-chip">
-          Dang loc inventoryItemId: <strong>{{ filters.inventoryItemId }}</strong>
+          Đang lọc hàng kho: <strong>{{ selectedInventoryItemLabel() }}</strong>
         </div>
 
-        <div v-if="loading" class="admin-empty-state">Dang tai giao dich kho...</div>
+        <div v-if="loading" class="admin-empty-state">Đang tải giao dịch kho...</div>
         <div v-else-if="!filteredTransactions.length" class="admin-empty-state">
-          Chua co giao dich phu hop
+          Chưa có giao dịch phù hợp
         </div>
 
         <div v-else class="table-responsive">
           <table class="admin-table admin-table--orders">
             <thead>
               <tr>
-                <th>Loai</th>
-                <th>Hang kho</th>
-                <th>So luong</th>
-                <th>Ton truoc/sau</th>
+                <th>Loại</th>
+                <th>Hàng kho</th>
+                <th>Số lượng</th>
+                <th>Tồn trước/sau</th>
                 <th>Batch</th>
                 <th>Reference</th>
-                <th>Ghi chu</th>
-                <th>Ngay tao</th>
+                <th>Ghi chú</th>
+                <th>Ngày tạo</th>
               </tr>
             </thead>
             <tbody>

@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { computed, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useCartStore } from "@/stores/user/cart";
@@ -83,17 +83,14 @@ async function fetchProductDetail() {
     }
 
     if (data.category_id) {
-      const related = await productService.getByCategory(data.category_id, {
-        page: 1,
-        limit: 8,
-      });
+      const related = await productService.getByCategory(data.category_id);
 
       let list = related.data || [];
 
       list = list.filter((item) => String(item._id) !== String(data._id));
 
       if (list.length < 8) {
-        const fallback = await productService.getAll({ page: 1, limit: 8 });
+        const fallback = await productService.getAll();
 
         list = [
           ...list,
@@ -105,7 +102,7 @@ async function fetchProductDetail() {
         ];
       }
 
-      relatedProducts.value = list;
+      relatedProducts.value = list.slice(0, 8);
     }
   } catch (error) {
     alert(error.message);
@@ -130,12 +127,12 @@ function decreaseQty() {
 
 async function addCurrentProductToCart() {
   if (!authStore.userId) {
-    alert("Vui lòng đăng nhập để thêm vào giỏ hàng");
+    alert("Vui lÃ²ng Ä‘Äƒng nháº­p Ä‘á»ƒ thÃªm vÃ o giá» hÃ ng");
     return;
   }
 
   if (!product.value || Number(product.value.stock || 0) <= 0) {
-    alert("Sản phẩm đã hết hàng");
+    alert("Sáº£n pháº©m Ä‘Ã£ háº¿t hÃ ng");
     return;
   }
 
@@ -145,7 +142,7 @@ async function addCurrentProductToCart() {
       product.value._id,
       quantity.value,
     );
-    alert("Đã thêm sản phẩm vào giỏ hàng");
+    alert("ÄÃ£ thÃªm sáº£n pháº©m vÃ o giá» hÃ ng");
   } catch (error) {
     alert(error.message);
   }
@@ -153,7 +150,7 @@ async function addCurrentProductToCart() {
 
 async function toggleWishlist() {
   if (!authStore.userId) {
-    alert("Vui lòng đăng nhập để thêm vào yêu thích");
+    alert("Vui lÃ²ng Ä‘Äƒng nháº­p Ä‘á»ƒ thÃªm vÃ o yÃªu thÃ­ch");
     return;
   }
 
@@ -170,17 +167,17 @@ async function toggleWishlist() {
 
 async function submitReview() {
   if (!authStore.userId) {
-    alert("Vui lòng đăng nhập để đánh giá");
+    alert("Vui lÃ²ng Ä‘Äƒng nháº­p Ä‘á»ƒ Ä‘Ã¡nh giÃ¡");
     return;
   }
 
   if (!canReview.value) {
-    alert(canReviewMessage.value || "Bạn chưa thể đánh giá sản phẩm này");
+    alert(canReviewMessage.value || "Báº¡n chÆ°a thá»ƒ Ä‘Ã¡nh giÃ¡ sáº£n pháº©m nÃ y");
     return;
   }
 
   if (!reviewForm.comment.trim()) {
-    alert("Vui lòng nhập nội dung đánh giá");
+    alert("Vui lÃ²ng nháº­p ná»™i dung Ä‘Ã¡nh giÃ¡");
     return;
   }
 
@@ -196,7 +193,7 @@ async function submitReview() {
     reviewForm.comment = "";
     activeTab.value = "review";
     await fetchProductDetail();
-    alert("Đánh giá sản phẩm thành công");
+    alert("ÄÃ¡nh giÃ¡ sáº£n pháº©m thÃ nh cÃ´ng");
   } catch (error) {
     alert(error.message);
   }
@@ -208,7 +205,7 @@ function setReviewRating(star) {
 
 async function addToCart(productId) {
   if (!authStore.userId) {
-    alert("Vui lòng đăng nhập");
+    alert("Vui lÃ²ng Ä‘Äƒng nháº­p");
     return;
   }
 
@@ -216,7 +213,7 @@ async function addToCart(productId) {
 }
 
 async function toggleWishlistItem(productId) {
-  if (!authStore.userId) return alert("Vui lòng đăng nhập");
+  if (!authStore.userId) return alert("Vui lÃ²ng Ä‘Äƒng nháº­p");
 
   try {
     const res = await wishlistStore.toggleWishlist(authStore.userId, productId);
@@ -250,8 +247,8 @@ function printPage() {
           <h2 class="title">{{ product.name }}</h2>
 
           <ul class="breadcrumb">
-            <li><router-link to="/">Trang Chủ</router-link></li>
-            <li><router-link to="/products">Sản Phẩm</router-link></li>
+            <li><router-link to="/">Trang Chá»§</router-link></li>
+            <li><router-link to="/products">Sáº£n Pháº©m</router-link></li>
             <li>
               <span>{{ product.name }}</span>
             </li>
@@ -313,25 +310,25 @@ function printPage() {
                   <div class="product-info">
                     <div class="product-price">
                       <span class="sale-price"
-                        >{{ Number(product.price).toLocaleString("vi-VN") }} đ /
+                        >{{ Number(product.price).toLocaleString("vi-VN") }} Ä‘ /
                         {{ product.unit }}</span
                       >
                     </div>
 
                     <div class="product-stock">
-                      <span class="availability">Tình Trạng :</span
+                      <span class="availability">TÃ¬nh Tráº¡ng :</span
                       ><i class="fa fa-check-square-o" aria-hidden="true"></i>
-                      {{ product.stock > 0 ? "Còn Hàng" : "Hết Hàng" }}
+                      {{ product.stock > 0 ? "CÃ²n HÃ ng" : "Háº¿t HÃ ng" }}
                     </div>
 
                     <div class="product-short-description">
                       {{ product.description }}
                     </div>
 
-                    <div class="product-variants border-bottom">
-                      <div class="product-variants-item"></div>
+                    <div class="product-info-options border-bottom">
+                      <div class="product-info-options-item"></div>
 
-                      <div class="product-variants-item"></div>
+                      <div class="product-info-options-item"></div>
                     </div>
 
                     <div class="product-add-to-cart border-bottom">
@@ -364,7 +361,7 @@ function printPage() {
                             class="fa fa-shopping-basket"
                             aria-hidden="true"
                           ></i>
-                          <span>Thêm giỏ hàng</span>
+                          <span>ThÃªm giá» hÃ ng</span>
                         </a>
                         <a
                           class="add-wishlist"
@@ -384,13 +381,13 @@ function printPage() {
                       <div class="item">
                         <a href="#" @click.prevent
                           ><i class="zmdi zmdi-share" aria-hidden="true"></i
-                          ><span class="text">Chia sẻ</span></a
+                          ><span class="text">Chia sáº»</span></a
                         >
                       </div>
                       <div class="item">
                         <a href="#" @click.prevent
                           ><i class="zmdi zmdi-email" aria-hidden="true"></i
-                          ><span class="text">Gửi cho bạn bè</span></a
+                          ><span class="text">Gá»­i cho báº¡n bÃ¨</span></a
                         >
                       </div>
                       <div class="item">
@@ -404,7 +401,7 @@ function printPage() {
                     <div class="product-review border-bottom">
                       <div class="item">
                         <div class="product-quantity">
-                          <span class="control-label">Đánh Giá:</span>
+                          <span class="control-label">ÄÃ¡nh GiÃ¡:</span>
                           <div class="product-rating">
                             <div
                               v-for="star in 5"
@@ -424,7 +421,7 @@ function printPage() {
                         <a href="#" @click.prevent="activeTab = 'review'"
                           ><i class="zmdi zmdi-comments" aria-hidden="true"></i
                           ><span class="text"
-                            >Đọc Đánh Giá ({{ reviews.length }})</span
+                            >Äá»c ÄÃ¡nh GiÃ¡ ({{ reviews.length }})</span
                           ></a
                         >
                       </div>
@@ -432,7 +429,7 @@ function printPage() {
                       <div class="item">
                         <a href="#" @click.prevent="activeTab = 'review'"
                           ><i class="zmdi zmdi-edit" aria-hidden="true"></i
-                          ><span class="text">Viết Đánh Giá</span></a
+                          ><span class="text">Viáº¿t ÄÃ¡nh GiÃ¡</span></a
                         >
                       </div>
                     </div>
@@ -443,7 +440,7 @@ function printPage() {
                           ><span class="control-label">E-02154</span> -->
                       </div>
                       <div class="item">
-                        <span class="control-label">Danh Mục :</span>
+                        <span class="control-label">Danh Má»¥c :</span>
                         <a href="#">{{ product.category_name }}</a>
                       </div>
                       <div class="item">
@@ -463,10 +460,10 @@ function printPage() {
                         src="/img/home2-payment-1.png"
                         alt="Payment Intro"
                       />
-                      <h3 class="title">Miễn phí vận chuyển</h3>
+                      <h3 class="title">Miá»…n phÃ­ váº­n chuyá»ƒn</h3>
                       <div class="content">
-                        Sản phẩm chất lượng cao với dịch vụ giao hàng nhanh
-                        chóng và uy tín trên toàn quốc.
+                        Sáº£n pháº©m cháº¥t lÆ°á»£ng cao vá»›i dá»‹ch vá»¥ giao hÃ ng nhanh
+                        chÃ³ng vÃ  uy tÃ­n trÃªn toÃ n quá»‘c.
                       </div>
                     </div>
                     <div class="item">
@@ -475,10 +472,10 @@ function printPage() {
                         src="/img/home2-payment-2.png"
                         alt="Payment Intro"
                       />
-                      <h3 class="title">Thanh toán bảo mật</h3>
+                      <h3 class="title">Thanh toÃ¡n báº£o máº­t</h3>
                       <div class="content">
-                        Cam kết bảo mật thông tin thanh toán và đa dạng các
-                        phương thức trả tiền an toàn.
+                        Cam káº¿t báº£o máº­t thÃ´ng tin thanh toÃ¡n vÃ  Ä‘a dáº¡ng cÃ¡c
+                        phÆ°Æ¡ng thá»©c tráº£ tiá»n an toÃ n.
                       </div>
                     </div>
                     <div class="item">
@@ -487,10 +484,10 @@ function printPage() {
                         src="/img/home2-payment-3.png"
                         alt="Payment Intro"
                       />
-                      <h3 class="title">Hoàn tiền 100%</h3>
+                      <h3 class="title">HoÃ n tiá»n 100%</h3>
                       <div class="content">
-                        Cam kết hoàn trả chi phí nếu sản phẩm không đúng mô tả
-                        hoặc gặp lỗi từ nhà sản xuất.
+                        Cam káº¿t hoÃ n tráº£ chi phÃ­ náº¿u sáº£n pháº©m khÃ´ng Ä‘Ãºng mÃ´ táº£
+                        hoáº·c gáº·p lá»—i tá»« nhÃ  sáº£n xuáº¥t.
                       </div>
                     </div>
                   </div>
@@ -503,13 +500,13 @@ function printPage() {
                   <ul>
                     <li :class="{ active: activeTab === 'description' }">
                       <a href="#" @click.prevent="activeTab = 'description'">
-                        <span>Mô Tả</span>
+                        <span>MÃ´ Táº£</span>
                       </a>
                     </li>
 
                     <li :class="{ active: activeTab === 'review' }">
                       <a href="#" @click.prevent="activeTab = 'review'">
-                        <span>Đánh Giá</span>
+                        <span>ÄÃ¡nh GiÃ¡</span>
                       </a>
                     </li>
                   </ul>
@@ -538,7 +535,7 @@ function printPage() {
                   >
                     <div class="reviews">
                       <div v-if="reviews.length === 0" class="text-center py-3">
-                        Chưa có đánh giá nào cho sản phẩm này
+                        ChÆ°a cÃ³ Ä‘Ã¡nh giÃ¡ nÃ o cho sáº£n pháº©m nÃ y
                       </div>
                       <div
                         v-else
@@ -570,7 +567,7 @@ function printPage() {
                           <div class="comment-body">
                             <div class="comment-meta">
                               <span class="author">{{
-                                comment.author || "Người dùng"
+                                comment.author || "NgÆ°á»i dÃ¹ng"
                               }}</span>
                               -
                               <span class="time">{{ comment.time }}</span>
@@ -589,7 +586,7 @@ function printPage() {
                         {{ canReviewMessage }}
                       </div>
                       <div v-else class="review-form">
-                        <h4 class="title">Viết Đánh Giá</h4>
+                        <h4 class="title">Viáº¿t ÄÃ¡nh GiÃ¡</h4>
 
                         <form
                           @submit.prevent="submitReview"
@@ -598,7 +595,7 @@ function printPage() {
                           class="form-validate"
                         >
                           <div class="form-group">
-                            <div class="text">Đánh Giá</div>
+                            <div class="text">ÄÃ¡nh GiÃ¡</div>
                             <div class="product-rating">
                               <div
                                 v-for="star in 5"
@@ -612,7 +609,7 @@ function printPage() {
                           </div>
                           <div class="form-group">
                             <div class="text">
-                              Nội Dung<sup class="required">*</sup>
+                              Ná»™i Dung<sup class="required">*</sup>
                             </div>
                             <textarea
                               v-model="reviewForm.comment"
@@ -630,7 +627,7 @@ function printPage() {
                               class="btn btn-primary"
                               :disabled="!canReview"
                             >
-                              Gửi Đánh Giá
+                              Gá»­i ÄÃ¡nh GiÃ¡
                             </button>
                           </div>
                         </form>
@@ -646,7 +643,7 @@ function printPage() {
         <!-- Related Products -->
         <div class="products-block related-products item-4">
           <div class="block-title">
-            <h2 class="title"><span>Sản Phẩm</span> Tương Tự</h2>
+            <h2 class="title"><span>Sáº£n Pháº©m</span> TÆ°Æ¡ng Tá»±</h2>
           </div>
 
           <div v-if="relatedProducts.length" class="block-content">
@@ -692,7 +689,7 @@ function printPage() {
 
                   <div class="product-price">
                     <span class="sale-price"
-                      >{{ Number(item.price).toLocaleString("vi-VN") }} đ</span
+                      >{{ Number(item.price).toLocaleString("vi-VN") }} Ä‘</span
                     >
                   </div>
 
@@ -741,13 +738,13 @@ function printPage() {
           <h2 class="title"></h2>
 
           <ul class="breadcrumb">
-            <li><router-link to="/">Trang Chủ</router-link></li>
-            <li><router-link to="/products">Sản Phẩm</router-link></li>
+            <li><router-link to="/">Trang Chá»§</router-link></li>
+            <li><router-link to="/products">Sáº£n Pháº©m</router-link></li>
           </ul>
         </div>
       </div>
       <div class="container text-center">
-        <h2>Không tìm thấy sản phẩm</h2>
+        <h2>KhÃ´ng tÃ¬m tháº¥y sáº£n pháº©m</h2>
       </div>
     </div>
   </div>

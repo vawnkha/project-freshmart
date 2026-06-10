@@ -1,7 +1,11 @@
 <script setup>
 import { reactive, ref, onMounted } from "vue";
+import { useForm } from "vee-validate";
+import { toTypedSchema } from "@vee-validate/zod";
 import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "@/stores/user/auth";
+import { emailSchema, passwordSchema, z } from "@/validators/common.validator";
+import { mapBackendValidationErrors } from "@/utils/validation-error.util";
 
 const router = useRouter();
 const route = useRoute();
@@ -10,6 +14,17 @@ const authStore = useAuthStore();
 const loginForm = reactive({
   email: "",
   password: "",
+});
+
+const loginSchema = toTypedSchema(
+  z.object({
+    email: emailSchema,
+    password: passwordSchema,
+  }),
+);
+
+const { errors, setErrors, setValues, validate } = useForm({
+  validationSchema: loginSchema,
 });
 
 const loading = ref(false);
@@ -29,11 +44,9 @@ onMounted(() => {
 async function handleLogin() {
   errorMessage.value = "";
   successMessage.value = "";
-
-  if (!loginForm.email || !loginForm.password) {
-    errorMessage.value = "Vui lòng nhập đầy đủ email và mật khẩu";
-    return;
-  }
+  setValues({ ...loginForm });
+  const result = await validate();
+  if (!result.valid) return;
 
   try {
     loading.value = true;
@@ -45,6 +58,7 @@ async function handleLogin() {
 
     router.push("/");
   } catch (error) {
+    setErrors(mapBackendValidationErrors(error));
     errorMessage.value = error?.response?.data?.message || "Đăng nhập thất bại";
   } finally {
     loading.value = false;
@@ -75,7 +89,13 @@ async function handleLogin() {
           <form @submit.prevent="handleLogin">
             <div class="form-group">
               <label>Email</label>
-              <input v-model="loginForm.email" type="email" name="email" />
+              <input
+                v-model="loginForm.email"
+                type="email"
+                name="email"
+                :class="{ 'is-invalid': errors.email }"
+              />
+              <div v-if="errors.email" class="form-error">{{ errors.email }}</div>
             </div>
 
             <div class="form-group">
@@ -84,7 +104,9 @@ async function handleLogin() {
                 v-model="loginForm.password"
                 type="password"
                 name="password"
+                :class="{ 'is-invalid': errors.password }"
               />
+              <div v-if="errors.password" class="form-error">{{ errors.password }}</div>
             </div>
 
             <div v-if="successMessage" class="alert alert-success">

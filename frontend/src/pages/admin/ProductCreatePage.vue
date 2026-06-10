@@ -1,8 +1,19 @@
 <script setup>
 import { onMounted, reactive, ref } from "vue";
+import { useForm } from "vee-validate";
+import { toTypedSchema } from "@vee-validate/zod";
 import { useRouter } from "vue-router";
 import categoryService from "@/services/category.service";
 import productService from "@/services/product.service";
+import {
+  imageFileSchema,
+  nonNegativeNumberSchema,
+  objectIdSchema,
+  optionalString,
+  requiredString,
+  z,
+} from "@/validators/common.validator";
+import { mapBackendValidationErrors } from "@/utils/validation-error.util";
 
 const router = useRouter();
 const categories = ref([]);
@@ -19,6 +30,30 @@ const form = reactive({
   unit: "",
   thumbnail: null,
   images: [],
+});
+
+const productCreateSchema = toTypedSchema(
+  z.object({
+    name: requiredString("Ten san pham la bat buoc"),
+    category_id: objectIdSchema,
+    description: optionalString,
+    price: nonNegativeNumberSchema,
+    stock: nonNegativeNumberSchema,
+    unit: optionalString,
+    thumbnail: imageFileSchema.refine((file) => Boolean(file), {
+      message: "Anh dai dien la bat buoc",
+    }),
+    images: z.array(imageFileSchema).max(4, "Anh chi tiet toi da 4 file"),
+  }),
+);
+
+const {
+  errors,
+  setErrors,
+  setValues,
+  validate: validateVee,
+} = useForm({
+  validationSchema: productCreateSchema,
 });
 
 async function fetchCategories() {
@@ -38,7 +73,19 @@ function onImagesChange(event) {
   imagePreviews.value = files.map((file) => URL.createObjectURL(file));
 }
 
+async function validateForm() {
+  setValues({
+    ...form,
+    images: [...form.images],
+  });
+  const result = await validateVee();
+  return result.valid;
+}
+
 async function submitForm() {
+  const valid = await validateForm();
+  if (!valid) return;
+
   loading.value = true;
   try {
     const data = new FormData();
@@ -61,6 +108,7 @@ async function submitForm() {
     router.push({ name: "admin-products" });
   } catch (error) {
     console.error("Lỗi thêm sản phẩm:", error);
+    setErrors(mapBackendValidationErrors(error));
     alert(error?.response?.data?.message || "Thêm sản phẩm thất bại");
   } finally {
     loading.value = false;
@@ -81,15 +129,25 @@ onMounted(fetchCategories);
         <form class="admin-form" @submit.prevent="submitForm">
           <div class="admin-form__row">
             <label class="admin-form__label">Tên sản phẩm *</label>
-            <input v-model="form.name" class="admin-form__control" required />
+            <div>
+              <input
+                v-model="form.name"
+                class="admin-form__control"
+                :class="{ 'is-invalid': errors.name }"
+              />
+              <div v-if="errors.name" class="admin-form__error">
+                {{ errors.name }}
+              </div>
+            </div>
           </div>
 
           <div class="admin-form__row">
             <label class="admin-form__label">Danh mục *</label>
+            <div>
             <select
               v-model="form.category_id"
               class="admin-form__select"
-              required
+              :class="{ 'is-invalid': errors.category_id }"
             >
               <option value="">Chọn danh mục</option>
               <option
@@ -100,6 +158,10 @@ onMounted(fetchCategories);
                 {{ item.name }}
               </option>
             </select>
+              <div v-if="errors.category_id" class="admin-form__error">
+                {{ errors.category_id }}
+              </div>
+            </div>
           </div>
 
           <div class="admin-form__row">
@@ -117,8 +179,11 @@ onMounted(fetchCategories);
               type="number"
               min="0"
               class="admin-form__control"
-              required
+              :class="{ 'is-invalid': errors.price }"
             />
+            <div v-if="errors.price" class="admin-form__error">
+              {{ errors.price }}
+            </div>
           </div>
 
           <div class="admin-form__row">
@@ -128,8 +193,11 @@ onMounted(fetchCategories);
               type="number"
               min="0"
               class="admin-form__control"
-              required
+              :class="{ 'is-invalid': errors.stock }"
             />
+            <div v-if="errors.stock" class="admin-form__error">
+              {{ errors.stock }}
+            </div>
           </div>
 
           <div class="admin-form__row">
@@ -141,6 +209,9 @@ onMounted(fetchCategories);
             <label class="admin-form__label">Ảnh đại diện</label>
             <div>
               <input type="file" accept="image/*" @change="onThumbnailChange" />
+              <div v-if="errors.thumbnail" class="admin-form__error">
+                {{ errors.thumbnail }}
+              </div>
               <div v-if="thumbnailPreview" style="margin-top: 10px">
                 <img
                   :src="thumbnailPreview"
@@ -164,6 +235,9 @@ onMounted(fetchCategories);
                 accept="image/*"
                 @change="onImagesChange"
               />
+              <div v-if="errors.images" class="admin-form__error">
+                {{ errors.images }}
+              </div>
               <div
                 style="
                   display: flex;

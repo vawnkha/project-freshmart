@@ -575,6 +575,13 @@ a:hover {
   cursor: pointer;
 }
 
+.admin-btn:disabled,
+.admin-btn[disabled] {
+  cursor: not-allowed;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
 .admin-btn--primary {
   background: #0d6efd;
 }
@@ -682,6 +689,25 @@ a:hover {
 
 .admin-form__control[type="file"] {
   overflow: hidden;
+}
+
+.admin-form__control.is-invalid,
+.admin-form__textarea.is-invalid,
+.admin-form__select.is-invalid,
+.is-invalid {
+  border-color: var(--admin-danger) !important;
+}
+
+.admin-form__error,
+.form-error {
+  color: var(--admin-danger);
+  font-size: 12px;
+  line-height: 1.35;
+  margin-top: 6px;
+}
+
+.admin-form__row > :not(.admin-form__label) {
+  grid-column: 2;
 }
 
 .admin-form__actions {
@@ -1097,8 +1123,28 @@ a:hover {
   gap: 6px;
 }
 
+.admin-action-stack--row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .admin-action-stack .admin-btn {
   min-width: 110px;
+}
+
+.admin-table__actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-table__actions .admin-btn {
+  min-width: 72px;
+  white-space: nowrap;
 }
 
 .admin-detail-grid,

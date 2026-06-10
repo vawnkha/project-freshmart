@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive } from "vue";
+import { computed, onMounted, reactive, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useAdminNotificationStore } from "@/stores/admin/notification";
 import AdminPagination from "@/components/common/AdminPagination.vue";
@@ -24,8 +24,10 @@ function iconByType(type) {
   return "fa-bell";
 }
 
-const notifications = computed(() => notificationStore.items);
-const pagination = computed(() => notificationStore.pagination);
+const notifications = computed(() => {
+  const start = (notificationStore.currentPage - 1) * notificationStore.pageSize;
+  return notificationStore.items.slice(start, start + notificationStore.pageSize);
+});
 const selectedIds = computed(() => notificationStore.selectedIds);
 
 const isAllCurrentPageSelected = computed(() => {
@@ -35,24 +37,23 @@ const isAllCurrentPageSelected = computed(() => {
   );
 });
 
-async function fetchPage(page = 1) {
+function changePage(page = 1) {
+  notificationStore.currentPage = page;
+}
+
+async function applyFilters() {
   await notificationStore.fetchNotifications({
-    page,
     keyword: filters.keyword,
     type: filters.type,
     is_read: filters.is_read,
   });
 }
 
-async function applyFilters() {
-  await fetchPage(1);
-}
-
 async function resetFilters() {
   filters.keyword = "";
   filters.type = "";
   filters.is_read = "";
-  await fetchPage(1);
+  await applyFilters();
 }
 
 function toggleSelect(id) {
@@ -60,7 +61,8 @@ function toggleSelect(id) {
 }
 
 function toggleSelectAll() {
-  notificationStore.toggleSelectAllCurrentPage();
+  const ids = notifications.value.map((item) => item._id || item.id);
+  notificationStore.toggleSelectAllCurrentPage(ids);
 }
 
 async function handleClick(item) {
@@ -78,13 +80,11 @@ async function handleClick(item) {
 
 async function removeNotification(item) {
   await notificationStore.removeOne(item._id || item.id);
-  await fetchPage(pagination.value.page);
 }
 
 async function removeSelected() {
   if (!selectedIds.value.length) return;
   await notificationStore.removeSelected();
-  await fetchPage(pagination.value.page);
 }
 
 async function removeAllFiltered() {
@@ -93,8 +93,17 @@ async function removeAllFiltered() {
 
 async function markAllAsRead() {
   await notificationStore.markAllAsRead();
-  await fetchPage(pagination.value.page);
 }
+
+watch(
+  () => notificationStore.items.length,
+  (count) => {
+    const maxPage = Math.max(1, Math.ceil(count / notificationStore.pageSize));
+    if (notificationStore.currentPage > maxPage) {
+      notificationStore.currentPage = maxPage;
+    }
+  },
+);
 
 onMounted(async () => {
   await notificationStore.loadInitialData();
@@ -251,11 +260,11 @@ onMounted(async () => {
         </div>
 
         <AdminPagination
-          v-model="notificationStore.pagination.page"
-          :total-items="pagination.totalItems"
-          :page-size="pagination.limit"
+          v-model="notificationStore.currentPage"
+          :total-items="notificationStore.items.length"
+          :page-size="notificationStore.pageSize"
           :max-visible="5"
-          @change="fetchPage"
+          @change="changePage"
         />
       </div>
     </section>

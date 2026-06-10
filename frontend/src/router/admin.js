@@ -113,6 +113,50 @@ const adminRoutes = [
         component: () => import("@/views/admin/catalog/SupplierListPage.vue"),
         meta: { requiredPermission: "supplier:manage" },
       },
+      {
+        path: "shipping-methods",
+        name: "admin-shipping-methods",
+        component: () =>
+          import("@/views/admin/shipping/ShippingMethodListPage.vue"),
+        meta: { requiredPermission: "shipping-method:manage" },
+      },
+      {
+        path: "discounts",
+        name: "admin-discounts",
+        component: () => import("@/views/admin/marketing/DiscountListPage.vue"),
+        meta: { requiredPermission: "discount:manage" },
+      },
+      {
+        path: "news-categories",
+        name: "admin-news-categories",
+        component: () =>
+          import("@/views/admin/content/NewsCategoryListPage.vue"),
+        meta: { requiredPermission: "news:manage" },
+      },
+      {
+        path: "news",
+        name: "admin-news",
+        component: () => import("@/views/admin/content/NewsListPage.vue"),
+        meta: { requiredPermission: "news:manage" },
+      },
+      {
+        path: "news/create",
+        name: "admin-news-create",
+        component: () => import("@/views/admin/content/NewsCreatePage.vue"),
+        meta: { requiredPermission: "news:manage" },
+      },
+      {
+        path: "news/:id/edit",
+        name: "admin-news-edit",
+        component: () => import("@/views/admin/content/NewsEditPage.vue"),
+        meta: { requiredPermission: "news:manage" },
+      },
+      {
+        path: "banners",
+        name: "admin-banners",
+        component: () => import("@/views/admin/content/BannerListPage.vue"),
+        meta: { requiredPermission: "banner:manage" },
+      },
 
       {
         path: "orders",

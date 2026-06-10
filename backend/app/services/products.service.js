@@ -663,7 +663,9 @@ class ProductsService {
     const inventoryContext =
       payload.inventoryItemId !== undefined
         ? await this.resolveInventoryLink(payload.inventoryItemId, id)
-        : {};
+        : current.inventoryItemId
+          ? await this.resolveInventoryLink(current.inventoryItemId, id)
+          : {};
     const update = this.extractUpdateData(payload, {
       ...inventoryContext,
       current,

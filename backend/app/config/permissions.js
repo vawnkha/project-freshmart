@@ -281,6 +281,7 @@ const MANAGER_PERMISSION_KEYS = [
   "category:manage",
   "inventory:manage",
   "purchase-order:manage",
+  "shipping-method:manage",
   "order:read:any",
   "order:update",
   "contact:read",

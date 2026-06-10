@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useAuthStore } from "@/stores/user/auth";
 import { useCartStore } from "@/stores/user/cart";
+import { z } from "@/validators/common.validator";
 
 const authStore = useAuthStore();
 const cartStore = useCartStore();
@@ -10,11 +11,17 @@ const cartStore = useCartStore();
 const { items, cartTotal, loading } = storeToRefs(cartStore);
 const pageLoading = ref(false);
 const actionLoadingMap = ref({});
+const quantityErrorMap = ref({});
 
-const shippingFee = computed(() => (items.value.length ? 0 : 0));
-const grandTotal = computed(
-  () => Number(cartTotal.value || 0) + shippingFee.value,
+const cartQuantitySchema = z.preprocess(
+  (value) => Number(value),
+  z
+    .number({ message: "So luong phai la so" })
+    .int("So luong phai la so nguyen")
+    .positive("So luong phai lon hon 0"),
 );
+
+const grandTotal = computed(() => Number(cartTotal.value || 0));
 
 function isBusy(productId) {
   return !!actionLoadingMap.value[productId];
@@ -25,6 +32,23 @@ function setBusy(productId, value) {
     ...actionLoadingMap.value,
     [productId]: value,
   };
+}
+
+function setQuantityError(productId, message = "") {
+  quantityErrorMap.value = {
+    ...quantityErrorMap.value,
+    [productId]: message,
+  };
+}
+
+function validateCartQuantity(productId, value) {
+  const result = cartQuantitySchema.safeParse(value);
+  if (!result.success) {
+    setQuantityError(productId, result.error.issues?.[0]?.message || "So luong khong hop le");
+    return null;
+  }
+  setQuantityError(productId, "");
+  return result.data;
 }
 
 async function fetchCartData() {
@@ -54,6 +78,7 @@ async function increaseItemQty(item) {
   if (!authStore.userId || isBusy(item.product_id)) return;
 
   const nextQty = Number(item.quantity || 0) + 1;
+  if (validateCartQuantity(item.product_id, nextQty) === null) return;
   const maxStock = Number(item.stock || 0);
 
   if (nextQty > maxStock) {
@@ -75,6 +100,7 @@ async function decreaseItemQty(item) {
 
   const nextQty = Number(item.quantity || 0) - 1;
   if (nextQty < 1) return;
+  if (validateCartQuantity(item.product_id, nextQty) === null) return;
 
   setBusy(item.product_id, true);
   try {
@@ -92,8 +118,8 @@ async function handleQuantityInput(item, event) {
   const rawValue = Number(event.target.value);
   const maxStock = Number(item.stock || 0);
 
-  let nextQty = Number.isFinite(rawValue) ? rawValue : 1;
-  if (nextQty < 1) nextQty = 1;
+  let nextQty = validateCartQuantity(item.product_id, rawValue);
+  if (nextQty === null) return;
   if (maxStock > 0 && nextQty > maxStock) nextQty = maxStock;
 
   if (nextQty === Number(item.quantity)) return;
@@ -263,6 +289,9 @@ async function handleClearCart() {
                           >
                         </span>
                       </div>
+                      <div v-if="quantityErrorMap[item.product_id]" class="form-error">
+                        {{ quantityErrorMap[item.product_id] }}
+                      </div>
                     </div>
                   </div>
                 </td>
@@ -286,7 +315,7 @@ async function handleClearCart() {
               <tr class="cart-total">
                 <td colspan="2" class="text-right">Phí vận chuyển</td>
                 <td colspan="1" class="text-center">
-                  {{ Number(shippingFee).toLocaleString("vi-VN") }} đ
+                  Chọn ở bước thanh toán
                 </td>
               </tr>
               <tr class="cart-total">

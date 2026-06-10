@@ -34,20 +34,13 @@ async function fetchCategories() {
 async function fetchProductsByCategory() {
   try {
     if (activeCategory.value === "all") {
-      const productRes = await productService.getAll({
-        page: 1,
-        limit: 20,
-      });
-      products.value = productRes.data || [];
+      const productRes = await productService.getAll();
+      products.value = (productRes.data || []).slice(0, 20);
     } else {
       const productRes = await productService.getByCategory(
         activeCategory.value,
-        {
-          page: 1,
-          limit: 20,
-        },
       );
-      products.value = productRes.data || [];
+      products.value = (productRes.data || []).slice(0, 20);
     }
   } catch (error) {
     console.error(error.message);

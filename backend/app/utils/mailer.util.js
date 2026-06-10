@@ -158,9 +158,9 @@ async function sendInvoiceEmail({ to, customerName, order }) {
       </table>
 
       <div style="margin-top:16px;padding:12px;background:#eefaf7;border:1px solid #cdeee4;">
-        <p><strong>Tiền hàng:</strong> ${Number(order.total_price || 0).toLocaleString("vi-VN")} VND</p>
+        <p><strong>Tiền hàng:</strong> ${Number(order.subtotal_price ?? order.total_price ?? 0).toLocaleString("vi-VN")} VND</p>
         <p><strong>Phí vận chuyển:</strong> ${Number(order.shipping_fee || 0).toLocaleString("vi-VN")} VND</p>
-        <p style="font-size:18px;"><strong>Tổng thanh toán:</strong> ${Number((order.total_price || 0) + (order.shipping_fee || 0)).toLocaleString("vi-VN")} VND</p>
+        <p style="font-size:18px;"><strong>Tổng thanh toán:</strong> ${Number(order.total_price ?? (Number(order.subtotal_price || 0) + Number(order.shipping_fee || 0))).toLocaleString("vi-VN")} VND</p>
       </div>
 
       <p style="margin-top:20px;">Trân trọng,<br><strong>Fresh Mart</strong></p>

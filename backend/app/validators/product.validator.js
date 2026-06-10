@@ -1,3 +1,115 @@
+const { z } = require("zod");
+const {
+  idParamSchema,
+  nonEmptyString,
+  nonNegativeNumberSchema,
+  objectIdSchema,
+  optionalNonNegativeNumberSchema,
+  optionalObjectIdSchema,
+  optionalSlugSchema,
+  optionalString,
+} = require("./common.validator");
+
+const productStatusSchema = z.enum(
+  ["draft", "active", "inactive", "out_of_stock", "out_stock", "in_stock"],
+  { message: "status khong hop le" },
+);
+
+const inventoryProductStatusSchema = z.enum(["draft", "active", "inactive"], {
+  message: "status khong hop le",
+});
+
+const imagesSchema = z.preprocess((value) => {
+  if (value === undefined || value === null || value === "") return undefined;
+  return Array.isArray(value) ? value : [value];
+}, z.array(z.string()).optional());
+
+const productQuerySchema = z.object({
+  q: optionalString,
+  name: optionalString,
+  search: optionalString,
+  keyword: optionalString,
+  category_id: optionalObjectIdSchema,
+  category_slug: optionalString,
+  status: productStatusSchema.optional(),
+});
+
+const productCategoryParamSchema = z.object({
+  categoryId: objectIdSchema,
+});
+
+const productCreateSchema = z
+  .object({
+    name: nonEmptyString,
+    slug: optionalSlugSchema,
+    inventoryItemId: optionalObjectIdSchema,
+    productCode: optionalString,
+    sellingPrice: optionalNonNegativeNumberSchema,
+    price: optionalNonNegativeNumberSchema,
+    comparePrice: optionalNonNegativeNumberSchema,
+    stock: optionalNonNegativeNumberSchema,
+    category_id: optionalObjectIdSchema,
+    unit: optionalString,
+    thumbnail: optionalString,
+    images: imagesSchema,
+    description: optionalString,
+    shortDescription: optionalString,
+    status: productStatusSchema.optional(),
+  })
+  .passthrough()
+  .superRefine((value, ctx) => {
+    if (!value.category_id && !value.inventoryItemId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["category_id"],
+        message: "category_id hoac inventoryItemId la bat buoc",
+      });
+    }
+  });
+
+const productUpdateSchema = z
+  .object({
+    name: nonEmptyString.optional(),
+    slug: optionalSlugSchema,
+    inventoryItemId: optionalObjectIdSchema,
+    productCode: optionalString,
+    sellingPrice: optionalNonNegativeNumberSchema,
+    price: optionalNonNegativeNumberSchema,
+    comparePrice: optionalNonNegativeNumberSchema,
+    stock: optionalNonNegativeNumberSchema,
+    category_id: optionalObjectIdSchema,
+    unit: optionalString,
+    thumbnail: optionalString,
+    images: imagesSchema,
+    description: optionalString,
+    shortDescription: optionalString,
+    status: productStatusSchema.optional(),
+  })
+  .passthrough()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "Du lieu de cap nhat khong duoc de trong",
+  });
+
+const createProductFromInventoryParamSchema = z.object({
+  inventoryItemId: objectIdSchema,
+});
+
+const createProductFromInventorySchema = z
+  .object({
+    name: optionalString,
+    slug: optionalSlugSchema,
+    productCode: optionalString,
+    sellingPrice: optionalNonNegativeNumberSchema,
+    price: optionalNonNegativeNumberSchema,
+    comparePrice: optionalNonNegativeNumberSchema,
+    thumbnail: optionalString,
+    images: imagesSchema,
+    shortDescription: optionalString,
+    description: optionalString,
+    status: inventoryProductStatusSchema.optional(),
+  })
+  .passthrough();
+
 function hasValue(value) {
   return value !== undefined && value !== null && String(value).trim() !== "";
 }
@@ -50,6 +162,13 @@ function validateCreateFromInventory(body = {}) {
 }
 
 module.exports = {
+  createProductFromInventoryParamSchema,
+  createProductFromInventorySchema,
+  productCategoryParamSchema,
+  productCreateSchema,
+  productIdParamSchema: idParamSchema,
+  productQuerySchema,
+  productUpdateSchema,
   validateCreateProduct,
   validateUpdateProduct,
   validateProductCreateData,

@@ -1,5 +1,6 @@
 const { ObjectId } = require("mongodb");
 const InventoryService = require("./inventory.service");
+const DiscountService = require("./discount.service");
 
 function toObjectId(id) {
   if (id instanceof ObjectId) return id;
@@ -34,9 +35,13 @@ class OrdersService {
     this.Product = db.collection("products");
     this.Address = db.collection("addresses");
     this.Payment = db.collection("payments");
+    this.ShippingMethod = db.collection("shipping_methods");
+    this.Discount = db.collection("discounts");
+    this.UserDiscount = db.collection("user_discounts");
     this.InventoryItem = db.collection("inventory_items");
     this.InventorySummary = db.collection("inventory_summaries");
     this.inventoryService = new InventoryService(client);
+    this.discountService = new DiscountService(client);
   }
 
   timelineItem(status, note = "") {
@@ -73,6 +78,8 @@ class OrdersService {
     return {
       product_id: item.product_id,
       productId: item.productId || item.product_id,
+      category_id: item.category_id || item.categoryId,
+      categoryId: item.categoryId || item.category_id,
       inventoryItemId: item.inventoryItemId,
       name: item.name,
       productName: item.productName || item.name,
@@ -111,6 +118,19 @@ class OrdersService {
       payment_method: this.mapPaymentMethod(doc.payment?.method),
       payment_status: doc.payment?.status || "pending",
 
+      subtotal_price: Number(doc.subtotal_price || doc.total_price || 0),
+      shipping_fee: Number(doc.shipping_fee || 0),
+      shipping_method_id: doc.shipping_method_id || null,
+      shipping_method: doc.shipping_method || null,
+      shipping: doc.shipping || null,
+      discount: doc.discount || null,
+      discount_amount: Number(doc.discount_amount || doc.pricing?.discount_amount || 0),
+      pricing: doc.pricing || {
+        subtotal: Number(doc.subtotal_price || doc.total_price || 0),
+        shipping_fee: Number(doc.shipping_fee || 0),
+        discount_amount: Number(doc.discount_amount || 0),
+        total: Number(doc.total_price || 0),
+      },
       total_price: Number(doc.total_price || 0),
 
       created_at: doc.created_at,
@@ -139,6 +159,132 @@ class OrdersService {
   isLegacyCompatibleStatus(product) {
     if (!product.status) return true;
     return ["active", "in_stock"].includes(product.status);
+  }
+
+  async resolveShippingMethod(shippingMethodId) {
+    const sid = toObjectId(shippingMethodId);
+    if (!sid) return { error: "shippingMethodId khong hop le" };
+
+    const method = await this.ShippingMethod.findOne({
+      _id: sid,
+      status: "active",
+    });
+
+    if (!method) {
+      return { error: "Phuong thuc van chuyen khong hop le hoac da ngung" };
+    }
+
+    return {
+      method,
+      snapshot: {
+        _id: method._id,
+        name: method.name || "",
+        code: method.code || "",
+        fee: Number(method.fee || 0),
+        estimatedDays: Number(method.estimatedDays || 0),
+      },
+    };
+  }
+
+  buildDiscountCartItems(items = []) {
+    return items.map((item) => ({
+      productId: item.productId || item.product_id,
+      product_id: item.product_id || item.productId,
+      categoryId: item.categoryId || item.category_id,
+      category_id: item.category_id || item.categoryId,
+      price: item.price,
+      quantity: item.quantity,
+      subtotal: item.subtotal || item.totalPrice,
+      totalPrice: item.totalPrice || item.subtotal,
+    }));
+  }
+
+  buildDiscountSnapshot(validationResult) {
+    if (!validationResult?.valid || !validationResult.discount) return null;
+    const discount = validationResult.discount;
+    return {
+      discount_id: discount._id,
+      code: discount.code,
+      name: discount.name || "",
+      scope: discount.scope,
+      type: discount.type,
+      value: Number(discount.value || 0),
+      discount_amount: Number(validationResult.discountAmount || 0),
+    };
+  }
+
+  async resolveDiscount({ discountCode, subtotal, items }) {
+    if (!discountCode || !String(discountCode).trim()) {
+      return {
+        discount: null,
+        discount_amount: 0,
+        validation: null,
+      };
+    }
+
+    const validation = await this.discountService.validateDiscount({
+      code: discountCode,
+      subtotal,
+      cartItems: this.buildDiscountCartItems(items),
+    });
+
+    if (!validation.valid) {
+      return { error: validation.message || "Ma giam gia khong hop le" };
+    }
+
+    return {
+      discount: this.buildDiscountSnapshot(validation),
+      discount_amount: Number(validation.discountAmount || 0),
+      validation,
+    };
+  }
+
+  async recordDiscountUsage(discount, userId, orderId, session) {
+    if (!discount?.discount_id) return;
+
+    const discountId = toObjectId(discount.discount_id);
+    if (!discountId) {
+      throw new Error("Ma giam gia khong hop le");
+    }
+
+    const usageResult = await this.Discount.updateOne(
+      {
+        _id: discountId,
+        status: "active",
+        $or: [
+          { quantity: { $exists: false } },
+          { quantity: { $lte: 0 } },
+          {
+            $expr: {
+              $lt: [
+                { $ifNull: ["$usedCount", 0] },
+                { $ifNull: ["$quantity", 0] },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        $inc: { usedCount: 1 },
+        $set: { updatedAt: new Date() },
+      },
+      { session },
+    );
+
+    if (usageResult.modifiedCount !== 1) {
+      throw new Error("Ma giam gia da het luot su dung");
+    }
+
+    await this.UserDiscount.insertOne(
+      {
+        userId,
+        discountId,
+        orderId,
+        code: discount.code,
+        usedAt: new Date(),
+      },
+      { session },
+    );
   }
 
   async findAll() {
@@ -239,7 +385,13 @@ class OrdersService {
     );
   }
 
-  async buildCheckoutPlan({ userId, addressId, allocateBatches = true }) {
+  async buildCheckoutPlan({
+    userId,
+    addressId,
+    shippingMethodId = null,
+    discountCode = "",
+    allocateBatches = true,
+  }) {
     const uid = toObjectId(userId);
     const aid = toObjectId(addressId);
 
@@ -308,6 +460,8 @@ class OrdersService {
         orderItems.push({
           product_id: product._id,
           productId: product._id,
+          category_id: product.category_id || product.categoryId,
+          categoryId: product.categoryId || product.category_id,
           inventoryItemId,
           name: product.name,
           productName: product.name,
@@ -349,6 +503,8 @@ class OrdersService {
       orderItems.push({
         product_id: product._id,
         productId: product._id,
+        category_id: product.category_id || product.categoryId,
+        categoryId: product.categoryId || product.category_id,
         name: product.name,
         productName: product.name,
         slug: product.slug,
@@ -365,6 +521,28 @@ class OrdersService {
       return { error: "Giỏ hàng không hợp lệ" };
     }
 
+    let shippingMethod = null;
+    let shippingSnapshot = null;
+    let shippingFee = 0;
+
+    if (shippingMethodId) {
+      const shippingResult = await this.resolveShippingMethod(shippingMethodId);
+      if (shippingResult.error) return { error: shippingResult.error };
+      shippingMethod = shippingResult.method;
+      shippingSnapshot = shippingResult.snapshot;
+      shippingFee = Number(shippingSnapshot.fee || 0);
+    }
+
+    const discountResult = await this.resolveDiscount({
+      discountCode,
+      subtotal: total,
+      items: orderItems,
+    });
+    if (discountResult.error) return { error: discountResult.error };
+
+    const discountAmount = Number(discountResult.discount_amount || 0);
+    const finalTotal = Math.max(0, total + shippingFee - discountAmount);
+
     return {
       ok: true,
       uid,
@@ -372,7 +550,20 @@ class OrdersService {
       cart,
       address,
       items: orderItems,
-      total_price: total,
+      subtotal_price: total,
+      shippingMethod,
+      shipping_method_id: shippingMethod?._id || null,
+      shipping_method: shippingSnapshot,
+      shipping_fee: shippingFee,
+      discount: discountResult.discount,
+      discount_amount: discountAmount,
+      total_price: finalTotal,
+      pricing: {
+        subtotal: total,
+        shipping_fee: shippingFee,
+        discount_amount: discountAmount,
+        total: finalTotal,
+      },
     };
   }
 
@@ -411,11 +602,19 @@ class OrdersService {
     }
   }
 
-  async createFromCart({ userId, addressId, payment_method }) {
+  async createFromCart({
+    userId,
+    addressId,
+    payment_method,
+    shippingMethodId,
+    discountCode,
+  }) {
     const method = payment_method || "cash";
     const plan = await this.buildCheckoutPlan({
       userId,
       addressId,
+      shippingMethodId,
+      discountCode,
       allocateBatches: true,
     });
 
@@ -426,6 +625,14 @@ class OrdersService {
       user_id: plan.uid,
       items: plan.items,
       address_id: plan.aid,
+      subtotal_price: plan.subtotal_price,
+      shipping_method_id: plan.shipping_method_id,
+      shipping_method: plan.shipping_method,
+      shipping: plan.shipping_method,
+      shipping_fee: plan.shipping_fee,
+      discount: plan.discount,
+      discount_amount: plan.discount_amount,
+      pricing: plan.pricing,
       total_price: plan.total_price,
       status: initialStatus,
       timeline: [this.timelineItem("pending", "Tạo đơn hàng")],
@@ -456,6 +663,13 @@ class OrdersService {
           plan.items,
           orderRs.insertedId,
           plan.uid,
+          session,
+        );
+
+        await this.recordDiscountUsage(
+          plan.discount,
+          plan.uid,
+          orderRs.insertedId,
           session,
         );
 
@@ -645,10 +859,12 @@ class OrdersService {
     return { ok: true, order: detail };
   }
 
-  async getCheckoutPreview({ userId, addressId }) {
+  async getCheckoutPreview({ userId, addressId, shippingMethodId, discountCode }) {
     const plan = await this.buildCheckoutPlan({
       userId,
       addressId,
+      shippingMethodId,
+      discountCode,
       allocateBatches: false,
     });
 
@@ -657,6 +873,13 @@ class OrdersService {
     return {
       ok: true,
       items: plan.items,
+      subtotal_price: plan.subtotal_price,
+      shipping_method_id: plan.shipping_method_id,
+      shipping_method: plan.shipping_method,
+      shipping_fee: plan.shipping_fee,
+      discount: plan.discount,
+      discount_amount: plan.discount_amount,
+      pricing: plan.pricing,
       total_price: plan.total_price,
       address: plan.address,
     };

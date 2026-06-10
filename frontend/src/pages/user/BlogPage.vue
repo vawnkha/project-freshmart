@@ -1,98 +1,139 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import BlogCard from "@/components/user/blog/BlogCard.vue";
 import BlogSidebar from "@/components/user/blog/BlogSidebar.vue";
+import newsService from "@/services/news.service";
+import newsCategoryService from "@/services/news-category.service";
 
+const posts = ref([]);
+const categories = ref([]);
+const loading = ref(false);
+const errorMessage = ref("");
+const keyword = ref("");
+const categoryFilter = ref("");
 const currentPage = ref(1);
 const perPage = 8;
 
-const posts = ref([
-  {
-    id: 1,
-    title: "5 Bữa tối nhanh gọn cho ngày trong tuần bận rộn",
-    slug: "5-bua-toi-nhanh-gon-cho-ngay-trong-tuan-ban-ron",
-    image: "/img/blog/blog-1.jpg",
-    date: "10 Tháng 5, 2026",
-    excerpt:
-      "Khám phá 5 ý tưởng bữa tối dễ làm và ngon miệng mà bạn có thể chuẩn bị nhanh chóng sau một ngày dài. Lựa chọn hoàn hảo cho các gia đình bận rộn và sinh viên.",
-  },
-  {
-    id: 2,
-    title: "Mẹo đơn giản để chọn mua rau củ tươi ngon",
-    slug: "meo-don-gian-de-chon-mua-rau-cu-tuoi-ngon",
-    image: "/img/blog/blog-2.jpg",
-    date: "12 Tháng 5, 2026",
-    excerpt:
-      "Học cách nhận biết rau củ tươi tại chợ và bí quyết bảo quản chúng ở trạng thái tốt nhất trong thời gian dài tại nhà.",
-  },
-  {
-    id: 3,
-    title: "Ý tưởng bữa sáng lành mạnh cho mỗi buổi sáng",
-    slug: "y-tuong-bua-sang-lanh-manh-cho-moi-buoi-sang",
-    image: "/img/blog/blog-3.jpg",
-    date: "15 Tháng 5, 2026",
-    excerpt:
-      "Bắt đầu ngày mới đúng cách với những ý tưởng bữa sáng đơn giản, tốt cho sức khỏe, thiết thực và phù hợp với nhịp sống hối hả.",
-  },
-  {
-    id: 4,
-    title: "Tại sao thực phẩm hữu cơ ngày càng được ưa chuộng",
-    slug: "tai-sao-thuc-pham-huu-co-ngay-cang-duoc-ua-chuong",
-    image: "/img/blog/blog-4.jpg",
-    date: "18 Tháng 5, 2026",
-    excerpt:
-      "Thực phẩm hữu cơ đang trở thành xu hướng mạnh mẽ. Hãy cùng tìm hiểu lý do đằng sau sự phổ biến này và ý nghĩa của nó đối với người tiêu dùng.",
-  },
-  {
-    id: 5,
-    title: "Cách bảo quản trái cây đúng cách tại nhà",
-    slug: "cach-bao-quan-trai-cay-dung-cach-tai-nha",
-    image: "/img/blog/blog-5.jpg",
-    date: "20 Tháng 5, 2026",
-    excerpt:
-      "Bảo quản đúng cách giúp trái cây tươi lâu hơn và giữ trọn hương vị. Dưới đây là những mẹo lưu trữ thực tế cho các loại quả phổ biến.",
-  },
-  {
-    id: 6,
-    title: "Top 7 thực phẩm giúp tăng cường hệ miễn dịch",
-    slug: "top-7-thuc-pham-giup-tang-cuong-he-mien-dich",
-    image: "/img/blog/blog-6.jpg",
-    date: "22 Tháng 5, 2026",
-    excerpt:
-      "Một chế độ ăn uống cân bằng có thể hỗ trợ hệ thống miễn dịch của bạn. Đây là 7 nhóm thực phẩm đáng để thêm vào thực đơn hàng ngày.",
-  },
-  {
-    id: 7,
-    title: "Lợi ích bất ngờ của việc uống đủ nước mỗi ngày",
-    slug: "loi-ich-bat-ngo-cua-viec-uong-du-nuoc-moi-ngay",
-    image: "/img/blog/blog-7.jpg",
-    date: "25 Tháng 5, 2026",
-    excerpt:
-      "Nước đóng vai trò quan trọng trong mọi hoạt động của cơ thể. Khám phá những lợi ích tuyệt vời mà thói quen uống đủ nước mang lại cho làn da và sức khỏe.",
-  },
-  {
-    id: 8,
-    title: "Nghệ thuật trang trí món ăn đẹp mắt như đầu bếp",
-    slug: "nghe-thuat-trang-tri-mon-an-dep-mat-nhu-dau-bep",
-    image: "/img/blog/blog-8.jpg",
-    date: "28 Tháng 5, 2026",
-    excerpt:
-      "Món ăn ngon cần đi đôi với trình bày đẹp. Tìm hiểu những quy tắc cơ bản về màu sắc và bố cục để nâng tầm bữa cơm gia đình bạn.",
-  },
-]);
+const categoryMap = computed(
+  () => new Map(categories.value.map((item) => [normalizeId(item._id), item])),
+);
 
-const totalPages = computed(() => Math.ceil(posts.value.length / perPage));
+const tags = computed(() => {
+  const seen = new Set();
+  return posts.value.reduce((result, post) => {
+    (post.tags || []).forEach((tag) => {
+      const text = String(tag || "").trim();
+      const key = text.toLowerCase();
+      if (!text || seen.has(key)) return;
+      seen.add(key);
+      result.push(text);
+    });
+    return result;
+  }, []);
+});
+
+const normalizedPosts = computed(() => posts.value.map(normalizePost));
+
+const filteredPosts = computed(() => {
+  const q = keyword.value.trim().toLowerCase();
+
+  return normalizedPosts.value.filter((post) => {
+    const matchKeyword =
+      !q ||
+      [post.title, post.summary, post.category, ...(post.tags || [])]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(q));
+    const matchCategory = !categoryFilter.value || post.categoryId === categoryFilter.value;
+    return matchKeyword && matchCategory;
+  });
+});
+
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(filteredPosts.value.length / perPage)),
+);
 
 const paginatedPosts = computed(() => {
   const start = (currentPage.value - 1) * perPage;
-  const end = start + perPage;
-  return posts.value.slice(start, end);
+  return filteredPosts.value.slice(start, start + perPage);
 });
+
+const recentPosts = computed(() => normalizedPosts.value.slice(0, 3));
+
+function normalizeList(res) {
+  if (Array.isArray(res?.data)) return res.data;
+  if (Array.isArray(res)) return res;
+  return [];
+}
+
+function normalizeId(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (value.$oid) return value.$oid;
+  return String(value);
+}
+
+function formatDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("vi-VN");
+}
+
+function getCategoryName(item) {
+  if (item.category?.name) return item.category.name;
+  if (item.categoryName) return item.categoryName;
+  return categoryMap.value.get(normalizeId(item.categoryId))?.name || "";
+}
+
+function normalizePost(item) {
+  return {
+    id: normalizeId(item._id || item.id),
+    slug: item.slug || normalizeId(item._id || item.id),
+    title: item.title || "Bài viết chưa có tiêu đề",
+    image: item.thumbnail || item.images?.[0] || "",
+    date: formatDate(item.publishedAt || item.createdAt),
+    excerpt: item.summary || "",
+    summary: item.summary || "",
+    category: getCategoryName(item),
+    categoryId: normalizeId(item.categoryId),
+    tags: Array.isArray(item.tags) ? item.tags : [],
+  };
+}
 
 function goToPage(page) {
   if (page < 1 || page > totalPages.value) return;
   currentPage.value = page;
 }
+
+async function fetchPosts() {
+  loading.value = true;
+  errorMessage.value = "";
+
+  try {
+    const [newsRes, categoryRes] = await Promise.all([
+      newsService.getPublicNews(),
+      newsCategoryService.getAll(),
+    ]);
+    posts.value = normalizeList(newsRes);
+    categories.value = normalizeList(categoryRes);
+  } catch (error) {
+    console.error(error);
+    errorMessage.value = "Không thể tải bài viết.";
+    posts.value = [];
+  } finally {
+    loading.value = false;
+  }
+}
+
+watch([keyword, categoryFilter], () => {
+  currentPage.value = 1;
+});
+
+watch(filteredPosts, () => {
+  if (currentPage.value > totalPages.value) currentPage.value = totalPages.value;
+});
+
+onMounted(fetchPosts);
 </script>
 
 <template>
@@ -102,7 +143,7 @@ function goToPage(page) {
         <h2 class="title">Blog</h2>
 
         <ul class="breadcrumb">
-          <li><router-link to="/">Trang Chủ</router-link></li>
+          <li><router-link to="/">Trang chủ</router-link></li>
           <li><span>Blog</span></li>
         </ul>
       </div>
@@ -110,58 +151,81 @@ function goToPage(page) {
 
     <div class="container">
       <div class="row">
-        <div
-          id="left-column"
-          class="sidebar col-lg-3 col-md-3 col-sm-3 col-xs-12"
-        >
-          <BlogSidebar />
+        <div id="left-column" class="sidebar col-lg-3 col-md-3 col-sm-3 col-xs-12">
+          <BlogSidebar :categories="categories" :recent-posts="recentPosts" :tags="tags" />
         </div>
 
         <div id="center-column" class="col-lg-9 col-md-9 col-sm-9 col-xs-12">
           <div class="blog-list layout-2">
-            <div class="posts-list">
-              <BlogCard
-                v-for="post in paginatedPosts"
-                :key="post.id"
-                :post="post"
+            <div class="form-group">
+              <input
+                v-model="keyword"
+                class="form-control"
+                type="search"
+                placeholder="Tìm bài viết..."
               />
             </div>
 
-            <div class="pagination-bar">
-              <div class="pagination">
-                <ul class="page-list">
-                  <li>
-                    <a
-                      href="#"
-                      class="prev"
-                      @click.prevent="goToPage(currentPage - 1)"
-                    >
-                      Previous
-                    </a>
-                  </li>
-
-                  <li v-for="page in totalPages" :key="page">
-                    <a
-                      href="#"
-                      :class="{ current: page === currentPage }"
-                      @click.prevent="goToPage(page)"
-                    >
-                      {{ page }}
-                    </a>
-                  </li>
-
-                  <li>
-                    <a
-                      href="#"
-                      class="next"
-                      @click.prevent="goToPage(currentPage + 1)"
-                    >
-                      Next
-                    </a>
-                  </li>
-                </ul>
-              </div>
+            <div class="form-group" v-if="categories.length">
+              <select v-model="categoryFilter" class="form-control">
+                <option value="">Tất cả danh mục</option>
+                <option
+                  v-for="category in categories"
+                  :key="normalizeId(category._id)"
+                  :value="normalizeId(category._id)"
+                >
+                  {{ category.name }}
+                </option>
+              </select>
             </div>
+
+            <div v-if="loading" class="alert alert-info">Đang tải bài viết...</div>
+            <div v-else-if="errorMessage" class="alert alert-danger">{{ errorMessage }}</div>
+            <div v-else-if="!filteredPosts.length" class="alert alert-info">
+              Chưa có bài viết nào.
+            </div>
+
+            <template v-else>
+              <div class="posts-list">
+                <BlogCard v-for="post in paginatedPosts" :key="post.id || post.slug" :post="post" />
+              </div>
+
+              <div v-if="totalPages > 1" class="pagination-bar">
+                <div class="pagination">
+                  <ul class="page-list">
+                    <li>
+                      <a
+                        href="#"
+                        class="prev"
+                        @click.prevent="goToPage(currentPage - 1)"
+                      >
+                        Trước
+                      </a>
+                    </li>
+
+                    <li v-for="page in totalPages" :key="page">
+                      <a
+                        href="#"
+                        :class="{ current: page === currentPage }"
+                        @click.prevent="goToPage(page)"
+                      >
+                        {{ page }}
+                      </a>
+                    </li>
+
+                    <li>
+                      <a
+                        href="#"
+                        class="next"
+                        @click.prevent="goToPage(currentPage + 1)"
+                      >
+                        Sau
+                      </a>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </template>
           </div>
         </div>
       </div>

@@ -1,3 +1,13 @@
+const { z } = require("zod");
+const {
+  dateStringSchema,
+  nonEmptyString,
+  nonNegativeNumberSchema,
+  objectIdSchema,
+  optionalString,
+  positiveNumberSchema,
+} = require("./common.validator");
+
 function hasValue(value) {
   return value !== undefined && value !== null && String(value).trim() !== "";
 }
@@ -32,6 +42,57 @@ function validateUpdate(payload = {}) {
 }
 
 module.exports = {
+  purchaseOrderQuerySchema: z.object({
+    status: z.enum(["draft", "imported", "cancelled"], {
+      message: "Trang thai phieu nhap khong hop le",
+    }).optional(),
+    supplierId: objectIdSchema.optional(),
+  }),
+  purchaseOrderItemSchema: z
+    .object({
+      inventoryItemId: objectIdSchema,
+      quantity: positiveNumberSchema,
+      importPrice: nonNegativeNumberSchema,
+      batchNumber: nonEmptyString,
+      manufacturingDate: dateStringSchema,
+      expiryDate: z
+        .string()
+        .refine((value) => !Number.isNaN(new Date(value).getTime()), {
+          message: "expiryDate khong hop le",
+        }),
+      warehouseLocation: optionalString,
+    })
+    .refine(
+      (value) =>
+        !value.manufacturingDate ||
+        !value.expiryDate ||
+        new Date(value.expiryDate).getTime() >
+          new Date(value.manufacturingDate).getTime(),
+      {
+        message: "expiryDate phai lon hon manufacturingDate",
+        path: ["expiryDate"],
+      },
+    ),
+  createPurchaseOrderSchema: z.object({
+    purchaseCode: optionalString,
+    supplierId: objectIdSchema,
+    note: optionalString,
+    items: z.array(z.lazy(() => module.exports.purchaseOrderItemSchema)).min(1, {
+      message: "Danh sach hang nhap khong duoc de trong",
+    }),
+  }),
+  updatePurchaseOrderSchema: z
+    .object({
+      purchaseCode: optionalString,
+      supplierId: objectIdSchema.optional(),
+      note: optionalString,
+      items: z.array(z.lazy(() => module.exports.purchaseOrderItemSchema)).min(1, {
+        message: "Danh sach hang nhap khong duoc de trong",
+      }).optional(),
+    })
+    .refine((value) => Object.keys(value).length > 0, {
+      message: "Du lieu cap nhat khong duoc de trong",
+    }),
   validateCreate,
   validateUpdate,
 };

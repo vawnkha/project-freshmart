@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import ProductCard from "@/components/user/product/ProductCard.vue";
 import ProductListItem from "@/components/user/product/ProductListItem.vue";
@@ -14,12 +14,6 @@ const currentPage = ref(Number(route.query.page || 1));
 const perPage = 12;
 
 const products = ref([]);
-const pagination = ref({
-  page: 1,
-  limit: 12,
-  total: 0,
-  totalPages: 1,
-});
 const loading = ref(false);
 
 const sortedProducts = computed(() => {
@@ -39,36 +33,35 @@ const sortedProducts = computed(() => {
   }
 });
 
+const totalProducts = computed(() => sortedProducts.value.length);
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(totalProducts.value / perPage)),
+);
+const paginatedProducts = computed(() => {
+  const start = (currentPage.value - 1) * perPage;
+  return sortedProducts.value.slice(start, start + perPage);
+});
+
 const startItem = computed(() => {
-  if (!pagination.value.total) return 0;
-  return (pagination.value.page - 1) * pagination.value.limit + 1;
+  if (!totalProducts.value) return 0;
+  return (currentPage.value - 1) * perPage + 1;
 });
 
 const endItem = computed(() => {
-  return Math.min(
-    pagination.value.page * pagination.value.limit,
-    pagination.value.total,
-  );
+  return Math.min(currentPage.value * perPage, totalProducts.value);
 });
 
 async function fetchProducts() {
   loading.value = true;
   try {
     const params = {
-      page: currentPage.value,
-      limit: perPage,
       q: route.query.q || "",
       category_id: route.query.category_id || "",
     };
 
     const result = await productService.getAll(params);
     products.value = result.data || [];
-    pagination.value = result.pagination || {
-      page: 1,
-      limit: perPage,
-      total: 0,
-      totalPages: 1,
-    };
+    if (currentPage.value > totalPages.value) currentPage.value = totalPages.value;
   } catch (error) {
     alert(error.message);
   } finally {
@@ -77,7 +70,7 @@ async function fetchProducts() {
 }
 
 function goToPage(page) {
-  if (page < 1 || page > pagination.value.totalPages) return;
+  if (page < 1 || page > totalPages.value) return;
   router.push({
     query: {
       ...route.query,
@@ -98,13 +91,19 @@ watch(
 );
 
 watch(sortBy, (value) => {
+  const query = {
+    ...route.query,
+    sort: value || undefined,
+  };
+  delete query.page;
+  currentPage.value = 1;
   router.push({
-    query: {
-      ...route.query,
-      page: 1,
-      sort: value || undefined,
-    },
+    query,
   });
+});
+
+watch(totalPages, (value) => {
+  if (currentPage.value > value) currentPage.value = value;
 });
 </script>
 
@@ -144,7 +143,7 @@ watch(sortBy, (value) => {
                   </div>
 
                   <div class="total-products">
-                    Hiện có {{ pagination.total }} sản phẩm
+                    Hiện có {{ totalProducts }} sản phẩm
                   </div>
                 </div>
 
@@ -174,7 +173,7 @@ watch(sortBy, (value) => {
             </div>
 
             <div v-if="loading">Đang tải sản phẩm...</div>
-            <div v-else-if="!sortedProducts.length">
+            <div v-else-if="!paginatedProducts.length">
               Không tìm thấy sản phẩm phù hợp.
             </div>
 
@@ -187,7 +186,7 @@ watch(sortBy, (value) => {
                 <div class="products-block">
                   <div class="row">
                     <div
-                      v-for="product in sortedProducts"
+                      v-for="product in paginatedProducts"
                       :key="product._id"
                       class="col-md-3 col-sm-4 col-xs-12"
                     >
@@ -200,7 +199,7 @@ watch(sortBy, (value) => {
               <div v-else class="tab-pane active" id="products-list">
                 <div class="products-block layout-5">
                   <ProductListItem
-                    v-for="product in sortedProducts"
+                    v-for="product in paginatedProducts"
                     :key="product._id"
                     :product="product"
                   />
@@ -208,12 +207,12 @@ watch(sortBy, (value) => {
               </div>
             </div>
 
-            <div class="pagination-bar">
+            <div v-if="totalProducts" class="pagination-bar">
               <div class="row">
                 <div class="col-md-4 col-sm-4 col-xs-12">
                   <div class="text">
                     Hiển thị {{ startItem }}-{{ endItem }} trên tổng số
-                    {{ pagination.total }} sản phẩm
+                    {{ totalProducts }} sản phẩm
                   </div>
                 </div>
 
@@ -230,10 +229,10 @@ watch(sortBy, (value) => {
                         </a>
                       </li>
 
-                      <li v-for="page in pagination.totalPages" :key="page">
+                      <li v-for="page in totalPages" :key="page">
                         <a
                           href="#"
-                          :class="{ current: page === pagination.page }"
+                          :class="{ current: page === currentPage }"
                           @click.prevent="goToPage(page)"
                         >
                           {{ page }}

@@ -162,6 +162,66 @@ const INDEX_DEFINITIONS = [
     ],
   },
   {
+    collection: "shipping_methods",
+    indexes: [
+      { key: { code: 1 }, options: { unique: true, sparse: true } },
+      { key: { status: 1 } },
+      { key: { fee: 1 } },
+      { key: { createdAt: -1 } },
+    ],
+  },
+  {
+    collection: "discounts",
+    indexes: [
+      { key: { code: 1 }, options: { unique: true } },
+      { key: { status: 1, startDate: 1, endDate: 1 } },
+      { key: { scope: 1, status: 1 } },
+      { key: { "applicable.productIds": 1 } },
+      { key: { "applicable.categoryIds": 1 } },
+      { key: { createdAt: -1 } },
+    ],
+  },
+  {
+    collection: "user_discounts",
+    indexes: [
+      { key: { userId: 1, discountId: 1 } },
+      { key: { discountId: 1, usedAt: -1 } },
+      { key: { userId: 1, usedAt: -1 } },
+      { key: { orderId: 1 } },
+    ],
+  },
+  {
+    collection: "news_categories",
+    indexes: [
+      { key: { slug: 1 }, options: { unique: true } },
+      { key: { status: 1 } },
+      { key: { createdAt: -1 } },
+    ],
+  },
+  {
+    collection: "news",
+    indexes: [
+      { key: { slug: 1 }, options: { unique: true } },
+      { key: { categoryId: 1 } },
+      { key: { status: 1 } },
+      { key: { publishedAt: -1 } },
+      { key: { tags: 1 } },
+      { key: { createdAt: -1 } },
+    ],
+  },
+  {
+    collection: "banners",
+    indexes: [
+      { key: { status: 1 } },
+      { key: { position: 1 } },
+      { key: { sortOrder: 1 } },
+      { key: { startDate: 1 } },
+      { key: { endDate: 1 } },
+      { key: { position: 1, status: 1, sortOrder: 1 } },
+      { key: { createdAt: -1 } },
+    ],
+  },
+  {
     collection: "purchase_orders",
     indexes: [
       { key: { purchaseCode: 1 }, options: { unique: true } },

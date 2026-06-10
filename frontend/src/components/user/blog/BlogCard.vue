@@ -12,74 +12,55 @@ const postLink = computed(() => `/blog/${props.post.slug}`);
 </script>
 
 <template>
-  <!-- <div class="post-item">
-    <div class="post-image">
-      <router-link :to="postLink">
-        <img class="img-responsive" :src="post.image" :alt="post.title" />
-      </router-link>
-    </div>
-
-    <div class="post-content">
-      <h2 class="post-title">
-        <router-link :to="postLink">
-          {{ post.title }}
-        </router-link>
-      </h2>
-
-      <div class="post-meta">
-        <span class="post-date">
-          <i class="zmdi zmdi-calendar-note"></i>
-          {{ post.date }}
-        </span>
-
-        <span class="post-author">
-          <i class="zmdi zmdi-account"></i>
-          {{ post.author }}
-        </span>
-      </div>
-
-      <div class="post-description">
-        {{ post.excerpt }}
-      </div>
-
-      <div class="post-read-more">
-        <router-link :to="postLink" class="btn btn-primary">
-          Read More
-        </router-link>
-      </div>
-    </div>
-  </div> -->
-
   <div class="post-item">
     <div class="row">
       <div class="col-lg-4 col-md-4 col-sm-4 col-xs-12 post-left">
         <div class="post-image">
           <router-link :to="postLink">
-            <img class="img-responsive" :src="post.image" :alt="post.title" />
+            <img
+              v-if="post.image"
+              class="img-responsive"
+              :src="post.image"
+              :alt="post.title"
+            />
+            <div v-else class="blog-image-placeholder">Không có ảnh</div>
           </router-link>
         </div>
       </div>
+
       <div class="col-lg-8 col-md-8 col-sm-8 col-xs-12 post-right">
-        <router-link :to="postLink">
-          <a class="post-title">{{ post.title }}</a>
+        <router-link :to="postLink" class="post-title">
+          {{ post.title }}
         </router-link>
+
         <div class="post-info">
-          <span class="comment item"
-            ><i class="zmdi zmdi-comments"></i>2 Bình Luận</span
-          >
-          <span class="date item"
-            ><i class="zmdi zmdi-calendar-note"></i>{{ post.date }}</span
-          >
+          <span v-if="post.category" class="item">
+            <i class="zmdi zmdi-folder"></i>{{ post.category }}
+          </span>
+          <span v-if="post.date" class="date item">
+            <i class="zmdi zmdi-calendar-note"></i>{{ post.date }}
+          </span>
         </div>
+
         <div class="post-description">
-          {{ post.excerpt }}...
+          {{ post.excerpt || post.summary || "Bài viết chưa có mô tả ngắn." }}
           <span class="post-readmore">
-            <router-link :to="postLink">
-              <a>Xem Thêm</a>
-            </router-link>
+            <router-link :to="postLink">Xem thêm</router-link>
           </span>
         </div>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.blog-image-placeholder {
+  align-items: center;
+  background: #f5f5f5;
+  color: #777;
+  display: flex;
+  min-height: 150px;
+  justify-content: center;
+  text-align: center;
+}
+</style>

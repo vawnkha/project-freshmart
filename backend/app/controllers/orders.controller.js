@@ -7,7 +7,8 @@ const authMiddleware = require("../middlewares/auth.middleware");
 
 exports.create = async (req, res, next) => {
   try {
-    const { user_id, address_id, payment_method } = req.body;
+    const { user_id, address_id, payment_method, shippingMethodId, discountCode } =
+      req.body;
 
     if (!user_id || !address_id) {
       return next(new ApiError(400, "user_id và address_id là bắt buộc"));
@@ -19,6 +20,8 @@ exports.create = async (req, res, next) => {
       userId: user_id,
       addressId: address_id,
       payment_method: payment_method || "cash",
+      shippingMethodId,
+      discountCode,
     });
 
     if (rs?.error || !rs?.ok || !rs?.order) {

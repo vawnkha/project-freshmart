@@ -1,6 +1,18 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useForm } from "vee-validate";
+import { toTypedSchema } from "@vee-validate/zod";
 import AdminPagination from "@/components/common/AdminPagination.vue";
+import {
+  imageFileSchema,
+  optionalEmailSchema,
+  optionalString,
+  requiredString,
+  slugSchema,
+  statusSchema,
+  z,
+} from "@/validators/common.validator";
+import { mapBackendValidationErrors } from "@/utils/validation-error.util";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const IMAGE_MAX_SIZE = 10 * 1024 * 1024;
@@ -61,6 +73,47 @@ const form = reactive({
   address: "",
   note: "",
   status: "active",
+});
+
+const validationSchema = computed(() =>
+  toTypedSchema(
+    z
+      .object({
+        code: optionalString,
+        name: requiredString(`Ten ${props.entityLabel} la bat buoc`),
+        slug: props.showImageField ? slugSchema : optionalString,
+        description: optionalString,
+        email: props.showContactFields ? optionalEmailSchema : optionalString,
+        phone: optionalString,
+        address: optionalString,
+        note: optionalString,
+        status: statusSchema.optional(),
+        image: imageFileSchema,
+      })
+      .superRefine((value, ctx) => {
+        if (
+          props.showImageField &&
+          modalMode.value === "create" &&
+          !value.image
+        ) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["image"],
+            message: "Anh dai dien la bat buoc",
+          });
+        }
+      }),
+  ),
+);
+
+const {
+  errors,
+  resetForm: resetValidation,
+  setErrors,
+  setValues,
+  validate: validateVee,
+} = useForm({
+  validationSchema,
 });
 
 const hasStatus = computed(() =>
@@ -127,6 +180,7 @@ function resetForm() {
     status: "active",
   });
   clearImage();
+  resetValidation();
 }
 
 function fillForm(item) {
@@ -160,10 +214,10 @@ function clearImage() {
 function validateImage(file) {
   if (!file) return "";
   if (!IMAGE_TYPES.includes(file.type)) {
-    return "Chi chap nhan anh jpeg, png, webp hoac gif";
+    return "Chỉ chấp nhận ảnh jpeg, png, webp hoặc gif";
   }
   if (file.size > IMAGE_MAX_SIZE) {
-    return "Moi file anh toi da 10MB";
+    return "Mỗi file ảnh tối đa 10MB";
   }
   return "";
 }
@@ -177,7 +231,7 @@ function onImageChange(event) {
 
   const message = validateImage(file);
   if (message) {
-    alert(message);
+    setErrors({ image: message });
     clearImage();
     return;
   }
@@ -185,6 +239,7 @@ function onImageChange(event) {
   revokePreview();
   imageFile.value = file;
   imagePreview.value = URL.createObjectURL(file);
+  setErrors({ image: "" });
 }
 
 function buildPayload() {
@@ -215,13 +270,13 @@ function buildPayload() {
   return payload;
 }
 
-function validateForm() {
-  if (!form.name.trim()) return `Ten ${props.entityLabel} la bat buoc`;
-  if (props.showImageField && !form.slug.trim()) return "Slug la bat buoc";
-  if (props.showImageField && modalMode.value === "create" && !imageFile.value) {
-    return "Anh dai dien la bat buoc";
-  }
-  return "";
+async function validateForm() {
+  setValues({
+    ...form,
+    image: imageFile.value,
+  });
+  const result = await validateVee();
+  return result.valid;
 }
 
 async function fetchItems() {
@@ -232,7 +287,7 @@ async function fetchItems() {
   } catch (error) {
     console.error(error);
     errorMessage.value =
-      error?.response?.data?.message || `Khong the tai ${props.entityLabel}`;
+      error?.response?.data?.message || `Không thể tải ${props.entityLabel}`;
   } finally {
     loading.value = false;
   }
@@ -260,49 +315,49 @@ function closeModal() {
 }
 
 async function submitForm() {
-  const message = validateForm();
-  if (message) {
-    alert(message);
-    return;
-  }
+  const valid = await validateForm();
+  if (!valid) return;
 
   saving.value = true;
   try {
     if (modalMode.value === "create") {
       await props.service.create(buildPayload());
-      alert(`Tao ${props.entityLabel} thanh cong`);
+      alert(`Tạo ${props.entityLabel} thành công`);
     } else {
       await props.service.update(currentId.value, buildPayload());
-      alert(`Cap nhat ${props.entityLabel} thanh cong`);
+      alert(`Cập nhật ${props.entityLabel} thành công`);
     }
     closeModal();
     await fetchItems();
   } catch (error) {
     console.error(error);
-    alert(error?.response?.data?.message || `Khong the luu ${props.entityLabel}`);
+    setErrors(mapBackendValidationErrors(error));
+    alert(error?.response?.data?.message || `Không thể lưu ${props.entityLabel}`);
   } finally {
     saving.value = false;
   }
 }
 
 async function removeItem(item) {
-  if (!window.confirm(`Ban co chac muon xoa/ngung ${props.entityLabel} nay?`)) {
+  if (hasStatus.value && item.status === "inactive") return;
+
+  if (!window.confirm(`Bạn có chắc muốn xóa ${props.entityLabel} này?`)) {
     return;
   }
 
   try {
     await props.service.remove(getId(item));
     await fetchItems();
-    alert(`Da xoa/ngung ${props.entityLabel}`);
+    alert(`Đã xóa ${props.entityLabel}`);
   } catch (error) {
     console.error(error);
-    alert(error?.response?.data?.message || `Khong the xoa ${props.entityLabel}`);
+    alert(error?.response?.data?.message || `Không thể xóa ${props.entityLabel}`);
   }
 }
 
 function statusText(status) {
-  if (status === "active") return "Dang hoat dong";
-  if (status === "inactive") return "Ngung hoat dong";
+  if (status === "active") return "Đang hoạt động";
+  if (status === "inactive") return "Ngừng hoạt động";
   return status || "---";
 }
 
@@ -333,19 +388,19 @@ onMounted(fetchItems);
 
     <div class="admin-stat-row admin-stat-row--categories">
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Tong so</div>
+        <div class="admin-stat-card__label">Tổng số</div>
         <div class="admin-stat-card__value">{{ items.length }}</div>
       </div>
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Dang loc</div>
+        <div class="admin-stat-card__label">Đang lọc</div>
         <div class="admin-stat-card__value">{{ filteredItems.length }}</div>
       </div>
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Dang hoat dong</div>
+        <div class="admin-stat-card__label">Đang hoạt động</div>
         <div class="admin-stat-card__value">{{ activeCount }}</div>
       </div>
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Ngung hoat dong</div>
+        <div class="admin-stat-card__label">Ngừng hoạt động</div>
         <div class="admin-stat-card__value">{{ inactiveCount }}</div>
       </div>
     </div>
@@ -353,18 +408,18 @@ onMounted(fetchItems);
     <section class="admin-panel">
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
-          <div class="admin-panel__header-title">Danh sach</div>
+          <div class="admin-panel__header-title">Danh sách</div>
           <div class="admin-panel__header-subtitle">
-            Tim kiem va quan ly du lieu dung chung cho kho hang.
+            Tìm kiếm và quản lý dữ liệu dùng chung cho kho hàng.
           </div>
         </div>
         <div class="catalog-header-actions">
           <button class="admin-btn admin-btn--secondary" @click="fetchItems">
-            Lam moi
+            Làm mới
           </button>
           <button class="admin-btn admin-btn--primary" @click="openCreateModal">
             <i class="fa-solid fa-plus me-1"></i>
-            Them moi
+            Thêm mới
           </button>
         </div>
       </div>
@@ -376,36 +431,36 @@ onMounted(fetchItems);
               v-model="keyword"
               type="text"
               class="admin-toolbar__input"
-              placeholder="Tim theo ma, ten, mo ta"
+              placeholder="Tìm theo mã, tên, mô tả"
             />
           </div>
           <div v-if="hasStatus" class="col-md-4 col-lg-4">
             <select v-model="selectedStatus" class="admin-toolbar__select">
-              <option value="">Tat ca trang thai</option>
-              <option value="active">Dang hoat dong</option>
-              <option value="inactive">Ngung hoat dong</option>
+              <option value="">Tất cả trạng thái</option>
+              <option value="active">Đang hoạt động</option>
+              <option value="inactive">Ngừng hoạt động</option>
             </select>
           </div>
         </div>
 
-        <div v-if="loading" class="admin-empty-state">Dang tai du lieu...</div>
+        <div v-if="loading" class="admin-empty-state">Đang tải dữ liệu...</div>
         <div v-else-if="errorMessage" class="admin-empty-state">
           {{ errorMessage }}
         </div>
         <div v-else-if="!filteredItems.length" class="admin-empty-state">
-          Chua co du lieu phu hop
+          Chưa có dữ liệu phù hợp
         </div>
 
         <div v-else class="table-responsive">
           <table class="admin-table admin-table--categories">
             <thead>
               <tr>
-                <th v-if="showImageField">Anh</th>
-                <th>Ma/Slug</th>
-                <th>Ten</th>
-                <th>Mo ta</th>
-                <th v-if="showContactFields">Lien he</th>
-                <th v-if="hasStatus">Trang thai</th>
+                <th v-if="showImageField">Ảnh</th>
+                <th>Mã/Slug</th>
+                <th>Tên</th>
+                <th>Mô tả</th>
+                <th v-if="showContactFields">Liên hệ</th>
+                <th v-if="hasStatus">Trạng thái</th>
                 <th></th>
               </tr>
             </thead>
@@ -418,7 +473,7 @@ onMounted(fetchItems);
                     class="catalog-thumb"
                     :alt="item.name"
                   />
-                  <div v-else class="admin-thumb-placeholder">Khong anh</div>
+                  <div v-else class="admin-thumb-placeholder">Không ảnh</div>
                 </td>
                 <td>
                   <strong>{{ item.code || item.slug || "---" }}</strong>
@@ -441,17 +496,21 @@ onMounted(fetchItems);
                 <td>
                   <div class="admin-action-stack admin-action-stack--row">
                     <button
+                      type="button"
                       class="admin-btn admin-btn--success"
-                      @click="openEditModal(item)"
+                      @click.stop="openEditModal(item)"
                     >
-                      Sua
+                      Sửa
                     </button>
                     <button
+                      v-if="!hasStatus || item.status !== 'inactive'"
+                      type="button"
                       class="admin-btn admin-btn--danger"
-                      @click="removeItem(item)"
+                      @click.stop="removeItem(item)"
                     >
-                      Xoa/Ngung
+                      Xóa
                     </button>
+                    <span v-else class="admin-badge admin-badge--danger">Đã xóa</span>
                   </div>
                 </td>
               </tr>
@@ -471,7 +530,7 @@ onMounted(fetchItems);
       <div class="admin-modal admin-modal--wide">
         <div class="admin-modal__header">
           <div class="admin-modal__title">
-            {{ modalMode === "create" ? "Them moi" : "Cap nhat" }}
+            {{ modalMode === "create" ? "Thêm mới" : "Cập nhật" }}
           </div>
           <button
             type="button"
@@ -485,22 +544,36 @@ onMounted(fetchItems);
         <form class="admin-form catalog-form" @submit.prevent="submitForm">
           <div class="admin-modal__body">
             <div v-if="!showImageField" class="admin-form__row">
-              <label class="admin-form__label">Ma</label>
+              <label class="admin-form__label">Mã</label>
               <input v-model="form.code" class="admin-form__control" />
             </div>
 
             <div class="admin-form__row">
-              <label class="admin-form__label">Ten *</label>
-              <input v-model="form.name" class="admin-form__control" />
+              <label class="admin-form__label">Tên *</label>
+              <div>
+                <input
+                  v-model="form.name"
+                  class="admin-form__control"
+                  :class="{ 'is-invalid': errors.name }"
+                />
+                <div v-if="errors.name" class="admin-form__error">{{ errors.name }}</div>
+              </div>
             </div>
 
             <div v-if="showImageField" class="admin-form__row">
               <label class="admin-form__label">Slug *</label>
-              <input v-model="form.slug" class="admin-form__control" />
+              <div>
+                <input
+                  v-model="form.slug"
+                  class="admin-form__control"
+                  :class="{ 'is-invalid': errors.slug }"
+                />
+                <div v-if="errors.slug" class="admin-form__error">{{ errors.slug }}</div>
+              </div>
             </div>
 
             <div class="admin-form__row">
-              <label class="admin-form__label">Mo ta</label>
+              <label class="admin-form__label">Mô tả</label>
               <textarea
                 v-model="form.description"
                 class="admin-form__textarea"
@@ -511,41 +584,50 @@ onMounted(fetchItems);
             <template v-if="showContactFields">
               <div class="admin-form__row">
                 <label class="admin-form__label">Email</label>
-                <input v-model="form.email" class="admin-form__control" />
+                <div>
+                  <input
+                    v-model="form.email"
+                    class="admin-form__control"
+                    :class="{ 'is-invalid': errors.email }"
+                  />
+                  <div v-if="errors.email" class="admin-form__error">{{ errors.email }}</div>
+                </div>
               </div>
               <div class="admin-form__row">
-                <label class="admin-form__label">Dien thoai</label>
+                <label class="admin-form__label">Điện thoại</label>
                 <input v-model="form.phone" class="admin-form__control" />
               </div>
               <div class="admin-form__row">
-                <label class="admin-form__label">Dia chi</label>
+                <label class="admin-form__label">Địa chỉ</label>
                 <input v-model="form.address" class="admin-form__control" />
               </div>
             </template>
 
             <div v-if="!showImageField" class="admin-form__row">
-              <label class="admin-form__label">Trang thai</label>
+              <label class="admin-form__label">Trạng thái</label>
               <select v-model="form.status" class="admin-form__select">
-                <option value="active">Dang hoat dong</option>
-                <option value="inactive">Ngung hoat dong</option>
+                <option value="active">Đang hoạt động</option>
+                <option value="inactive">Ngừng hoạt động</option>
               </select>
             </div>
 
             <div v-if="!showImageField" class="admin-form__row">
-              <label class="admin-form__label">Ghi chu</label>
+              <label class="admin-form__label">Ghi chú</label>
               <textarea v-model="form.note" class="admin-form__textarea" rows="3" />
             </div>
 
             <div v-if="showImageField" class="admin-form__row">
-              <label class="admin-form__label">Anh dai dien</label>
+              <label class="admin-form__label">Ảnh đại diện</label>
               <div class="catalog-upload">
                 <input
                   ref="imageInputRef"
                   type="file"
                   accept="image/jpeg,image/png,image/webp,image/gif"
                   class="admin-form__control"
+                  :class="{ 'is-invalid': errors.image }"
                   @change="onImageChange"
                 />
+                <div v-if="errors.image" class="admin-form__error">{{ errors.image }}</div>
                 <div v-if="imagePreview" class="catalog-image-preview">
                   <img :src="imagePreview" alt="preview" />
                   <button
@@ -554,7 +636,7 @@ onMounted(fetchItems);
                     class="admin-btn admin-btn--danger"
                     @click="clearImage"
                   >
-                    Xoa anh da chon
+                    Xóa ảnh đã chọn
                   </button>
                 </div>
               </div>
@@ -567,14 +649,14 @@ onMounted(fetchItems);
               class="admin-btn admin-btn--secondary"
               @click="closeModal"
             >
-              Quay lai
+              Quay lại
             </button>
             <button
               type="submit"
               class="admin-btn admin-btn--primary"
               :disabled="saving"
             >
-              {{ saving ? "Dang luu..." : "Luu" }}
+              {{ saving ? "Đang lưu..." : "Lưu" }}
             </button>
           </div>
         </form>

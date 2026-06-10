@@ -95,9 +95,9 @@ function formatDate(value) {
 }
 
 function statusText(status) {
-  if (status === "draft") return "Nhap nhap";
-  if (status === "imported") return "Da nhap kho";
-  if (status === "cancelled") return "Da huy";
+  if (status === "draft") return "Nháp";
+  if (status === "imported") return "Đã nhập kho";
+  if (status === "cancelled") return "Đã hủy";
   return status || "---";
 }
 
@@ -120,39 +120,39 @@ async function fetchData() {
     suppliers.value = normalizeList(supplierRes);
   } catch (error) {
     console.error(error);
-    alert(error?.response?.data?.message || "Khong the tai phieu nhap");
+    alert(error?.response?.data?.message || "Không thể tải phiếu nhập");
   } finally {
     loading.value = false;
   }
 }
 
 async function confirmImport(item) {
-  if (!window.confirm("Xac nhan nhap kho phieu nay?")) return;
+  if (!window.confirm("Xác nhận nhập kho phiếu này?")) return;
 
   actionLoadingId.value = getId(item);
   try {
     await purchaseOrderService.confirmImport(getId(item));
     await fetchData();
-    alert("Nhap kho thanh cong");
+    alert("Nhập kho thành công");
   } catch (error) {
     console.error(error);
-    alert(error?.response?.data?.message || "Khong the nhap kho");
+    alert(error?.response?.data?.message || "Không thể nhập kho");
   } finally {
     actionLoadingId.value = "";
   }
 }
 
 async function cancelOrder(item) {
-  if (!window.confirm("Huy phieu nhap nay?")) return;
+  if (!window.confirm("Hủy phiếu nhập này?")) return;
 
   actionLoadingId.value = getId(item);
   try {
     await purchaseOrderService.cancel(getId(item));
     await fetchData();
-    alert("Huy phieu nhap thanh cong");
+    alert("Hủy phiếu nhập thành công");
   } catch (error) {
     console.error(error);
-    alert(error?.response?.data?.message || "Khong the huy phieu nhap");
+    alert(error?.response?.data?.message || "Không thể hủy phiếu nhập");
   } finally {
     actionLoadingId.value = "";
   }

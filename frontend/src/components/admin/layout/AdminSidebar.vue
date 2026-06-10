@@ -20,6 +20,7 @@ const openGroups = ref({
   catalog: false,
   inventory: false,
   products: false,
+  content: false,
 });
 
 const menus = [
@@ -128,19 +129,19 @@ const menus = [
         permission: "inventory:manage",
       },
       {
-        label: "Lo hang",
+        label: "Lô hàng",
         to: { name: "admin-inventory-batches" },
         names: ["admin-inventory-batches"],
         permission: "inventory:manage",
       },
       {
-        label: "Ton kho tong",
+        label: "Tồn kho tổng",
         to: { name: "admin-inventory-summaries" },
         names: ["admin-inventory-summaries"],
         permission: "inventory:manage",
       },
       {
-        label: "Giao dich kho",
+        label: "Giao dịch kho",
         to: { name: "admin-inventory-transactions" },
         names: ["admin-inventory-transactions"],
         permission: "inventory:manage",
@@ -164,6 +165,55 @@ const menus = [
     to: { name: "admin-orders" },
     names: ["admin-orders", "admin-order-detail"],
     permission: "order:read:any",
+  },
+  {
+    key: "shipping-methods",
+    label: "Phương thức vận chuyển",
+    icon: "fa-solid fa-truck-fast",
+    to: { name: "admin-shipping-methods" },
+    names: ["admin-shipping-methods"],
+    permission: "shipping-method:manage",
+  },
+  {
+    key: "discounts",
+    label: "Mã giảm giá",
+    icon: "fa-solid fa-ticket",
+    to: { name: "admin-discounts" },
+    names: ["admin-discounts"],
+    permission: "discount:manage",
+  },
+  {
+    key: "content",
+    label: "Tin tức",
+    icon: "fa-solid fa-newspaper",
+    to: null,
+    names: [
+      "admin-news-categories",
+      "admin-news",
+      "admin-news-create",
+      "admin-news-edit",
+      "admin-banners",
+    ],
+    children: [
+      {
+        label: "Danh mục tin tức",
+        to: { name: "admin-news-categories" },
+        names: ["admin-news-categories"],
+        permission: "news:manage",
+      },
+      {
+        label: "Bài viết",
+        to: { name: "admin-news" },
+        names: ["admin-news", "admin-news-create", "admin-news-edit"],
+        permission: "news:manage",
+      },
+      {
+        label: "Banner",
+        to: { name: "admin-banners" },
+        names: ["admin-banners"],
+        permission: "banner:manage",
+      },
+    ],
   },
   {
     key: "contacts",
@@ -239,6 +289,14 @@ function syncOpenGroupsByRoute() {
     "admin-purchase-orders",
     "admin-purchase-order-create",
     "admin-purchase-order-detail",
+  ].includes(route.name);
+
+  openGroups.value.content = [
+    "admin-news-categories",
+    "admin-news",
+    "admin-news-create",
+    "admin-news-edit",
+    "admin-banners",
   ].includes(route.name);
 }
 
@@ -326,7 +384,7 @@ watch(
 
     <div class="admin-sidebar__logout">
       <a href="#" @click.prevent="handleLogout">
-        <i class="fa fa-sign-out"></i> Đăng Xuất
+        <i class="fa fa-sign-out"></i> Đăng xuất
       </a>
     </div>
   </aside>

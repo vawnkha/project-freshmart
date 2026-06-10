@@ -1,9 +1,21 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from "vue";
+import { useForm } from "vee-validate";
+import { toTypedSchema } from "@vee-validate/zod";
 import { useRouter } from "vue-router";
 import purchaseOrderService from "@/services/purchase-order.service";
 import supplierService from "@/services/supplier.service";
 import inventoryItemService from "@/services/inventory-item.service";
+import {
+  dateStringSchema,
+  nonNegativeNumberSchema,
+  objectIdSchema,
+  optionalString,
+  positiveNumberSchema,
+  requiredString,
+  z,
+} from "@/validators/common.validator";
+import { mapBackendValidationErrors } from "@/utils/validation-error.util";
 
 const router = useRouter();
 const suppliers = ref([]);
@@ -16,6 +28,53 @@ const form = reactive({
   purchaseCode: "",
   note: "",
   items: [],
+});
+
+const purchaseOrderItemSchema = z
+  .object({
+    inventoryItemId: objectIdSchema,
+    quantity: positiveNumberSchema,
+    importPrice: nonNegativeNumberSchema,
+    batchNumber: requiredString("So lo la bat buoc"),
+    manufacturingDate: dateStringSchema,
+    expiryDate: z
+      .string()
+      .min(1, "Han dung la bat buoc")
+      .refine((value) => !Number.isNaN(new Date(value).getTime()), {
+        message: "Han dung khong hop le",
+      }),
+    warehouseLocation: optionalString,
+  })
+  .refine(
+    (value) =>
+      !value.manufacturingDate ||
+      !value.expiryDate ||
+      new Date(value.expiryDate).getTime() >
+        new Date(value.manufacturingDate).getTime(),
+    {
+      message: "Han dung phai lon hon ngay san xuat",
+      path: ["expiryDate"],
+    },
+  );
+
+const purchaseOrderSchema = toTypedSchema(
+  z.object({
+    supplierId: objectIdSchema,
+    purchaseCode: optionalString,
+    note: optionalString,
+    items: z.array(purchaseOrderItemSchema).min(1, {
+      message: "Vui long them hang nhap",
+    }),
+  }),
+);
+
+const {
+  errors,
+  setErrors,
+  setValues,
+  validate: validateVee,
+} = useForm({
+  validationSchema: purchaseOrderSchema,
 });
 
 const totalAmount = computed(() =>
@@ -72,32 +131,28 @@ function removeItemRow(index) {
   if (!form.items.length) addItemRow();
 }
 
+function itemError(index, field) {
+  const source = errors.value || errors;
+  return (
+    source?.[`items[${index}].${field}`] ||
+    source?.[`items.${index}.${field}`] ||
+    ""
+  );
+}
+
 function onInventoryItemChange(row) {
   const item = getInventoryItem(row.inventoryItemId);
   row.unit = item?.unit || "";
   row.packageSize = item?.packageSize || "";
 }
 
-function validateForm() {
-  if (!form.supplierId) return "Vui long chon nha cung cap";
-  if (!form.items.length) return "Vui long them hang nhap";
-
-  for (const [index, item] of form.items.entries()) {
-    const line = index + 1;
-    if (!item.inventoryItemId) return `Dong ${line}: vui long chon hang kho`;
-    if (Number(item.quantity || 0) <= 0) {
-      return `Dong ${line}: so luong phai lon hon 0`;
-    }
-    if (Number(item.importPrice || 0) < 0) {
-      return `Dong ${line}: gia nhap khong hop le`;
-    }
-    if (!String(item.batchNumber || "").trim()) {
-      return `Dong ${line}: batchNumber la bat buoc`;
-    }
-    if (!item.expiryDate) return `Dong ${line}: han dung la bat buoc`;
-  }
-
-  return "";
+async function validateForm() {
+  setValues({
+    ...form,
+    items: form.items.map((item) => ({ ...item })),
+  });
+  const result = await validateVee();
+  return result.valid;
 }
 
 function buildPayload() {
@@ -133,31 +188,29 @@ async function fetchOptions() {
     inventoryItems.value = normalizeList(itemRes);
   } catch (error) {
     console.error(error);
-    alert(error?.response?.data?.message || "Khong the tai du lieu tao phieu");
+    alert(error?.response?.data?.message || "Không thể tải dữ liệu tạo phiếu");
   } finally {
     loading.value = false;
   }
 }
 
 async function submitForm() {
-  const message = validateForm();
-  if (message) {
-    alert(message);
-    return;
-  }
+  const valid = await validateForm();
+  if (!valid) return;
 
   saving.value = true;
   try {
     const res = await purchaseOrderService.create(buildPayload());
     const id = res?.data?._id || res?.data?.insertedId;
-    alert(res?.message || "Tao phieu nhap thanh cong");
+    alert(res?.message || "Tạo phiếu nhập thành công");
     router.push({
       name: "admin-purchase-order-detail",
       params: { id },
     });
   } catch (error) {
     console.error(error);
-    alert(error?.response?.data?.message || "Khong the tao phieu nhap");
+    setErrors(mapBackendValidationErrors(error));
+    alert(error?.response?.data?.message || "Không thể tạo phiếu nhập");
   } finally {
     saving.value = false;
   }
@@ -200,16 +253,25 @@ onMounted(async () => {
         <form v-else class="admin-form purchase-order-form" @submit.prevent="submitForm">
           <div class="admin-form__row">
             <label class="admin-form__label">Nhà cung cấp *</label>
-            <select v-model="form.supplierId" class="admin-form__select">
-              <option value="">-- Chọn nhà cung cấp --</option>
-              <option
-                v-for="supplier in activeItems(suppliers)"
-                :key="getId(supplier)"
-                :value="getId(supplier)"
+            <div>
+              <select
+                v-model="form.supplierId"
+                class="admin-form__select"
+                :class="{ 'is-invalid': errors.supplierId }"
               >
-                {{ supplier.name }}
-              </option>
-            </select>
+                <option value="">-- Chọn nhà cung cấp --</option>
+                <option
+                  v-for="supplier in activeItems(suppliers)"
+                  :key="getId(supplier)"
+                  :value="getId(supplier)"
+                >
+                  {{ supplier.name }}
+                </option>
+              </select>
+              <div v-if="errors.supplierId" class="admin-form__error">
+                {{ errors.supplierId }}
+              </div>
+            </div>
           </div>
 
           <div class="admin-form__row">
@@ -261,6 +323,7 @@ onMounted(async () => {
                   <select
                     v-model="row.inventoryItemId"
                     class="admin-form__select"
+                    :class="{ 'is-invalid': itemError(index, 'inventoryItemId') }"
                     @change="onInventoryItemChange(row)"
                   >
                     <option value="">-- Chọn hàng kho --</option>
@@ -272,6 +335,9 @@ onMounted(async () => {
                       {{ item.itemCode }} - {{ item.itemName }}
                     </option>
                   </select>
+                  <div v-if="itemError(index, 'inventoryItemId')" class="admin-form__error">
+                    {{ itemError(index, "inventoryItemId") }}
+                  </div>
                 </div>
 
                 <div class="purchase-order-field">
@@ -303,7 +369,11 @@ onMounted(async () => {
                     type="number"
                     min="1"
                     class="admin-form__control"
+                    :class="{ 'is-invalid': itemError(index, 'quantity') }"
                   />
+                  <div v-if="itemError(index, 'quantity')" class="admin-form__error">
+                    {{ itemError(index, "quantity") }}
+                  </div>
                 </div>
 
                 <div class="purchase-order-field">
@@ -313,7 +383,11 @@ onMounted(async () => {
                     type="number"
                     min="0"
                     class="admin-form__control"
+                    :class="{ 'is-invalid': itemError(index, 'importPrice') }"
                   />
+                  <div v-if="itemError(index, 'importPrice')" class="admin-form__error">
+                    {{ itemError(index, "importPrice") }}
+                  </div>
                 </div>
 
                 <div class="purchase-order-field">
@@ -327,7 +401,14 @@ onMounted(async () => {
 
                 <div class="purchase-order-field">
                   <label>Số lô *</label>
-                  <input v-model="row.batchNumber" class="admin-form__control" />
+                  <input
+                    v-model="row.batchNumber"
+                    class="admin-form__control"
+                    :class="{ 'is-invalid': itemError(index, 'batchNumber') }"
+                  />
+                  <div v-if="itemError(index, 'batchNumber')" class="admin-form__error">
+                    {{ itemError(index, "batchNumber") }}
+                  </div>
                 </div>
 
                 <div class="purchase-order-field">
@@ -345,7 +426,11 @@ onMounted(async () => {
                     v-model="row.expiryDate"
                     type="date"
                     class="admin-form__control"
+                    :class="{ 'is-invalid': itemError(index, 'expiryDate') }"
                   />
+                  <div v-if="itemError(index, 'expiryDate')" class="admin-form__error">
+                    {{ itemError(index, "expiryDate") }}
+                  </div>
                 </div>
 
                 <div class="purchase-order-field purchase-order-field--wide">

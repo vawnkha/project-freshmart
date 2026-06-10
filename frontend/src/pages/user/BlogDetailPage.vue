@@ -1,5 +1,138 @@
 <script setup>
+import { computed, onMounted, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import BlogSidebar from "@/components/user/blog/BlogSidebar.vue";
+import BlogCard from "@/components/user/blog/BlogCard.vue";
+import newsService from "@/services/news.service";
+import newsCategoryService from "@/services/news-category.service";
+
+const route = useRoute();
+
+const article = ref(null);
+const posts = ref([]);
+const categories = ref([]);
+const loading = ref(false);
+const errorMessage = ref("");
+const notFound = ref(false);
+
+const slug = computed(() => route.params.slug || route.params.id || "");
+
+const categoryMap = computed(
+  () => new Map(categories.value.map((item) => [normalizeId(item._id), item])),
+);
+
+const normalizedPosts = computed(() => posts.value.map(normalizePost));
+
+const currentPost = computed(() => (article.value ? normalizePost(article.value) : null));
+
+const relatedPosts = computed(() => {
+  if (!currentPost.value) return normalizedPosts.value.slice(0, 3);
+  const sameCategory = normalizedPosts.value.filter(
+    (post) =>
+      post.slug !== currentPost.value.slug &&
+      post.categoryId &&
+      post.categoryId === currentPost.value.categoryId,
+  );
+  const fallback = normalizedPosts.value.filter((post) => post.slug !== currentPost.value.slug);
+  return (sameCategory.length ? sameCategory : fallback).slice(0, 3);
+});
+
+const tags = computed(() => {
+  const seen = new Set();
+  return normalizedPosts.value.reduce((result, post) => {
+    (post.tags || []).forEach((tag) => {
+      const text = String(tag || "").trim();
+      const key = text.toLowerCase();
+      if (!text || seen.has(key)) return;
+      seen.add(key);
+      result.push(text);
+    });
+    return result;
+  }, []);
+});
+
+const articleContent = computed(() => {
+  if (!article.value) return "";
+  return article.value.content || article.value.summary || "";
+});
+
+function normalizeList(res) {
+  if (Array.isArray(res?.data)) return res.data;
+  if (Array.isArray(res)) return res;
+  return [];
+}
+
+function normalizeId(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (value.$oid) return value.$oid;
+  return String(value);
+}
+
+function formatDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("vi-VN");
+}
+
+function getCategoryName(item) {
+  if (item.category?.name) return item.category.name;
+  if (item.categoryName) return item.categoryName;
+  return categoryMap.value.get(normalizeId(item.categoryId))?.name || "";
+}
+
+function normalizePost(item) {
+  return {
+    id: normalizeId(item._id || item.id),
+    slug: item.slug || normalizeId(item._id || item.id),
+    title: item.title || "Bài viết chưa có tiêu đề",
+    image: item.thumbnail || item.images?.[0] || "",
+    date: formatDate(item.publishedAt || item.createdAt),
+    summary: item.summary || "",
+    excerpt: item.summary || "",
+    category: getCategoryName(item),
+    categoryId: normalizeId(item.categoryId),
+    tags: Array.isArray(item.tags) ? item.tags : [],
+  };
+}
+
+async function fetchArticle() {
+  if (!slug.value) {
+    notFound.value = true;
+    return;
+  }
+
+  loading.value = true;
+  errorMessage.value = "";
+  notFound.value = false;
+  article.value = null;
+
+  try {
+    const [articleRes, newsRes, categoryRes] = await Promise.all([
+      newsService.getPublicNewsBySlug(slug.value),
+      newsService.getPublicNews(),
+      newsCategoryService.getAll(),
+    ]);
+    categories.value = normalizeList(categoryRes);
+    posts.value = normalizeList(newsRes);
+    article.value = articleRes?.data || articleRes;
+  } catch (error) {
+    console.error(error);
+    if (error?.response?.status === 404) {
+      notFound.value = true;
+      errorMessage.value = "";
+    } else {
+      errorMessage.value = "Không thể tải bài viết.";
+    }
+  } finally {
+    loading.value = false;
+  }
+}
+
+watch(slug, fetchArticle);
+
+onMounted(fetchArticle);
 </script>
 
 <template>
@@ -9,345 +142,72 @@ import BlogSidebar from "@/components/user/blog/BlogSidebar.vue";
         <h2 class="title">Blog</h2>
 
         <ul class="breadcrumb">
-          <li><router-link to="/">Trang Chủ</router-link></li>
-          <li><span>Blog</span></li>
+          <li><router-link to="/">Trang chủ</router-link></li>
+          <li><router-link to="/blog">Blog</router-link></li>
+          <li><span>{{ currentPost?.title || "Chi tiết bài viết" }}</span></li>
         </ul>
       </div>
     </div>
 
     <div class="container">
       <div class="row">
-        <div
-          id="left-column"
-          class="sidebar col-lg-3 col-md-3 col-sm-3 col-xs-12"
-        >
-          <BlogSidebar />
+        <div id="left-column" class="sidebar col-lg-3 col-md-3 col-sm-3 col-xs-12">
+          <BlogSidebar :categories="categories" :recent-posts="normalizedPosts.slice(0, 3)" :tags="tags" />
         </div>
 
         <div id="center-column" class="col-lg-9 col-md-9 col-sm-9 col-xs-12">
           <div class="blog-detail">
-            <div class="post-item">
-              <div class="post-image">
-                <img
-                  class="img-responsive"
-                  src="/img/blog/blog-1.jpg"
-                  alt="Blog Image"
-                />
+            <div v-if="loading" class="alert alert-info">Đang tải bài viết...</div>
+            <div v-else-if="errorMessage" class="alert alert-danger">{{ errorMessage }}</div>
+            <div v-else-if="notFound || !article" class="alert alert-info">
+              Không tìm thấy bài viết.
+            </div>
+
+            <div v-else class="post-item">
+              <div v-if="currentPost.image" class="post-image">
+                <img class="img-responsive" :src="currentPost.image" :alt="currentPost.title" />
               </div>
 
-              <h1 class="post-title">
-                5 Loại Trái Cây Tốt Nhất Giúp Bạn Luôn Tươi Trẻ Và Khỏe Mạnh
-              </h1>
-
-              <div class="post-content border-bottom">
-                <p>
-                  Chế độ ăn uống đóng vai trò then chốt trong việc duy trì năng
-                  lượng và vẻ ngoài rạng rỡ. Việc bổ sung trái cây tươi không
-                  chỉ cung cấp vitamin thiết yếu mà còn giúp cơ thể thanh lọc,
-                  tăng cường sức đề kháng từ bên trong. Mỗi loại quả đều mang
-                  trong mình những dưỡng chất quý giá, giúp nuôi dưỡng làn da và
-                  cải thiện hệ tiêu hóa một cách tự nhiên nhất.
-                </p>
-                <h5>Dưới đây là những nội dung chi tiết:</h5>
-                <p>
-                  Việc lựa chọn thực phẩm sạch, nguồn gốc rõ ràng là bước đầu
-                  tiên để bảo vệ sức khỏe gia đình. Không chỉ dừng lại ở hương
-                  vị thơm ngon, các loại trái cây này còn chứa hàm lượng chất
-                  chống oxy hóa cao, giúp ngăn ngừa lão hóa và mang lại cảm giác
-                  nhẹ nhàng cho cơ thể sau những giờ làm việc căng thẳng. Hãy
-                  cùng chúng tôi điểm qua chi tiết những lợi ích tuyệt vời mà
-                  chúng mang lại ngay sau đây.
-                </p>
-                <div class="row">
-                  <div class="col-lg-6 col-md-6 col-sm-6 col-xs-12">
-                    <img
-                      class="img-responsive"
-                      src="/img/blog/blog-detail-1.jpg"
-                      alt=""
-                    />
-                  </div>
-                  <div class="col-lg-6 col-md-6 col-sm-6 col-xs-12">
-                    <img
-                      class="img-responsive"
-                      src="/img/blog/blog-detail-2.jpg"
-                      alt=""
-                    />
-                  </div>
-                </div>
-                <p>
-                  Chế độ dinh dưỡng hợp lý không chỉ mang lại nguồn năng lượng
-                  dồi dào mà còn giúp cơ thể duy trì trạng thái cân bằng, đẩy
-                  lùi bệnh tật. Việc lựa chọn thực phẩm tươi sạch mỗi ngày chính
-                  là chìa khóa để bảo vệ sức khỏe cho cả gia đình. Chúng tôi tin
-                  rằng, một bữa ăn ngon phải đi đôi với sự an toàn và giá trị
-                  dinh dưỡng thuần khiết nhất. Những loại rau củ quả mọng nước,
-                  thực phẩm hữu cơ không chất bảo quản sẽ giúp thanh lọc cơ thể,
-                  cải thiện làn da và nâng cao chất lượng cuộc sống của bạn một
-                  cách tự nhiên.
-                </p>
-              </div>
+              <h1 class="post-title">{{ currentPost.title }}</h1>
 
               <div class="post-meta border-bottom">
                 <div class="post-info">
-                  <span class="date item"
-                    ><i class="zmdi zmdi-calendar-note"></i>14 Mar, 2018</span
-                  >
-                  <span class="comment item"
-                    ><i class="zmdi zmdi-comments"></i>2 Bình Luận</span
-                  >
-                  <span class="author item"
-                    ><i class="zmdi zmdi-account"></i>Ivan</span
-                  >
-                </div>
-
-                <div class="post-share">
-                  <div class="item">
-                    <a href="#"
-                      ><i class="zmdi zmdi-share" aria-hidden="true"></i
-                      ><span class="text">Chia sẻ</span></a
-                    >
-                  </div>
-                  <div class="item">
-                    <a href="#"
-                      ><i class="zmdi zmdi-email" aria-hidden="true"></i
-                      ><span class="text">Gửi cho bạn bè</span></a
-                    >
-                  </div>
-                  <div class="item">
-                    <a href="#"
-                      ><i class="zmdi zmdi-print" aria-hidden="true"></i
-                      ><span class="text">In</span></a
-                    >
-                  </div>
+                  <span v-if="currentPost.date" class="date item">
+                    <i class="zmdi zmdi-calendar-note"></i>{{ currentPost.date }}
+                  </span>
+                  <span v-if="currentPost.category" class="item">
+                    <i class="zmdi zmdi-folder"></i>{{ currentPost.category }}
+                  </span>
                 </div>
               </div>
 
-              <div class="post-author d-flex">
-                <div class="author-left">
-                  <div class="avatar">
-                    <img
-                      src="/img/avatar.jpg"
-                      alt=""
-                      width="100"
-                      height="100"
-                    />
-                  </div>
-                </div>
-                <div class="author-body">
-                  <div class="author-meta">
-                    <span class="name">Ivan</span> |
-                    <span class="role">Người dùng</span>
-                  </div>
-                  <div class="author-info">
-                    Hãy nhìn vào ánh hoàng hôn kia mà xem, cuộc sống này thật
-                    tuyệt vời, cuộc sống thật tươi đẹp; đời là do chính tay bạn
-                    nhào nặn nên. Để thành công, trước hết bạn phải có lòng tin.
-                    Khi đã tin tưởng, bạn chắc chắn sẽ thành công. Trên đường
-                    đời sẽ luôn có những rào cản, nhưng chúng ta sẽ vượt qua tất
-                    cả thôi. Hãy ăn mừng chiến thắng một cách xứng đáng, đó là
-                    con đường duy nhất. Các quý cô cứ luôn hỏi: 'Ivan, sao anh
-                    thơm thế?', tôi chẳng dùng nước hoa đâu nhé. Bí kíp nằm ở bơ
-                    ca cao đấy!
-                  </div>
+              <div v-if="currentPost.summary" class="post-description border-bottom">
+                {{ currentPost.summary }}
+              </div>
+
+              <div class="post-content border-bottom" v-html="articleContent"></div>
+
+              <div v-if="currentPost.tags.length" class="post-meta border-bottom">
+                <div class="post-info">
+                  <span v-for="tag in currentPost.tags" :key="tag" class="item">#{{ tag }}</span>
                 </div>
               </div>
 
-              <div class="clear"></div>
-
-              <div class="latest-news layout-2">
+              <div v-if="relatedPosts.length" class="latest-news layout-2">
                 <div class="block-title">
                   <h2 class="title"><span>Tin</span> liên quan</h2>
                 </div>
 
                 <div class="block-content">
                   <div class="row">
-                    <div class="col-lg-4 col-md-4 col-sm-4 col-xs-12">
-                      <div class="blog-item">
-                        <div class="blog-image">
-                          <a href="#" class="zoom-effect">
-                            <img src="/img/blog/blog-1.jpg" alt="Blog Image" />
-                          </a>
-                        </div>
-                        <div class="blog-info">
-                          <div class="blog-title">
-                            <a href="#"
-                              >5 Loại trái cây tốt nhất giúp bạn luôn tươi trẻ
-                              và khỏe mạnh</a
-                            >
-                          </div>
-                          <div class="blog-desc">
-                            Khám phá những bí quyết dinh dưỡng từ thiên nhiên để
-                            tăng cường sức đề kháng, cải thiện làn da và duy trì
-                            nguồn năng lượng tích cực mỗi ngày...
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="col-lg-4 col-md-4 col-sm-4 col-xs-12">
-                      <div class="blog-item">
-                        <div class="blog-image">
-                          <a href="#" class="zoom-effect">
-                            <img src="/img/blog/blog-2.jpg" alt="Blog Image" />
-                          </a>
-                        </div>
-                        <div class="blog-info">
-                          <div class="blog-title">
-                            <a href="#"
-                              >5 Loại trái cây tốt nhất giúp bạn luôn tươi trẻ
-                              và khỏe mạnh</a
-                            >
-                          </div>
-                          <div class="blog-desc">
-                            Khám phá những bí quyết dinh dưỡng từ thiên nhiên để
-                            tăng cường sức đề kháng, cải thiện làn da và duy trì
-                            nguồn năng lượng tích cực mỗi ngày...
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="col-lg-4 col-md-4 col-sm-4 col-xs-12">
-                      <div class="blog-item">
-                        <div class="blog-image">
-                          <a href="#" class="zoom-effect">
-                            <img src="/img/blog/blog-3.jpg" alt="Blog Image" />
-                          </a>
-                        </div>
-                        <div class="blog-info">
-                          <div class="blog-title">
-                            <a href="#"
-                              >5 Loại trái cây tốt nhất giúp bạn luôn tươi trẻ
-                              và khỏe mạnh</a
-                            >
-                          </div>
-                          <div class="blog-desc">
-                            Khám phá những bí quyết dinh dưỡng từ thiên nhiên để
-                            tăng cường sức đề kháng, cải thiện làn da và duy trì
-                            nguồn năng lượng tích cực mỗi ngày...
-                          </div>
-                        </div>
-                      </div>
+                    <div
+                      v-for="post in relatedPosts"
+                      :key="post.id || post.slug"
+                      class="col-lg-4 col-md-4 col-sm-4 col-xs-12"
+                    >
+                      <BlogCard :post="post" />
                     </div>
                   </div>
-                </div>
-              </div>
-
-              <div class="post-reviews reviews">
-                <div class="comments-list">
-                  <div class="block-title">
-                    <h2 class="title"><span>Bình Luận</span></h2>
-                  </div>
-
-                  <div class="item d-flex">
-                    <div class="comment-left">
-                      <div class="avatar">
-                        <img
-                          src="/img/avatar.jpg"
-                          alt=""
-                          width="70"
-                          height="70"
-                        />
-                      </div>
-                      <div class="product-rating">
-                        <div class="star on"></div>
-                        <div class="star on"></div>
-                        <div class="star on"></div>
-                        <div class="star on"></div>
-                        <div class="star on"></div>
-                      </div>
-                    </div>
-                    <div class="comment-body">
-                      <div class="comment-meta">
-                        <span class="author">Peter</span> -
-                        <span class="time">June 02, 2018</span>
-                      </div>
-                      <div class="comment-content">
-                        Hãy nhìn vào ánh hoàng hôn kia mà xem, cuộc sống này
-                        thật tuyệt vời, cuộc sống thật tươi đẹp; đời là do chính
-                        tay bạn nhào nặn nên. Để thành công, trước hết bạn phải
-                        có lòng tin. Khi đã tin tưởng, bạn chắc chắn sẽ thành
-                        công. Trên đường đời sẽ luôn có những rào cản, nhưng
-                        chúng ta sẽ vượt qua tất cả thôi. Hãy ăn mừng chiến
-                        thắng một cách xứng đáng, đó là con đường duy nhất. Các
-                        quý cô cứ luôn hỏi: 'Ivan, sao anh thơm thế?', tôi chẳng
-                        dùng nước hoa đâu nhé. Bí kíp nằm ở bơ ca cao đấy!
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="item d-flex">
-                    <div class="comment-left">
-                      <div class="avatar">
-                        <img
-                          src="/img/avatar.jpg"
-                          alt=""
-                          width="70"
-                          height="70"
-                        />
-                      </div>
-                      <div class="product-rating">
-                        <div class="star on"></div>
-                        <div class="star on"></div>
-                        <div class="star on"></div>
-                        <div class="star on"></div>
-                        <div class="star"></div>
-                      </div>
-                    </div>
-                    <div class="comment-body">
-                      <div class="comment-meta">
-                        <span class="author">Merry</span> -
-                        <span class="time">June 17, 2018</span>
-                      </div>
-                      <div class="comment-content">
-                        Hãy nhìn vào ánh hoàng hôn kia mà xem, cuộc sống này
-                        thật tuyệt vời, cuộc sống thật tươi đẹp; đời là do chính
-                        tay bạn nhào nặn nên. Để thành công, trước hết bạn phải
-                        có lòng tin. Khi đã tin tưởng, bạn chắc chắn sẽ thành
-                        công. Trên đường đời sẽ luôn có những rào cản, nhưng
-                        chúng ta sẽ vượt qua tất cả thôi. Hãy ăn mừng chiến
-                        thắng một cách xứng đáng, đó là con đường duy nhất. Các
-                        quý cô cứ luôn hỏi: 'Ivan, sao anh thơm thế?', tôi chẳng
-                        dùng nước hoa đâu nhé. Bí kíp nằm ở bơ ca cao đấy!
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="review-form">
-                  <div class="block-title">
-                    <h2 class="title">Gửi <span>bình luận</span></h2>
-                  </div>
-
-                  <form action="#" method="post" class="form-validate">
-                    <div class="form-group">
-                      <div class="text">Đánh Giá</div>
-                      <div class="product-rating">
-                        <div class="star"></div>
-                        <div class="star"></div>
-                        <div class="star"></div>
-                        <div class="star"></div>
-                        <div class="star"></div>
-                      </div>
-                    </div>
-
-                    <div class="form-group">
-                      <div class="text">
-                        Nội Dung Bình Luận<sup class="required">*</sup>
-                      </div>
-                      <textarea
-                        id="comment"
-                        name="comment"
-                        cols="45"
-                        rows="6"
-                        aria-required="true"
-                      ></textarea>
-                    </div>
-
-                    <div class="form-group">
-                      <button class="btn btn-primary">Gửi Bình Luận</button>
-                    </div>
-                  </form>
                 </div>
               </div>
             </div>

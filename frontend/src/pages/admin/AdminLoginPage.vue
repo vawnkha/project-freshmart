@@ -1,8 +1,12 @@
 <script setup>
 import { reactive, ref } from "vue";
+import { useForm } from "vee-validate";
+import { toTypedSchema } from "@vee-validate/zod";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/user/auth";
 import { decodeJwtPayload, hasJwtPermission } from "@/utils/jwt.util";
+import { emailSchema, passwordSchema, z } from "@/validators/common.validator";
+import { mapBackendValidationErrors } from "@/utils/validation-error.util";
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -15,8 +19,23 @@ const form = reactive({
   password: "",
 });
 
+const loginSchema = toTypedSchema(
+  z.object({
+    email: emailSchema,
+    password: passwordSchema,
+  }),
+);
+
+const { errors, setErrors, setValues, validate } = useForm({
+  validationSchema: loginSchema,
+});
+
 async function handleLogin() {
   errorMessage.value = "";
+  setValues({ ...form });
+  const result = await validate();
+  if (!result.valid) return;
+
   loading.value = true;
 
   try {
@@ -33,6 +52,7 @@ async function handleLogin() {
 
     router.push({ name: "admin-dashboard" });
   } catch (error) {
+    setErrors(mapBackendValidationErrors(error));
     errorMessage.value = error?.response?.data?.message || "Đăng nhập thất bại";
   } finally {
     loading.value = false;
@@ -49,15 +69,19 @@ async function handleLogin() {
         v-model="form.email"
         type="email"
         class="admin-login-input form-control"
+        :class="{ 'is-invalid': errors.email }"
         placeholder="Email"
       />
+      <div v-if="errors.email" class="form-error">{{ errors.email }}</div>
 
       <input
         v-model="form.password"
         type="password"
         class="admin-login-input form-control"
+        :class="{ 'is-invalid': errors.password }"
         placeholder="Mật khẩu"
       />
+      <div v-if="errors.password" class="form-error">{{ errors.password }}</div>
 
       <button
         type="submit"

@@ -67,6 +67,37 @@ const authJWT = async (req, res, next) => {
   }
 };
 
+const optionalAuthJWT = async (req, res, next) => {
+  const token = getBearerToken(req);
+  if (!token) return next();
+
+  try {
+    const decoded = jwt.verify(token, getJwtSecret());
+    const userId = decoded?.id;
+    const objectId = ObjectId.isValid(userId) ? new ObjectId(userId) : null;
+    if (!objectId) return next();
+
+    const user = await MongoDB.client
+      .db()
+      .collection("users")
+      .findOne({ _id: objectId });
+
+    if (!user || ["pending", "blocked"].includes(user.status)) {
+      return next();
+    }
+
+    const rbacService = new RbacService(MongoDB.client);
+    const authContext = await rbacService.getAuthContextForUser(user);
+
+    req.auth = decoded;
+    req.currentUser = user;
+    req.user = authContext;
+    return next();
+  } catch (_) {
+    return next();
+  }
+};
+
 function authorizePermissions(...requiredPermissions) {
   return (req, res, next) => {
     if (!req.user) {
@@ -127,5 +158,6 @@ authJWT.authorizeRoles = authorizeRoles;
 authJWT.authorizeOwnerOrPermissions = authorizeOwnerOrPermissions;
 authJWT.canAccessOwner = canAccessOwner;
 authJWT.hasPermission = hasPermission;
+authJWT.optional = optionalAuthJWT;
 
 module.exports = authJWT;

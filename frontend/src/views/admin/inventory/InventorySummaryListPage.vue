@@ -1,18 +1,23 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import inventorySummaryService from "@/services/inventory-summary.service";
+import inventoryItemService from "@/services/inventory-item.service";
 import AdminPagination from "@/components/common/AdminPagination.vue";
 
+const route = useRoute();
 const router = useRouter();
 const summaries = ref([]);
+const inventoryItems = ref([]);
 const loading = ref(false);
+const itemLoading = ref(false);
 const currentPage = ref(1);
 const pageSize = ref(12);
 
 const filters = reactive({
   keyword: "",
   stockState: "",
+  inventoryItemId: "",
 });
 
 const filteredSummaries = computed(() => {
@@ -32,8 +37,11 @@ const filteredSummaries = computed(() => {
       (filters.stockState === "available" && available > 0) ||
       (filters.stockState === "empty" && available <= 0) ||
       (filters.stockState === "locked" && locked > 0);
+    const matchItem =
+      !filters.inventoryItemId ||
+      normalizeId(item.inventoryItemId) === filters.inventoryItemId;
 
-    return matchKeyword && matchState;
+    return matchKeyword && matchState && matchItem;
   });
 });
 
@@ -91,9 +99,20 @@ function stockClass(item) {
 }
 
 function stockText(item) {
-  if (getAvailableQuantity(item) <= 0) return "Het hang";
-  if (Number(item.lockedQuantity || 0) > 0) return "Co khoa";
-  return "Con hang";
+  if (getAvailableQuantity(item) <= 0) return "Hết hàng";
+  if (Number(item.lockedQuantity || 0) > 0) return "Có khóa";
+  return "Còn hàng";
+}
+
+function itemOptionLabel(item) {
+  return [item.itemCode, item.itemName].filter(Boolean).join(" - ") || getId(item);
+}
+
+function selectedInventoryItemLabel() {
+  const item = inventoryItems.value.find(
+    (entry) => getId(entry) === filters.inventoryItemId,
+  );
+  return item ? itemOptionLabel(item) : filters.inventoryItemId;
 }
 
 function goToBatches(item) {
@@ -117,14 +136,41 @@ async function fetchSummaries() {
     summaries.value = normalizeList(res);
   } catch (error) {
     console.error(error);
-    alert(error?.response?.data?.message || "Khong the tai ton kho tong");
+    alert(error?.response?.data?.message || "Không thể tải tồn kho tổng");
   } finally {
     loading.value = false;
   }
 }
 
+async function fetchInventoryItems() {
+  itemLoading.value = true;
+  try {
+    const res = await inventoryItemService.getAll();
+    inventoryItems.value = normalizeList(res);
+  } catch (error) {
+    console.error(error);
+    inventoryItems.value = [];
+  } finally {
+    itemLoading.value = false;
+  }
+}
+
+function syncQueryFilter() {
+  const itemId = route.query.inventoryItemId;
+  filters.inventoryItemId = typeof itemId === "string" ? itemId : "";
+}
+
 watch(
-  () => [filters.keyword, filters.stockState],
+  () => route.query.inventoryItemId,
+  () => {
+    syncQueryFilter();
+    currentPage.value = 1;
+  },
+  { immediate: true },
+);
+
+watch(
+  () => [filters.keyword, filters.stockState, filters.inventoryItemId],
   () => {
     currentPage.value = 1;
   },
@@ -135,31 +181,34 @@ watch(filteredSummaries, (list) => {
   if (currentPage.value > maxPage) currentPage.value = maxPage;
 });
 
-onMounted(fetchSummaries);
+onMounted(() => {
+  fetchSummaries();
+  fetchInventoryItems();
+});
 </script>
 
 <template>
   <div class="admin-page">
     <div class="admin-page-title admin-page-title--stack">
-      <h1>Ton kho tong</h1>
-      <p>Tong hop ton theo inventory item, dung de doi chieu batch va giao dich kho.</p>
+      <h1>Tồn kho tổng</h1>
+      <p>Tổng hợp tồn theo inventory item, dùng để đối chiếu batch và giao dịch kho.</p>
     </div>
 
     <div class="admin-stat-row admin-stat-row--orders">
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Tong item</div>
+        <div class="admin-stat-card__label">Tổng item</div>
         <div class="admin-stat-card__value">{{ filteredSummaries.length }}</div>
       </div>
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Tong ton</div>
+        <div class="admin-stat-card__label">Tổng tồn</div>
         <div class="admin-stat-card__value">{{ totalQuantity }}</div>
       </div>
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Co san</div>
+        <div class="admin-stat-card__label">Có sẵn</div>
         <div class="admin-stat-card__value">{{ totalAvailable }}</div>
       </div>
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Dang khoa</div>
+        <div class="admin-stat-card__label">Đang khóa</div>
         <div class="admin-stat-card__value">{{ totalLocked }}</div>
       </div>
     </div>
@@ -167,52 +216,72 @@ onMounted(fetchSummaries);
     <section class="admin-panel">
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
-          <div class="admin-panel__header-title">Danh sach ton kho</div>
+          <div class="admin-panel__header-title">Danh sách tồn kho</div>
           <div class="admin-panel__header-subtitle">
-            Khong su dung pagination backend; loc va chia trang tai frontend.
+            Không sử dụng pagination backend; lọc và chia trang tại frontend.
           </div>
         </div>
         <button class="admin-btn admin-btn--secondary" @click="fetchSummaries">
-          Lam moi
+          Làm mới
         </button>
       </div>
 
       <div class="admin-panel__body">
         <div class="row admin-toolbar">
-          <div class="col-md-8">
+          <div class="col-md-5">
             <input
               v-model="filters.keyword"
               type="text"
               class="admin-toolbar__input"
-              placeholder="Tim ma hang, ten hang, don vi, inventoryItemId"
+              placeholder="Tìm mã hàng, tên hàng, đơn vị"
             />
           </div>
-          <div class="col-md-4">
+          <div class="col-md-3">
             <select v-model="filters.stockState" class="admin-toolbar__select">
-              <option value="">Tat ca tinh trang</option>
-              <option value="available">Con hang</option>
-              <option value="empty">Het hang</option>
-              <option value="locked">Co ton dang khoa</option>
+              <option value="">Tất cả tình trạng</option>
+              <option value="available">Còn hàng</option>
+              <option value="empty">Hết hàng</option>
+              <option value="locked">Có tồn đang khóa</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <select
+              v-model="filters.inventoryItemId"
+              class="admin-toolbar__select"
+              :disabled="itemLoading"
+            >
+              <option value="">Tất cả hàng kho</option>
+              <option
+                v-for="item in inventoryItems"
+                :key="getId(item)"
+                :value="getId(item)"
+              >
+                {{ itemOptionLabel(item) }}
+              </option>
             </select>
           </div>
         </div>
 
-        <div v-if="loading" class="admin-empty-state">Dang tai ton kho...</div>
+        <div v-if="filters.inventoryItemId" class="inventory-filter-chip">
+          Đang lọc hàng kho: <strong>{{ selectedInventoryItemLabel() }}</strong>
+        </div>
+
+        <div v-if="loading" class="admin-empty-state">Đang tải tồn kho...</div>
         <div v-else-if="!filteredSummaries.length" class="admin-empty-state">
-          Chua co ton kho phu hop
+          Chưa có tồn kho phù hợp
         </div>
 
         <div v-else class="table-responsive">
           <table class="admin-table admin-table--orders">
             <thead>
               <tr>
-                <th>Hang kho</th>
-                <th>Tong ton</th>
-                <th>Co san</th>
-                <th>Dang khoa</th>
-                <th>Het han</th>
-                <th>Tinh trang</th>
-                <th>Cap nhat</th>
+                <th>Hàng kho</th>
+                <th>Tổng tồn</th>
+                <th>Có sẵn</th>
+                <th>Đang khóa</th>
+                <th>Hết hạn</th>
+                <th>Tình trạng</th>
+                <th>Cập nhật</th>
                 <th></th>
               </tr>
             </thead>
@@ -236,10 +305,10 @@ onMounted(fetchSummaries);
                 <td>
                   <div class="admin-action-stack admin-action-stack--row">
                     <button class="admin-btn admin-btn--primary" @click="goToBatches(item)">
-                      Xem lo
+                      Xem lô
                     </button>
                     <button class="admin-btn admin-btn--secondary" @click="goToTransactions(item)">
-                      Giao dich
+                      Giao dịch
                     </button>
                   </div>
                 </td>
@@ -264,5 +333,15 @@ onMounted(fetchSummaries);
   font-size: 12px;
   margin-top: 4px;
   max-width: 260px;
+}
+
+.inventory-filter-chip {
+  background: #eef6ff;
+  border: 1px solid #cfe5ff;
+  border-radius: 6px;
+  color: #255d91;
+  font-size: 13px;
+  margin: 0 0 14px;
+  padding: 8px 10px;
 }
 </style>

@@ -11,6 +11,26 @@ class UploadService {
     });
     return res.data;
   }
+
+  async uploadBannerImage(file) {
+    const formData = new FormData();
+    formData.append("image", file);
+
+    const res = await this.api.post("/banners", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return res.data;
+  }
+
+  async uploadNewsImage(file) {
+    const formData = new FormData();
+    formData.append("image", file);
+
+    const res = await this.api.post("/news", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return res.data;
+  }
 }
 
 export default new UploadService();

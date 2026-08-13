@@ -247,8 +247,8 @@ function printPage() {
           <h2 class="title">{{ product.name }}</h2>
 
           <ul class="breadcrumb">
-            <li><router-link to="/">Trang Chá»§</router-link></li>
-            <li><router-link to="/products">Sáº£n Pháº©m</router-link></li>
+            <li><router-link to="/">Trang Chủ</router-link></li>
+            <li><router-link to="/products">Sản phẩm</router-link></li>
             <li>
               <span>{{ product.name }}</span>
             </li>
@@ -310,15 +310,15 @@ function printPage() {
                   <div class="product-info">
                     <div class="product-price">
                       <span class="sale-price"
-                        >{{ Number(product.price).toLocaleString("vi-VN") }} Ä‘ /
+                        >{{ Number(product.price).toLocaleString("vi-VN") }} đ/
                         {{ product.unit }}</span
                       >
                     </div>
 
                     <div class="product-stock">
-                      <span class="availability">TÃ¬nh Tráº¡ng :</span
+                      <span class="availability">Trạng thái:</span
                       ><i class="fa fa-check-square-o" aria-hidden="true"></i>
-                      {{ product.stock > 0 ? "CÃ²n HÃ ng" : "Háº¿t HÃ ng" }}
+                      {{ product.stock > 0 ? "Còn hàng" : "Hết hàng" }}
                     </div>
 
                     <div class="product-short-description">
@@ -381,13 +381,13 @@ function printPage() {
                       <div class="item">
                         <a href="#" @click.prevent
                           ><i class="zmdi zmdi-share" aria-hidden="true"></i
-                          ><span class="text">Chia sáº»</span></a
+                          ><span class="text">Chia sẻ</span></a
                         >
                       </div>
                       <div class="item">
                         <a href="#" @click.prevent
                           ><i class="zmdi zmdi-email" aria-hidden="true"></i
-                          ><span class="text">Gá»­i cho báº¡n bÃ¨</span></a
+                          ><span class="text">Gửi cho bạn bè</span></a
                         >
                       </div>
                       <div class="item">
@@ -401,7 +401,7 @@ function printPage() {
                     <div class="product-review border-bottom">
                       <div class="item">
                         <div class="product-quantity">
-                          <span class="control-label">ÄÃ¡nh GiÃ¡:</span>
+                          <span class="control-label">Đánh giá:</span>
                           <div class="product-rating">
                             <div
                               v-for="star in 5"
@@ -421,7 +421,7 @@ function printPage() {
                         <a href="#" @click.prevent="activeTab = 'review'"
                           ><i class="zmdi zmdi-comments" aria-hidden="true"></i
                           ><span class="text"
-                            >Äá»c ÄÃ¡nh GiÃ¡ ({{ reviews.length }})</span
+                            >Đọc đánh giá ({{ reviews.length }})</span
                           ></a
                         >
                       </div>
@@ -429,7 +429,7 @@ function printPage() {
                       <div class="item">
                         <a href="#" @click.prevent="activeTab = 'review'"
                           ><i class="zmdi zmdi-edit" aria-hidden="true"></i
-                          ><span class="text">Viáº¿t ÄÃ¡nh GiÃ¡</span></a
+                          ><span class="text">Viết đánh giá</span></a
                         >
                       </div>
                     </div>
@@ -440,7 +440,7 @@ function printPage() {
                           ><span class="control-label">E-02154</span> -->
                       </div>
                       <div class="item">
-                        <span class="control-label">Danh Má»¥c :</span>
+                        <span class="control-label">Danh Mục:</span>
                         <a href="#">{{ product.category_name }}</a>
                       </div>
                       <div class="item">

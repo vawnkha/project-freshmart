@@ -477,9 +477,9 @@ onMounted(fetchBanners);
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
           <div class="admin-panel__header-title">Danh sách banner</div>
-          <div class="admin-panel__header-subtitle">
+          <!-- <div class="admin-panel__header-subtitle">
             Dữ liệu lấy từ /api/banners, filter và phân trang xử lý ở frontend.
-          </div>
+          </div> -->
         </div>
 
         <button type="button" class="admin-btn admin-btn--primary" @click="openCreateModal">

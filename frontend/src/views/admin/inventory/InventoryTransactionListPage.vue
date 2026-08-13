@@ -213,9 +213,9 @@ onMounted(() => {
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
           <div class="admin-panel__header-title">Lịch sử giao dịch</div>
-          <div class="admin-panel__header-subtitle">
+          <!-- <div class="admin-panel__header-subtitle">
             Transaction type gồm import/export/cancel, không dùng variant.
-          </div>
+          </div> -->
         </div>
         <button class="admin-btn admin-btn--secondary" @click="fetchTransactions">
           Làm mới

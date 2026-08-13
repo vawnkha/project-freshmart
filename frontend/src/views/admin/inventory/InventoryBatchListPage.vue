@@ -235,9 +235,9 @@ onMounted(() => {
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
           <div class="admin-panel__header-title">Danh sách lô hàng</div>
-          <div class="admin-panel__header-subtitle">
+          <!-- <div class="admin-panel__header-subtitle">
             Load toàn bộ dữ liệu và lọc/phân trang tại frontend.
-          </div>
+          </div> -->
         </div>
         <button class="admin-btn admin-btn--secondary" @click="fetchBatches">
           Làm mới

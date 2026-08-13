@@ -279,7 +279,7 @@ onMounted(async () => {
             <input
               v-model="form.purchaseCode"
               class="admin-form__control"
-              placeholder="Để trống để backend tự sinh"
+              placeholder="Để trống để hệ thống tự sinh"
             />
           </div>
 

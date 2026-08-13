@@ -123,7 +123,7 @@ const menus = [
     ],
     children: [
       {
-        label: "Hàng kho",
+        label: "Kho hàng",
         to: { name: "admin-inventory-items" },
         names: ["admin-inventory-items"],
         permission: "inventory:manage",

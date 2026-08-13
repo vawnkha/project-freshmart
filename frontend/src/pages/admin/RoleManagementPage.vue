@@ -214,7 +214,7 @@ onMounted(fetchData);
 <template>
   <div class="admin-page">
     <div class="admin-page-title admin-page-title--stack">
-      <h1>Quan ly phan quyen</h1>
+      <h1>Quản lý phân quyền</h1>
       <p>Tao role dong va gan permission theo tung nhom nghiep vu.</p>
     </div>
 

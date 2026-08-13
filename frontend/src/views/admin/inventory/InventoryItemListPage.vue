@@ -722,13 +722,13 @@ onMounted(loadPageData);
 <template>
   <div class="admin-page inventory-items-page">
     <div class="admin-page-title admin-page-title--stack">
-      <h1>Quản lý hàng kho</h1>
-      <p>Quản lý inventory items và tạo sản phẩm website từ hàng kho.</p>
+      <h1>Quản lý kho hàng</h1>
+      <p>Quản lý inventory items và tạo sản phẩm website từ kho hàng.</p>
     </div>
 
     <div class="admin-stat-row admin-stat-row--products">
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Tổng hàng kho</div>
+        <div class="admin-stat-card__label">Tổng kho hàng</div>
         <div class="admin-stat-card__value">{{ totalItems }}</div>
       </div>
 
@@ -751,11 +751,11 @@ onMounted(loadPageData);
     <section class="admin-panel">
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
-          <div class="admin-panel__header-title">Danh sách hàng kho</div>
-          <div class="admin-panel__header-subtitle">
+          <div class="admin-panel__header-title">Danh sách kho hàng</div>
+          <!-- <div class="admin-panel__header-subtitle">
             Dữ liệu lấy từ /api/inventory-items, filter và phân trang được xử lý
             ở frontend.
-          </div>
+          </div> -->
         </div>
 
         <div class="inventory-header-actions">
@@ -764,7 +764,7 @@ onMounted(loadPageData);
           </button>
           <button class="admin-btn admin-btn--primary" @click="openCreateModal">
             <i class="fa-solid fa-plus me-1"></i>
-            Thêm hàng kho
+            Thêm sản phẩm vào kho
           </button>
         </div>
       </div>
@@ -936,7 +936,7 @@ onMounted(loadPageData);
       <div class="admin-modal admin-modal--wide">
         <div class="admin-modal__header">
           <div class="admin-modal__title">
-            {{ itemModalMode === "create" ? "Thêm hàng kho" : "Cập nhật hàng kho" }}
+            {{ itemModalMode === "create" ? "Thêm sản phẩm vào kho" : "Cập nhật sản phẩm trong kho" }}
           </div>
           <button
             type="button"

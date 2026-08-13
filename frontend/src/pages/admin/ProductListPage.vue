@@ -418,7 +418,7 @@ onMounted(fetchData);
                 <td>
                   <strong>{{ item.stock }}</strong>
                   <div v-if="hasInventoryLink(item)" class="admin-note">
-                    Từ tổng tồn
+                    Từ tổng tồn kho
                   </div>
                 </td>
 

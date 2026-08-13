@@ -156,9 +156,9 @@ onMounted(fetchData);
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
           <div class="admin-panel__header-title">Danh sách bài viết</div>
-          <div class="admin-panel__header-subtitle">
+          <!-- <div class="admin-panel__header-subtitle">
             Dữ liệu lấy từ /api/news, filter và phân trang xử lý ở frontend.
-          </div>
+          </div> -->
         </div>
 
         <RouterLink class="admin-btn admin-btn--primary" :to="{ name: 'admin-news-create' }">

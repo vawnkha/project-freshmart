@@ -217,9 +217,9 @@ onMounted(() => {
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
           <div class="admin-panel__header-title">Danh sách tồn kho</div>
-          <div class="admin-panel__header-subtitle">
+          <!-- <div class="admin-panel__header-subtitle">
             Không sử dụng pagination backend; lọc và chia trang tại frontend.
-          </div>
+          </div> -->
         </div>
         <button class="admin-btn admin-btn--secondary" @click="fetchSummaries">
           Làm mới

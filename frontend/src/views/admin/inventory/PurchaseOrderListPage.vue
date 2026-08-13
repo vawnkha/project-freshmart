@@ -203,9 +203,9 @@ onMounted(fetchData);
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
           <div class="admin-panel__header-title">Danh sách phiếu nhập</div>
-          <div class="admin-panel__header-subtitle">
+          <!-- <div class="admin-panel__header-subtitle">
             Dữ liệu được tải toàn bộ từ backend và lọc/phân trang ở frontend.
-          </div>
+          </div> -->
         </div>
         <div class="purchase-order-actions">
           <button class="admin-btn admin-btn--secondary" @click="fetchData">

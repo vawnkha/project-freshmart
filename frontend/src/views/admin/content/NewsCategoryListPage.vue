@@ -276,10 +276,10 @@ onMounted(fetchCategories);
     <section class="admin-panel">
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
-          <div class="admin-panel__header-title">Danh sách danh mục</div>
-          <div class="admin-panel__header-subtitle">
+          <div class="admin-panel__header-title">Danh sách danh mục bài viết</div>
+          <!-- <div class="admin-panel__header-subtitle">
             Dữ liệu lấy từ /api/news-categories, filter xử lý ở frontend.
-          </div>
+          </div> -->
         </div>
         <button type="button" class="admin-btn admin-btn--primary" @click="openCreateModal">
           Thêm danh mục

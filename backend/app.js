@@ -3,6 +3,8 @@ const cors = require("cors");
 const path = require("path");
 const http = require("http");
 const { Server } = require("socket.io");
+const helmet = require("helmet");
+const { ObjectId } = require("mongodb");
 const userRoute = require("./app/routes/user.route");
 const wishlistRoute = require("./app/routes/wishlist.route");
 const categoryRoute = require("./app/routes/categories.route");
@@ -35,31 +37,63 @@ const inventoryTransactionRoute = require("./app/routes/inventory-transactions.r
 const ApiError = require("./app/api-error");
 
 const { initSocket } = require("./app/utils/socket.util");
+const { buildCorsOptions } = require("./app/config/security");
+const { verifyAccessToken } = require("./app/utils/jwt.util");
+const MongoDB = require("./app/utils/mongodb.util");
+const RbacService = require("./app/services/rbac.service");
+const { hasPermission } = require("./app/config/permissions");
 
 const app = express();
 const server = http.createServer(app);
+const corsOptions = buildCorsOptions();
 
 const io = new Server(server, {
-  cors: {
-    origin: true,
-    credentials: true,
-  },
+  cors: corsOptions,
 });
 
 initSocket(io);
 
-io.on("connection", (socket) => {
-  console.log("Socket connected");
-  socket.on("admin:join", () => {
-    socket.join("admin-room");
-  });
-  socket.on("disconnect", () => {
-    console.log("Socket disconnected");
-  });
+io.use(async (socket, next) => {
+  try {
+    const authHeader = socket.handshake.headers.authorization || "";
+    const token =
+      socket.handshake.auth?.token || authHeader.replace(/^Bearer\s+/i, "");
+    const decoded = verifyAccessToken(token);
+    const userId = ObjectId.isValid(decoded?.id)
+      ? new ObjectId(decoded.id)
+      : null;
+    if (!userId) return next(new Error("unauthorized"));
+
+    const user = await MongoDB.client
+      .db()
+      .collection("users")
+      .findOne({ _id: userId });
+    if (!user || ["pending", "blocked"].includes(user.status)) {
+      return next(new Error("unauthorized"));
+    }
+
+    const authContext = await new RbacService(
+      MongoDB.client,
+    ).getAuthContextForUser(user);
+    if (!hasPermission(authContext, ["notification:manage"])) {
+      return next(new Error("forbidden"));
+    }
+
+    socket.data.user = authContext;
+    return next();
+  } catch (_) {
+    return next(new Error("unauthorized"));
+  }
 });
 
-app.use(cors());
-app.use(express.json());
+io.on("connection", (socket) => {
+  socket.join("admin-room");
+});
+
+app.disable("x-powered-by");
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+app.use(cors(corsOptions));
+app.use(express.json({ limit: "1mb" }));
 
 app.use("/uploads", express.static(path.join(__dirname, "public/uploads")));
 
@@ -102,8 +136,21 @@ app.use((req, res, next) => {
 });
 
 app.use((err, req, res, next) => {
-  return res.status(err.statusCode || 500).json({
-    message: err.message || "Internal Server Error",
+  if (err.code === 11000) {
+    console.warn("Unique resource conflict", err.keyPattern || {});
+    return res.status(409).json({ success: false, code: "DUPLICATE_RESOURCE",
+      message: "Thông tin này đã tồn tại. Vui lòng kiểm tra và thử lại." });
+  }
+  const statusCode =
+    err.statusCode || (err.type === "entity.too.large" ? 413 : 500);
+  const publicMessage =
+    statusCode >= 500
+      ? "Internal Server Error"
+      : err.message || "Request failed";
+  if (statusCode >= 500) console.error(err);
+  return res.status(statusCode).json({
+    message: publicMessage,
+    ...(statusCode < 500 && err.code ? { success: false, code: err.code } : {}),
   });
 });
 

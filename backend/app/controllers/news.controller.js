@@ -1,4 +1,5 @@
 const ApiError = require("../api-error");
+const { deleteUnreferencedUpload } = require("../utils/local-upload.util");
 const NewsService = require("../services/news.service");
 const MongoDB = require("../utils/mongodb.util");
 
@@ -79,8 +80,9 @@ exports.remove = async (req, res, next) => {
       userId: req.user?.id,
     });
     if (!document) return next(new ApiError(404, "Bai viet khong ton tai"));
+    await deleteUnreferencedUpload(MongoDB.client, "news", document.thumbnail);
     return res.send({
-      message: "Da luu tru bai viet thanh cong",
+      message: "Đã xóa bài viết thành công",
       data: document,
     });
   } catch (error) {

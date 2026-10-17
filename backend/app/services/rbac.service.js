@@ -74,43 +74,50 @@ class RbacService {
   }
 
   async ensureDefaults() {
-    if (RbacService.defaultsReady) return;
+    if (RbacService.defaultsReady && RbacService.seededClients.has(this.client)) return;
+    if (RbacService.seedingClients.has(this.client)) return RbacService.seedingClients.get(this.client);
+    const pending = this.seedMissingDefaults();
+    RbacService.seedingClients.set(this.client, pending);
+    try { await pending; } finally { RbacService.seedingClients.delete(this.client); }
+  }
 
+  async seedMissingDefaults() {
     await this.ensurePermissions();
 
     for (const role of DEFAULT_ROLES) {
-      await this.Roles.updateOne(
+      const session = this.client.startSession();
+      try { await session.withTransaction(async () => {
+      const result = await this.Roles.updateOne(
         { code: role.code },
         {
-          $set: {
+          $setOnInsert: {
             name: role.name,
             description: role.description,
             is_system: role.is_system,
             status: "active",
             updated_at: new Date(),
-          },
-          $setOnInsert: {
             created_at: new Date(),
           },
         },
-        { upsert: true },
+        { upsert: true, session },
       );
-
-      const savedRole = await this.Roles.findOne({ code: role.code });
+      // Existing assignments and metadata belong to the administrator.
+      if (!result.upsertedId) return;
       const permissions = await this.Permissions.find({
         key: { $in: role.permissions },
-      }).toArray();
-
-      await this.replaceRolePermissions(
-        savedRole._id,
-        permissions.map((permission) => permission._id),
+      }, { session }).toArray();
+      if (permissions.length) await this.RolePermissions.insertMany(
+        permissions.map((permission) => ({ role_id: result.upsertedId, permission_id: permission._id, created_at: new Date() })),
+        { session },
       );
+      }); } finally { await session.endSession(); }
     }
 
     RbacService.defaultsReady = true;
+    RbacService.seededClients.add(this.client);
   }
 
-  async replaceRolePermissions(roleId, permissionIds = []) {
+  async replaceRolePermissions(roleId, permissionIds = [], options = {}) {
     const roleObjectId = toObjectId(roleId);
     if (!roleObjectId) {
       throw new ApiError(400, "Role khong hop le");
@@ -118,17 +125,22 @@ class RbacService {
 
     const normalizedPermissionIds = uniqueObjectIds(permissionIds);
 
-    await this.RolePermissions.deleteMany({ role_id: roleObjectId });
-
-    if (!normalizedPermissionIds.length) return;
-
-    await this.RolePermissions.insertMany(
-      normalizedPermissionIds.map((permissionId) => ({
-        role_id: roleObjectId,
-        permission_id: permissionId,
-        created_at: new Date(),
-      })),
-      { ordered: false },
+    const ResourceDeletionService = require("./resource-deletion.service");
+    return new ResourceDeletionService(this.client).withReferences(
+      [{ collection: "roles", id: roleObjectId }],
+      async (session) => {
+        await this.RolePermissions.deleteMany({ role_id: roleObjectId }, { session });
+        if (!normalizedPermissionIds.length) return;
+        await this.RolePermissions.insertMany(
+          normalizedPermissionIds.map((permissionId) => ({
+            role_id: roleObjectId,
+            permission_id: permissionId,
+            created_at: new Date(),
+          })),
+          { ordered: false, session },
+        );
+      },
+      options,
     );
   }
 
@@ -226,7 +238,7 @@ class RbacService {
     return this.Roles.findOne(query);
   }
 
-  async getRolePermissions(roleId) {
+  async getRolePermissions(roleId, options = {}) {
     const roleObjectId = toObjectId(roleId);
     if (!roleObjectId) return [];
 
@@ -243,7 +255,7 @@ class RbacService {
       { $unwind: "$permission" },
       { $replaceRoot: { newRoot: "$permission" } },
       { $sort: { group: 1, sort_order: 1, key: 1 } },
-    ]).toArray();
+    ], options).toArray();
 
     return rows;
   }
@@ -342,7 +354,7 @@ class RbacService {
     return role;
   }
 
-  async resolvePermissionIds(permissionIds = [], actor = null) {
+  async resolvePermissionIds(permissionIds = [], actor = null, options = {}) {
     if (!Array.isArray(permissionIds)) {
       throw new ApiError(400, "Danh sach permission khong hop le");
     }
@@ -357,7 +369,7 @@ class RbacService {
 
     const permissions = await this.Permissions.find({
       _id: { $in: ids },
-    }).toArray();
+    }, options).toArray();
 
     if (permissions.length !== ids.length) {
       throw new ApiError(400, "Mot hoac nhieu permission khong ton tai");
@@ -380,13 +392,13 @@ class RbacService {
     return permissions.map((permission) => permission._id);
   }
 
-  async getActorUnownedRolePermissionIds(roleId, actor = null) {
+  async getActorUnownedRolePermissionIds(roleId, actor = null, options = {}) {
     if (!actor) return [];
 
     const actorPermissions = new Set(normalizePermissions(actor.permissions));
     if (actorPermissions.has("*")) return [];
 
-    const rolePermissions = await this.getRolePermissions(roleId);
+    const rolePermissions = await this.getRolePermissions(roleId, options);
     return rolePermissions
       .filter((permission) => !actorPermissions.has(permission.key))
       .map((permission) => permission._id);
@@ -407,17 +419,22 @@ class RbacService {
       actor,
     );
 
-    const result = await this.Roles.insertOne({
-      ...role,
-      is_system: false,
-      status: role.status || "active",
-      created_at: new Date(),
-      updated_at: new Date(),
-    });
-
-    await this.replaceRolePermissions(result.insertedId, permissionIds);
-
-    return this.getRoleWithPermissions(result.insertedId);
+    const roleId = new ObjectId();
+    const session = this.client.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await this.Roles.insertOne({
+          _id: roleId, ...role, is_system: false,
+          status: role.status || "active", created_at: new Date(), updated_at: new Date(),
+        }, { session });
+        await this.replaceRolePermissions(roleId, permissionIds, { session });
+      });
+    } catch (error) {
+      if (error.code === 11000 && error.keyPattern?.code)
+        throw new ApiError(400, "Ma role da ton tai", "DUPLICATE_ROLE_CODE");
+      throw error;
+    } finally { await session.endSession(); }
+    return this.getRoleWithPermissions(roleId);
   }
 
   async getRoleWithPermissions(roleId) {
@@ -457,48 +474,36 @@ class RbacService {
       throw new ApiError(400, "Role khong hop le");
     }
 
-    const existed = await this.Roles.findOne({ _id: roleObjectId });
-    if (!existed) {
-      throw new ApiError(404, "Role khong ton tai");
-    }
-
-    if (existed.code === "admin" && payload.permissionIds !== undefined) {
-      throw new ApiError(400, "Khong the thay doi permission cua role Admin");
-    }
-
     const update = this.validateRolePayload(payload, { partial: true });
+    const ResourceDeletionService = require("./resource-deletion.service");
+    try {
+      await new ResourceDeletionService(this.client).withReferences(
+        [{ collection: "roles", id: roleObjectId }], async (session) => {
+          const existed = await this.Roles.findOne({ _id: roleObjectId }, { session });
+          if (!existed) throw new ApiError(404, "Role khong ton tai");
+          if (existed.code === "admin" && payload.permissionIds !== undefined)
+            throw new ApiError(400, "Khong the thay doi permission cua role Admin");
+          if (update.code && existed.is_system && update.code !== existed.code)
+            throw new ApiError(400, "Khong the doi ma cua role he thong");
+          if (update.code && update.code !== existed.code &&
+              await this.Roles.findOne({ code: update.code }, { session }))
+            throw new ApiError(400, "Ma role da ton tai");
 
-    if (update.code && existed.is_system && update.code !== existed.code) {
-      throw new ApiError(400, "Khong the doi ma cua role he thong");
-    }
-
-    if (update.code && update.code !== existed.code) {
-      const duplicate = await this.Roles.findOne({ code: update.code });
-      if (duplicate) {
-        throw new ApiError(400, "Ma role da ton tai");
-      }
-    }
-
-    if (Object.keys(update).length) {
-      await this.Roles.updateOne(
-        { _id: roleObjectId },
-        { $set: { ...update, updated_at: new Date() } },
+          if (payload.permissionIds !== undefined) {
+            const permissionIds = await this.resolvePermissionIds(payload.permissionIds, actor, { session });
+            const preserved = await this.getActorUnownedRolePermissionIds(roleObjectId, actor, { session });
+            await this.replaceRolePermissions(roleObjectId, [...preserved, ...permissionIds], { session });
+          }
+          if (Object.keys(update).length) await this.Roles.updateOne(
+            { _id: roleObjectId }, { $set: { ...update, updated_at: new Date() } }, { session });
+        },
       );
-    }
-
-    if (payload.permissionIds !== undefined) {
-      const permissionIds = await this.resolvePermissionIds(
-        payload.permissionIds,
-        actor,
-      );
-      const preservedPermissionIds = await this.getActorUnownedRolePermissionIds(
-        roleObjectId,
-        actor,
-      );
-      await this.replaceRolePermissions(roleObjectId, [
-        ...preservedPermissionIds,
-        ...permissionIds,
-      ]);
+    } catch (error) {
+      if (error.code === "REFERENCE_NOT_FOUND")
+        throw new ApiError(404, "Role khong ton tai");
+      if (error.code === 11000 && error.keyPattern?.code)
+        throw new ApiError(400, "Ma role da ton tai", "DUPLICATE_ROLE_CODE");
+      throw error;
     }
 
     return this.getRoleWithPermissions(roleObjectId);
@@ -512,35 +517,21 @@ class RbacService {
       throw new ApiError(400, "Role khong hop le");
     }
 
-    const role = await this.Roles.findOne({ _id: roleObjectId });
-    if (!role) {
+    const ResourceDeletionService = require("./resource-deletion.service");
+    const deleted = await new ResourceDeletionService(this.client).remove("roles", roleObjectId);
+    if (!deleted) {
       throw new ApiError(404, "Role khong ton tai");
     }
-
-    if (role.is_system) {
-      throw new ApiError(400, "Khong the xoa role he thong");
-    }
-
-    const assignedUsers = await this.Users.countDocuments({
-      $or: [{ role_id: roleObjectId }, { role: role.code }],
-    });
-
-    if (assignedUsers > 0) {
-      throw new ApiError(400, "Khong the xoa role dang duoc gan cho nguoi dung");
-    }
-
-    await this.RolePermissions.deleteMany({ role_id: roleObjectId });
-    await this.Roles.deleteOne({ _id: roleObjectId });
 
     return true;
   }
 
-  async canActorAssignRole(actor = {}, role = {}) {
+  async canActorAssignRole(actor = {}, role = {}, options = {}) {
     if (!actor || !role) return false;
     if (actor.role === "admin") return true;
 
     const actorPermissions = new Set(normalizePermissions(actor.permissions));
-    const rolePermissions = await this.getRolePermissions(role._id);
+    const rolePermissions = await this.getRolePermissions(role._id, options);
 
     return rolePermissions.every((permission) =>
       actorPermissions.has(permission.key),
@@ -564,6 +555,14 @@ class RbacService {
       throw new ApiError(403, "Ban khong the gan role co quyen cao hon minh");
     }
 
+    const ResourceDeletionService = require("./resource-deletion.service");
+    return new ResourceDeletionService(this.client).withReferences(
+      [{ collection: "roles", id: role._id }, { collection: "users", id: userObjectId }],
+      async (session) => {
+      const currentRole = await this.Roles.findOne({ _id: role._id, status: "active" }, { session });
+      if (!currentRole) throw new ApiError(409, "Role da thay doi hoac bi vo hieu hoa");
+      if (actor && !(await this.canActorAssignRole(actor, currentRole, { session })))
+        throw new ApiError(403, "Ban khong the gan role co quyen cao hon minh");
     const result = await this.Users.findOneAndUpdate(
       { _id: userObjectId },
       {
@@ -574,7 +573,7 @@ class RbacService {
         },
         $unset: { permissions: "" },
       },
-      { returnDocument: "after" },
+      { returnDocument: "after", session },
     );
 
     if (!result) {
@@ -582,10 +581,14 @@ class RbacService {
     }
 
     return result;
+      },
+    );
   }
 }
 
 RbacService.indexesReady = false;
 RbacService.defaultsReady = false;
+RbacService.seededClients = new WeakSet();
+RbacService.seedingClients = new WeakMap();
 
 module.exports = RbacService;

@@ -1,11 +1,10 @@
 const MongoDB = require("../utils/mongodb.util");
 const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
 const ApiError = require("../api-error");
 const UserService = require("../services/users.service");
 const RbacService = require("../services/rbac.service");
-const { sendResetPasswordEmail } = require("../utils/mailer.util");
 const { sanitizeUser } = require("../utils/user.util");
+const { signAccessToken } = require("../utils/jwt.util");
 
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1d";
 
@@ -38,16 +37,12 @@ exports.login = async (req, res, next) => {
     }
     const rbacService = new RbacService(MongoDB.client);
     const authContext = await rbacService.getAuthContextForUser(user);
-    const token = jwt.sign(
-      {
-        id: String(user._id),
-        role_id: authContext.role_id,
-        role: authContext.role,
-        permissions: authContext.permissions,
-      },
-      process.env.JWT_SECRET || "secretkey",
-      { expiresIn: JWT_EXPIRES_IN },
-    );
+    const token = signAccessToken({
+      id: String(user._id),
+      role_id: authContext.role_id,
+      role: authContext.role,
+      permissions: authContext.permissions,
+    });
 
     return res.send({
       message: "Đăng nhập thành công",
@@ -81,7 +76,7 @@ exports.changePassword = async (req, res, next) => {
     }
     const isMatch = await bcrypt.compare(oldPassword, user.password);
     if (!isMatch) {
-      return next(new ApiError(401, "Mật khẩu cũ không đúng"));
+      return next(new ApiError(401, "Mật khẩu cũ không đúng", "INVALID_CURRENT_PASSWORD"));
     }
     await userService.update(userId, { password: newPassword });
     return res.send({ message: "Đổi mật khẩu thành công" });
@@ -102,18 +97,9 @@ exports.forgotPassword = async (req, res, next) => {
       return next(new ApiError(404, "Người dùng với email này không tồn tại"));
     }
 
-    const frontendBaseUrl =
-      process.env.FRONTEND_BASE_URL || "http://localhost:3001";
-    const resetLink = `${frontendBaseUrl}/reset-password/${info.userId}/${info.rawToken}`;
-
-    await sendResetPasswordEmail({
-      to: info.email,
-      name: info.name,
-      resetLink,
-      expiresMinutes: 15,
-    });
     return res.send({
-      message: "Yêu cầu đặt lại mật khẩu đã được gửi, vui lòng kiểm tra email.",
+      message:
+        "Yêu cầu đặt lại mật khẩu đã được tiếp nhận, vui lòng kiểm tra email.",
     });
   } catch (error) {
     console.error("Forgot password error:", error);

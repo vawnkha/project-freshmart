@@ -15,7 +15,7 @@ exports.create = async (req, res, next) => {
       data: result,
     });
   } catch (error) {
-    return next(new ApiError(400, error.message || "Lỗi tạo địa chỉ"));
+    return next(error instanceof ApiError ? error : new ApiError(400, error.message || "Lỗi tạo địa chỉ"));
   }
 };
 
@@ -76,10 +76,11 @@ exports.delete = async (req, res, next) => {
     }
 
     const result = await addressService.delete(id);
+    if (!result) return next(new ApiError(404, "Địa chỉ không tồn tại"));
     return res.send({
       message: "Xóa địa chỉ thành công",
     });
   } catch (error) {
-    return next(new ApiError(500, error.message || "Lỗi xóa địa chỉ"));
+    return next(error instanceof ApiError ? error : new ApiError(500, "Lỗi xóa địa chỉ"));
   }
 };

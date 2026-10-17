@@ -1,19 +1,11 @@
-const fs = require("fs");
-const path = require("path");
 const ApiError = require("../api-error");
 const ProductsService = require("../services/products.service");
 const CategoryService = require("../services/categories.service");
 const MongoDB = require("../utils/mongodb.util");
+const { deleteUnreferencedUpload } = require("../utils/local-upload.util");
 
 async function safeDeleteLocalImage(imageUrl) {
-  if (!imageUrl || typeof imageUrl !== "string") return;
-  if (!imageUrl.startsWith("/uploads/")) return;
-
-  const relative = imageUrl.replace(/^\/uploads\//, "");
-  const filePath = path.join(process.cwd(), "public/uploads", relative);
-  try {
-    await fs.promises.unlink(filePath);
-  } catch (_) {}
+  return deleteUnreferencedUpload(MongoDB.client, "products", imageUrl);
 }
 
 async function safeDeleteLocalImages(urls) {
@@ -41,9 +33,11 @@ exports.create = async (req, res, next) => {
     const imageFiles = req.files?.images || [];
 
     if (!thumbFile) {
+      await cleanUploadedFiles(req);
       return next(new ApiError(400, "Vui lòng chọn thumbnail cho sản phẩm"));
     }
     if (imageFiles.length > 4) {
+      await cleanUploadedFiles(req);
       return next(new ApiError(400, "Images tối đa 4 ảnh"));
     }
 
@@ -62,11 +56,12 @@ exports.create = async (req, res, next) => {
       data: created,
     });
   } catch (error) {
+    await cleanUploadedFiles(req);
     return next(isApiError(error) ? error : new ApiError(400, error.message));
   }
 };
 
-exports.findAll = async (req, res, next) => {
+async function findAll(req, res, next, publicOnly) {
   try {
     const productService = new ProductsService(MongoDB.client);
 
@@ -83,7 +78,7 @@ exports.findAll = async (req, res, next) => {
       req.query.category_id = String(cat._id);
     }
 
-    const result = await productService.search(req.query);
+    const result = await productService.search(req.query, { publicOnly });
 
     return res.send({
       data: result.data || [],
@@ -95,7 +90,10 @@ exports.findAll = async (req, res, next) => {
         : new ApiError(500, error.message || "Lỗi khi truy xuất sản phẩm"),
     );
   }
-};
+}
+
+exports.findAll = (req, res, next) => findAll(req, res, next, true);
+exports.findAllAdmin = (req, res, next) => findAll(req, res, next, false);
 
 exports.findByCategory = async (req, res, next) => {
   try {
@@ -103,6 +101,7 @@ exports.findByCategory = async (req, res, next) => {
     const result = await productService.findByCategoryId(
       req.params.categoryId,
       req.query,
+      { publicOnly: true },
     );
     return res.send(result);
   } catch (error) {
@@ -117,7 +116,9 @@ exports.findByCategory = async (req, res, next) => {
 exports.findOne = async (req, res, next) => {
   try {
     const productService = new ProductsService(MongoDB.client);
-    const document = await productService.findById(req.params.id);
+    const document = await productService.findById(req.params.id, {
+      publicOnly: true,
+    });
     if (!document) return next(new ApiError(404, "Sản phẩm không tồn tại"));
     return res.send(document);
   } catch (error) {
@@ -158,12 +159,10 @@ exports.update = async (req, res, next) => {
     }
     if (newThumbFile) {
       const newThumbUrl = buildUrl(newThumbFile);
-      await safeDeleteLocalImage(existed.thumbnail);
       payload.thumbnail = newThumbUrl;
     }
     if (newImageFiles.length > 0) {
       const newImages = newImageFiles.map(buildUrl);
-      await safeDeleteLocalImages(existed.images);
       payload.images = newImages;
     }
 
@@ -172,6 +171,9 @@ exports.update = async (req, res, next) => {
       await cleanUploadedFiles(req);
       return next(new ApiError(500, "Lỗi khi cập nhật sản phẩm"));
     }
+
+    if (newThumbFile) await safeDeleteLocalImage(existed.thumbnail);
+    if (newImageFiles.length > 0) await safeDeleteLocalImages(existed.images);
 
     return res.send({
       message: "Cập nhật sản phẩm thành công",
@@ -190,14 +192,12 @@ exports.update = async (req, res, next) => {
 exports.delete = async (req, res, next) => {
   try {
     const productService = new ProductsService(MongoDB.client);
-    const existed = await productService.findById(req.params.id);
-    if (!existed) {
+    const deleted = await productService.delete(req.params.id);
+    if (!deleted) {
       return next(new ApiError(404, "Sản phẩm không tồn tại"));
     }
-
-    await safeDeleteLocalImage(existed.thumbnail);
-    await safeDeleteLocalImages(existed.images);
-    await productService.delete(req.params.id);
+    await safeDeleteLocalImage(deleted.thumbnail);
+    await safeDeleteLocalImages(deleted.images);
 
     return res.send({ message: "Xóa sản phẩm thành công" });
   } catch (error) {
@@ -225,7 +225,7 @@ exports.search = async (req, res, next) => {
       req.query.category_id = String(cat._id);
     }
 
-    const result = await productService.search(req.query);
+    const result = await productService.search(req.query, { publicOnly: true });
     return res.send({
       message: "Tìm kiếm sản phẩm thành công",
       data: result.data || [],

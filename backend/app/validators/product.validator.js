@@ -2,7 +2,6 @@ const { z } = require("zod");
 const {
   idParamSchema,
   nonEmptyString,
-  nonNegativeNumberSchema,
   objectIdSchema,
   optionalNonNegativeNumberSchema,
   optionalObjectIdSchema,
@@ -31,7 +30,10 @@ const productQuerySchema = z.object({
   keyword: optionalString,
   category_id: optionalObjectIdSchema,
   category_slug: optionalString,
-  status: productStatusSchema.optional(),
+  status: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    productStatusSchema.optional(),
+  ),
 });
 
 const productCategoryParamSchema = z.object({

@@ -1,14 +1,14 @@
 const ApiError = require("../api-error");
 const MongoDB = require("../utils/mongodb.util");
 const OrdersService = require("../services/orders.service");
-const { sendInvoiceEmail } = require("../utils/mailer.util");
-const { notifyAdmin } = require("../utils/notify-admin.util");
 const authMiddleware = require("../middlewares/auth.middleware");
+const PAYMENT_METHODS = require("../constants/payment-methods");
 
 exports.create = async (req, res, next) => {
   try {
-    const { user_id, address_id, payment_method, shippingMethodId, discountCode } =
+    const { address_id, payment_method, shippingMethodId, discountCode } =
       req.body;
+    const user_id = req.user?.id;
 
     if (!user_id || !address_id) {
       return next(new ApiError(400, "user_id và address_id là bắt buộc"));
@@ -19,9 +19,10 @@ exports.create = async (req, res, next) => {
     const rs = await service.createFromCart({
       userId: user_id,
       addressId: address_id,
-      payment_method: payment_method || "cash",
+      payment_method: payment_method || PAYMENT_METHODS.COD,
       shippingMethodId,
       discountCode,
+      enqueueAdminNotification: true,
     });
 
     if (rs?.error || !rs?.ok || !rs?.order) {
@@ -30,26 +31,16 @@ exports.create = async (req, res, next) => {
 
     const order = rs.order;
 
-    await notifyAdmin({
-      type: "order",
-      title: "Có đơn hàng mới",
-      content: `Có đơn đặt hàng mới với mã ${order._id}`,
-      data: {
-        order_id: String(order._id),
-        user_id: String(order.user_id),
-        total_price: order.total_price,
-        status: order.status,
-        payment_method: rs.payment?.method || payment_method || "cash",
-        payment_status: rs.payment?.status || "pending",
-      },
-    });
-
     return res.send({
       message: "Đặt hàng thành công",
       data: rs,
     });
   } catch (error) {
-    return next(new ApiError(500, error.message || "Lỗi khi đặt hàng"));
+    return next(
+      error?.statusCode
+        ? error
+        : new ApiError(500, error.message || "Lỗi khi đặt hàng"),
+    );
   }
 };
 
@@ -111,7 +102,12 @@ exports.updateStatus = async (req, res, next) => {
     }
 
     const service = new OrdersService(MongoDB.client);
-    const doc = await service.pushStatus(id, status, note || "");
+    const doc = await service.transitionStatus(
+      id,
+      status,
+      req.user,
+      note || "",
+    );
 
     if (!doc) {
       return next(new ApiError(404, "Đơn hàng không tồn tại"));
@@ -120,7 +116,9 @@ exports.updateStatus = async (req, res, next) => {
     return res.send(doc);
   } catch (error) {
     return next(
-      new ApiError(500, error.message || "Lỗi cập nhật trạng thái đơn hàng"),
+      error?.statusCode
+        ? error
+        : new ApiError(500, "Lỗi cập nhật trạng thái đơn hàng"),
     );
   }
 };
@@ -140,19 +138,17 @@ exports.cancel = async (req, res, next) => {
       return next(new ApiError(403, "Bạn không có quyền hủy đơn hàng này"));
     }
 
-    if (current.status !== "pending") {
-      return next(new ApiError(400, "Chỉ được hủy đơn đang chờ xác nhận"));
-    }
-
     const doc = await service.cancelOrder(
       id,
-      req.currentUser || req.user,
-      "Người dùng hủy đơn hàng",
+      req.user,
+      req.body.reason || "Người dùng hủy đơn hàng",
     );
 
     return res.send(doc);
   } catch (error) {
-    return next(new ApiError(500, error.message || "Lỗi hủy đơn hàng"));
+    return next(
+      error?.statusCode ? error : new ApiError(500, "Lỗi hủy đơn hàng"),
+    );
   }
 };
 
@@ -173,19 +169,18 @@ exports.complete = async (req, res, next) => {
       );
     }
 
-    if (current.status !== "shipping") {
-      return next(new ApiError(400, "Chỉ được hủy đơn đang chờ xác nhận"));
-    }
-
-    const doc = await service.pushStatus(
+    const doc = await service.transitionStatus(
       id,
       "completed",
+      req.user,
       "Xác nhận đã nhận đơn hàng",
     );
 
     return res.send(doc);
   } catch (error) {
-    return next(new ApiError(500, error.message || "Lỗi hủy đơn hàng"));
+    return next(
+      error?.statusCode ? error : new ApiError(500, "Lỗi cập nhật đơn hàng"),
+    );
   }
 };
 exports.sendInvoice = async (req, res, next) => {
@@ -212,24 +207,11 @@ exports.sendInvoice = async (req, res, next) => {
     const customerName =
       order.user?.name || order.shipping_address?.fullName || "quý khách";
 
-    await sendInvoiceEmail({
-      to: customerEmail,
-      customerName,
-      order,
-    });
+    await ordersService.queueInvoiceEmail(order, customerEmail, customerName);
 
-    await ordersService.Order.updateOne(
-      { _id: order._id },
-      {
-        $set: {
-          invoice_sent: true,
-          invoice_sent_at: new Date(),
-        },
-      },
-    );
-
-    return res.send({
-      message: "Đã gửi hóa đơn",
+    return res.status(202).send({
+      message: "Đã đưa hóa đơn vào hàng đợi gửi",
+      queued: true,
     });
   } catch (error) {
     return next(new ApiError(500, error.message));

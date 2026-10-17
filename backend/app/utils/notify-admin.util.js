@@ -2,7 +2,7 @@ const MongoDB = require("./mongodb.util");
 const NotificationsService = require("../services/notifications.service");
 const { emitAdminNotification } = require("./socket.util");
 
-async function notifyAdmin(payload) {
+async function notifyAdmin(payload, options = {}) {
   const notificationsService = new NotificationsService(MongoDB.client);
 
   const notification = await notificationsService.create({
@@ -11,6 +11,7 @@ async function notifyAdmin(payload) {
     content: payload.content,
     data: payload.data || {},
     is_read: false,
+    outbox_event_id: options.eventId,
   });
 
   emitAdminNotification({

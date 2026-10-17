@@ -1,12 +1,23 @@
 const express = require("express");
 const contacts = require("../controllers/contacts.controller");
 const authMiddleware = require("../middlewares/auth.middleware");
+const { publicWriteLimiter } = require("../middlewares/rate-limit.middleware");
+const validate = require("../middlewares/validate.middleware");
+const { idParamSchema } = require("../validators/common.validator");
+const {
+  createContactSchema,
+  replyContactSchema,
+} = require("../validators/contact.validator");
 
 const router = express.Router();
 
 router
   .route("/")
-  .post(contacts.create)
+  .post(
+    publicWriteLimiter,
+    validate({ body: createContactSchema }),
+    contacts.create,
+  )
   .get(
     authMiddleware,
     authMiddleware.authorizePermissions("contact:read"),
@@ -23,11 +34,13 @@ router
   .get(
     authMiddleware,
     authMiddleware.authorizePermissions("contact:read"),
+    validate({ params: idParamSchema }),
     contacts.findOne,
   )
   .delete(
     authMiddleware,
     authMiddleware.authorizePermissions("contact:delete"),
+    validate({ params: idParamSchema }),
     contacts.delete,
   );
 
@@ -36,6 +49,7 @@ router
   .patch(
     authMiddleware,
     authMiddleware.authorizePermissions("contact:reply"),
+    validate({ params: idParamSchema, body: replyContactSchema }),
     contacts.reply,
   );
 

@@ -28,45 +28,56 @@ class BaseRepository {
   async findList(filter = {}, options = {}) {
     const findOptions = {};
     if (options.projection) findOptions.projection = options.projection;
+    if (options.session) findOptions.session = options.session;
 
     let cursor = this.collection().find(filter, findOptions);
     if (options.sort) cursor = cursor.sort(options.sort);
+    if (options.skip) cursor = cursor.skip(options.skip);
+    if (options.limit) cursor = cursor.limit(options.limit);
 
     return cursor.toArray();
   }
 
-  async create(data) {
-    const result = await this.collection().insertOne(data);
+  async create(data, options = {}) {
+    data = { ...data };
+    for (const field of ["code", "barcode"]) if (data[field] === "") delete data[field];
+    const result = await this.collection().insertOne(data, options);
     return {
       insertedId: result.insertedId,
       ...data,
     };
   }
 
-  async updateById(id, data) {
+  async updateById(id, data, options = {}) {
     const _id = this.toObjectId(id);
     if (!_id) return null;
 
+    const set = { ...data };
+    const unset = {};
+    for (const field of ["code", "barcode"]) {
+      if (set[field] === "") { delete set[field]; unset[field] = ""; }
+    }
     return this.collection().findOneAndUpdate(
       { _id },
-      { $set: data },
-      { returnDocument: "after" },
+      { $set: set, ...(Object.keys(unset).length ? { $unset: unset } : {}) },
+      { ...options, returnDocument: "after" },
     );
   }
 
-  async deleteById(id) {
+  async deleteById(id, options = {}) {
     const _id = this.toObjectId(id);
     if (!_id) return null;
 
-    return this.collection().findOneAndDelete({ _id });
+    return this.collection().findOneAndDelete({ _id }, options);
   }
 
-  async count(filter = {}) {
-    return this.collection().countDocuments(filter);
+  async count(filter = {}, options = {}) {
+    return this.collection().countDocuments(filter, options);
   }
 
-  async exists(filter = {}) {
+  async exists(filter = {}, options = {}) {
     const document = await this.collection().findOne(filter, {
+      ...options,
       projection: { _id: 1 },
     });
     return Boolean(document);

@@ -1,13 +1,9 @@
-const jwt = require("jsonwebtoken");
 const { ObjectId } = require("mongodb");
 const ApiError = require("../api-error");
 const MongoDB = require("../utils/mongodb.util");
 const RbacService = require("../services/rbac.service");
 const { hasPermission } = require("../config/permissions");
-
-function getJwtSecret() {
-  return process.env.JWT_SECRET || "secretkey";
-}
+const { verifyAccessToken } = require("../utils/jwt.util");
 
 function getBearerToken(req) {
   const header = req.headers.authorization || "";
@@ -30,7 +26,7 @@ const authJWT = async (req, res, next) => {
       return next(new ApiError(401, "Không có token"));
     }
 
-    const decoded = jwt.verify(token, getJwtSecret());
+    const decoded = verifyAccessToken(token);
     const userId = decoded?.id;
     const objectId = ObjectId.isValid(userId) ? new ObjectId(userId) : null;
 
@@ -72,7 +68,7 @@ const optionalAuthJWT = async (req, res, next) => {
   if (!token) return next();
 
   try {
-    const decoded = jwt.verify(token, getJwtSecret());
+    const decoded = verifyAccessToken(token);
     const userId = decoded?.id;
     const objectId = ObjectId.isValid(userId) ? new ObjectId(userId) : null;
     if (!objectId) return next();
@@ -152,7 +148,6 @@ function authorizeOwnerOrPermissions(ownerResolver, ...fallbackPermissions) {
   };
 }
 
-authJWT.getJwtSecret = getJwtSecret;
 authJWT.authorizePermissions = authorizePermissions;
 authJWT.authorizeRoles = authorizeRoles;
 authJWT.authorizeOwnerOrPermissions = authorizeOwnerOrPermissions;

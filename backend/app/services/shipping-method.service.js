@@ -8,7 +8,7 @@ function hasValue(value) {
 
 function clean(data) {
   Object.keys(data).forEach((key) => {
-    if (data[key] === undefined || data[key] === "") delete data[key];
+    if (data[key] === undefined || (data[key] === "" && !["code", "description"].includes(key))) delete data[key];
   });
   return data;
 }
@@ -22,7 +22,7 @@ class ShippingMethodService {
     const now = new Date();
     return clean({
       name: hasValue(payload.name) ? String(payload.name).trim() : undefined,
-      code: hasValue(payload.code) ? String(payload.code).trim() : undefined,
+      code: payload.code !== undefined ? String(payload.code || "").trim() : undefined,
       description:
         payload.description !== undefined
           ? String(payload.description || "").trim()
@@ -99,10 +99,8 @@ class ShippingMethodService {
   }
 
   remove(id) {
-    return this.repository.updateById(id, {
-      status: "inactive",
-      updatedAt: new Date(),
-    });
+    const ResourceDeletionService = require("./resource-deletion.service");
+    return new ResourceDeletionService(this.repository.client).remove("shipping_methods", id);
   }
 }
 

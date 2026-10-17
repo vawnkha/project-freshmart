@@ -2,6 +2,8 @@ const { ObjectId } = require("mongodb");
 
 class ReviewsService {
   constructor(client) {
+    const ResourceDeletionService = require("./resource-deletion.service");
+    this.deletion = new ResourceDeletionService(client);
     this.Review = client.db().collection("reviews");
     this.Product = client.db().collection("products");
     this.User = client.db().collection("users");
@@ -44,14 +46,14 @@ class ReviewsService {
     });
   }
 
-  async findByUserAndProduct(userId, productId) {
+  async findByUserAndProduct(userId, productId, options = {}) {
     return await this.Review.findOne({
       user_id: ObjectId.isValid(userId) ? new ObjectId(userId) : null,
       product_id: ObjectId.isValid(productId) ? new ObjectId(productId) : null,
-    });
+    }, options);
   }
 
-  async hasPurchasedProduct(userId, productId) {
+  async hasPurchasedProduct(userId, productId, options = {}) {
     const uid = ObjectId.isValid(userId) ? new ObjectId(userId) : null;
     const pid = ObjectId.isValid(productId) ? new ObjectId(productId) : null;
 
@@ -61,12 +63,12 @@ class ReviewsService {
       user_id: uid,
       status: { $in: ["delivered", "completed"] },
       "items.product_id": pid,
-    });
+    }, options);
 
     return !!order;
   }
 
-  async canReview(userId, productId) {
+  async canReview(userId, productId, options = {}) {
     const uid = ObjectId.isValid(userId) ? new ObjectId(userId) : null;
     const pid = ObjectId.isValid(productId) ? new ObjectId(productId) : null;
 
@@ -77,7 +79,7 @@ class ReviewsService {
       };
     }
 
-    const product = await this.Product.findOne({ _id: pid });
+    const product = await this.Product.findOne({ _id: pid }, options);
     if (!product) {
       return {
         canReview: false,
@@ -85,7 +87,7 @@ class ReviewsService {
       };
     }
 
-    const user = await this.User.findOne({ _id: uid });
+    const user = await this.User.findOne({ _id: uid }, options);
     if (!user) {
       return {
         canReview: false,
@@ -93,7 +95,7 @@ class ReviewsService {
       };
     }
 
-    const hasPurchased = await this.hasPurchasedProduct(userId, productId);
+    const hasPurchased = await this.hasPurchasedProduct(userId, productId, options);
     if (!hasPurchased) {
       return {
         canReview: false,
@@ -101,7 +103,7 @@ class ReviewsService {
       };
     }
 
-    const existedReview = await this.findByUserAndProduct(userId, productId);
+    const existedReview = await this.findByUserAndProduct(userId, productId, options);
     if (existedReview) {
       return {
         canReview: false,
@@ -143,8 +145,15 @@ class ReviewsService {
       return { error: permission.message };
     }
 
-    const result = await this.Review.insertOne(review);
-    return await this.findById(result.insertedId);
+    return this.deletion.withReferences(
+      [{ collection: "users", id: review.user_id }, { collection: "products", id: review.product_id }],
+      async (session) => {
+        const permission = await this.canReview(payload.user_id, payload.product_id, { session });
+        if (!permission.canReview) return { error: permission.message };
+        const result = await this.Review.insertOne(review, { session });
+        return { _id: result.insertedId, ...review };
+      },
+    );
   }
 
   async findByProductId(productId) {

@@ -13,6 +13,8 @@ const {
 const router = express.Router();
 const canManageDiscounts = authMiddleware.authorizePermissions("discount:manage");
 
+router.get("/public", controller.findPublic);
+
 router.post("/validate", validate({ body: validateDiscountSchema }), controller.validate);
 
 router.use(authMiddleware, canManageDiscounts);

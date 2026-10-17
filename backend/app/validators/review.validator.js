@@ -1,3 +1,11 @@
+const { z } = require("zod");
+const { objectIdSchema, optionalString } = require("./common.validator");
+
+const ratingSchema = z.preprocess(
+  (value) => typeof value === "string" && value.trim() ? Number(value) : value,
+  z.number().int().min(1).max(5),
+);
+
 function hasValue(value) {
   return value !== undefined && value !== null && String(value).trim() !== "";
 }
@@ -25,5 +33,16 @@ function validateCreateReview(req) {
 }
 
 module.exports = {
+  reviewProductParamSchema: z.object({ productId: objectIdSchema }),
+  reviewUserProductParamSchema: z.object({
+    userId: objectIdSchema,
+    productId: objectIdSchema,
+  }),
+  createReviewSchema: z.object({
+    user_id: objectIdSchema,
+    product_id: objectIdSchema,
+    rating: ratingSchema,
+    comment: optionalString,
+  }),
   validateCreateReview,
 };

@@ -64,7 +64,7 @@ exports.remove = async (req, res, next) => {
     const document = await getService().remove(req.params.id);
     if (!document) return next(new ApiError(404, "Danh muc tin tuc khong ton tai"));
     return res.send({
-      message: "Da an danh muc tin tuc thanh cong",
+      message: "Đã xóa danh mục tin tức thành công",
       data: document,
     });
   } catch (error) {

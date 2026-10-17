@@ -8,7 +8,7 @@ function hasValue(value) {
 
 function clean(data) {
   Object.keys(data).forEach((key) => {
-    if (data[key] === undefined || data[key] === "") delete data[key];
+    if (data[key] === undefined || (data[key] === "" && key !== "description")) delete data[key];
   });
   return data;
 }
@@ -104,10 +104,8 @@ class NewsCategoryService {
   }
 
   remove(id) {
-    return this.repository.updateById(id, {
-      status: "inactive",
-      updatedAt: new Date(),
-    });
+    const ResourceDeletionService = require("./resource-deletion.service");
+    return new ResourceDeletionService(this.repository.client).remove("news_categories", id);
   }
 }
 

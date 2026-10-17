@@ -1,3 +1,4 @@
+const ResourceDeletionService = require("./resource-deletion.service");
 const { ObjectId } = require("mongodb");
 const ApiError = require("../api-error");
 const InventoryItemRepository = require("../repositories/inventory-item.repository");
@@ -10,6 +11,7 @@ function toObjectId(id) {
 
 class InventoryItemService {
   constructor(client) {
+    this.deletion = new ResourceDeletionService(client);
     this.repository = new InventoryItemRepository(client);
   }
 
@@ -42,7 +44,9 @@ class InventoryItemService {
           ? String(payload.storageInstruction).trim()
           : undefined,
       expiryMonths:
-        payload.expiryMonths !== undefined ? Number(payload.expiryMonths) : undefined,
+        payload.expiryMonths !== undefined
+          ? (payload.expiryMonths === null ? null : Number(payload.expiryMonths))
+          : undefined,
       note: payload.note !== undefined ? String(payload.note).trim() : undefined,
       status:
         payload.status !== undefined ? String(payload.status).trim() : undefined,
@@ -51,7 +55,7 @@ class InventoryItemService {
     };
 
     Object.keys(data).forEach((key) => {
-      if (data[key] === undefined || data[key] === "") delete data[key];
+      if (data[key] === undefined || (data[key] === "" && includeCreatedAt)) delete data[key];
     });
 
     return data;
@@ -94,7 +98,8 @@ class InventoryItemService {
     const existed = await this.repository.findByItemCode(data.itemCode);
     if (existed) throw new ApiError(400, "itemCode da ton tai");
 
-    return this.repository.create(data);
+    return this.deletion.withReferences(this.deletion.referencesFor("inventory_items", data),
+      (session) => this.repository.create(data, { session }));
   }
 
   async update(id, payload) {
@@ -113,14 +118,12 @@ class InventoryItemService {
       }
     }
 
-    return this.repository.updateById(id, data);
+    return this.deletion.withReferences(this.deletion.referencesFor("inventory_items", data),
+      (session) => this.repository.updateById(id, data, { session }));
   }
 
   async delete(id) {
-    return this.repository.updateById(id, {
-      status: "inactive",
-      updatedAt: new Date(),
-    });
+    return this.deletion.remove("inventory_items", id);
   }
 }
 

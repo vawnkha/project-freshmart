@@ -3,9 +3,12 @@ const { convertVndToUsd } = require("../services/exchange-rate.service");
 
 const BASE_URL =
   process.env.PAYPAL_BASE_URL || "https://api-m.sandbox.paypal.com";
+const PAYPAL_TIMEOUT_MS = 15_000;
 
 function getPaypalCurrency() {
-  return String(process.env.PAYPAL_CURRENCY || "USD").trim().toUpperCase();
+  return String(process.env.PAYPAL_CURRENCY || "USD")
+    .trim()
+    .toUpperCase();
 }
 
 function formatPaypalAmount(amount) {
@@ -79,6 +82,9 @@ function extractPaypalOrderAmount(orderResponse = {}) {
 async function getAccessToken() {
   const clientId = process.env.PAYPAL_CLIENT_ID;
   const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new Error("PayPal credentials are not configured");
+  }
 
   const response = await axios.post(
     `${BASE_URL}/v1/oauth2/token`,
@@ -91,6 +97,7 @@ async function getAccessToken() {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
       },
+      timeout: PAYPAL_TIMEOUT_MS,
     },
   );
 
@@ -107,13 +114,19 @@ async function paypalGetOrder(paypalOrderId) {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
+      timeout: PAYPAL_TIMEOUT_MS,
     },
   );
 
   return response.data;
 }
 
-async function paypalCreateOrder({ total, currency = "USD", referenceId }) {
+async function paypalCreateOrder({
+  total,
+  currency = "USD",
+  referenceId,
+  requestId,
+}) {
   const accessToken = await getAccessToken();
   const value = typeof total === "string" ? total : formatPaypalAmount(total);
 
@@ -135,14 +148,16 @@ async function paypalCreateOrder({ total, currency = "USD", referenceId }) {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
+        ...(requestId ? { "PayPal-Request-Id": requestId } : {}),
       },
+      timeout: PAYPAL_TIMEOUT_MS,
     },
   );
 
   return response.data;
 }
 
-async function paypalCaptureOrder(paypalOrderId) {
+async function paypalCaptureOrder(paypalOrderId, options = {}) {
   const accessToken = await getAccessToken();
 
   const response = await axios.post(
@@ -152,10 +167,33 @@ async function paypalCaptureOrder(paypalOrderId) {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
+        ...(options.requestId
+          ? { "PayPal-Request-Id": options.requestId }
+          : {}),
       },
+      timeout: PAYPAL_TIMEOUT_MS,
     },
   );
 
+  return response.data;
+}
+
+async function paypalRefundCapture(captureId, options = {}) {
+  const accessToken = await getAccessToken();
+  const response = await axios.post(
+    `${BASE_URL}/v2/payments/captures/${captureId}/refund`,
+    {},
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        ...(options.requestId
+          ? { "PayPal-Request-Id": options.requestId }
+          : {}),
+      },
+      timeout: PAYPAL_TIMEOUT_MS,
+    },
+  );
   return response.data;
 }
 
@@ -168,4 +206,5 @@ module.exports = {
   paypalCreateOrder,
   paypalCaptureOrder,
   paypalGetOrder,
+  paypalRefundCapture,
 };

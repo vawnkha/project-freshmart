@@ -1,3 +1,4 @@
+const ResourceDeletionService = require("./resource-deletion.service");
 const { ObjectId } = require("mongodb");
 const ApiError = require("../api-error");
 const DiscountRepository = require("../repositories/discount.repository");
@@ -9,7 +10,7 @@ function hasValue(value) {
 
 function clean(data) {
   Object.keys(data).forEach((key) => {
-    if (data[key] === undefined || data[key] === "") delete data[key];
+    if (data[key] === undefined || (data[key] === "" && key !== "description")) delete data[key];
   });
   return data;
 }
@@ -46,6 +47,7 @@ function lineTotal(item = {}) {
 class DiscountService {
   constructor(client) {
     this.Product = client.db().collection("products");
+    this.deletion = new ResourceDeletionService(client);
     this.repository = new DiscountRepository(client);
   }
 
@@ -122,6 +124,16 @@ class DiscountService {
     const data = clean({
       code: hasValue(payload.code) ? normalizeCode(payload.code) : undefined,
       name: hasValue(payload.name) ? String(payload.name).trim() : undefined,
+      description:
+        payload.description !== undefined
+          ? String(payload.description || "").trim()
+          : undefined,
+      isPublic:
+        payload.isPublic !== undefined
+          ? payload.isPublic
+          : includeCreatedAt
+            ? false
+            : undefined,
       scope: hasValue(payload.scope) ? String(payload.scope).trim() : undefined,
       type: hasValue(payload.type) ? String(payload.type).trim() : undefined,
       value: payload.value !== undefined ? Number(payload.value || 0) : undefined,
@@ -137,8 +149,12 @@ class DiscountService {
         payload.quantity !== undefined ? Number(payload.quantity || 0) : undefined,
       usedCount:
         payload.usedCount !== undefined ? Number(payload.usedCount || 0) : undefined,
-      startDate: payload.startDate ? new Date(payload.startDate) : undefined,
-      endDate: payload.endDate ? new Date(payload.endDate) : undefined,
+      startDate: payload.startDate !== undefined
+        ? (payload.startDate ? new Date(payload.startDate) : null)
+        : undefined,
+      endDate: payload.endDate !== undefined
+        ? (payload.endDate ? new Date(payload.endDate) : null)
+        : undefined,
       status:
         payload.status !== undefined
           ? String(payload.status).trim()
@@ -200,13 +216,63 @@ class DiscountService {
     return this.repository.findById(id);
   }
 
+  // Public display is opt-in. Legacy/private codes and internal usage/rules stay private.
+  findPublic(now = new Date()) {
+    const filter = {
+      isPublic: true,
+      status: "active",
+      scope: { $in: validator.SCOPES },
+      type: { $in: validator.TYPES },
+      value: { $gt: 0 },
+      $and: [
+        {
+          $or: [
+            { startDate: { $exists: false } },
+            { startDate: null },
+            { startDate: { $lte: now } },
+          ],
+        },
+        {
+          $or: [
+            { endDate: { $exists: false } },
+            { endDate: null },
+            { endDate: { $gte: now } },
+          ],
+        },
+        { $or: [{ type: "fixed" }, { type: "percent", value: { $lte: 100 } }] },
+        {
+          $expr: {
+            $or: [
+              { $eq: [{ $ifNull: ["$quantity", 0] }, 0] },
+              {
+                $and: [
+                  { $gt: ["$quantity", 0] },
+                  { $lt: [{ $ifNull: ["$usedCount", 0] }, "$quantity"] },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    };
+    return this.repository.findList(filter, {
+      projection: {
+        _id: 1, code: 1, name: 1, description: 1, scope: 1, type: 1, value: 1,
+        minOrderValue: 1, maxDiscountAmount: 1, startDate: 1, endDate: 1,
+      },
+      sort: { createdAt: -1 },
+      limit: 12,
+    });
+  }
+
   async create(payload = {}) {
     const message = validator.validateCreate(payload);
     if (message) throw new ApiError(400, message);
 
     const data = this.extractData(payload, true);
     await this.ensureUniqueCode(data);
-    return this.repository.create(data);
+    return this.deletion.withReferences(this.deletion.referencesFor("discounts", data),
+      (session) => this.repository.create(data, { session }));
   }
 
   async update(id, payload = {}) {
@@ -218,14 +284,12 @@ class DiscountService {
 
     const data = this.extractData(payload, false);
     await this.ensureUniqueCode(data, current._id);
-    return this.repository.updateById(id, data);
+    return this.deletion.withReferences(this.deletion.referencesFor("discounts", data),
+      (session) => this.repository.updateById(id, data, { session }));
   }
 
   remove(id) {
-    return this.repository.updateById(id, {
-      status: "inactive",
-      updatedAt: new Date(),
-    });
+    return this.deletion.remove("discounts", id);
   }
 
   getOrderTotal(payload = {}) {

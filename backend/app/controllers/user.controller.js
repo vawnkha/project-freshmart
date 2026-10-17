@@ -1,25 +1,13 @@
-const fs = require("fs");
-const path = require("path");
 const UserService = require("../services/users.service");
 const RbacService = require("../services/rbac.service");
 const MongoDB = require("../utils/mongodb.util");
-const { sendActivationEmail } = require("../utils/mailer.util");
 const ApiError = require("../api-error");
 const authMiddleware = require("../middlewares/auth.middleware");
-const {
-  pickUserUpdate,
-  sanitizeUser,
-} = require("../utils/user.util");
+const { pickUserUpdate, sanitizeUser } = require("../utils/user.util");
+const { deleteLocalUpload } = require("../utils/local-upload.util");
 
 async function safeDeleteLocalImage(imageUrl) {
-  if (!imageUrl || typeof imageUrl !== "string") return;
-  if (!imageUrl.startsWith("/uploads/")) return;
-
-  const relative = imageUrl.replace(/^\/uploads\//, "");
-  const filePath = path.join(process.cwd(), "public/uploads", relative);
-  try {
-    await fs.promises.unlink(filePath);
-  } catch (_) {}
+  return deleteLocalUpload("users", imageUrl);
 }
 
 async function sanitizeUserWithRbac(user) {
@@ -45,7 +33,8 @@ exports.create = async (req, res, next) => {
   try {
     const { name, email, password } = req.body || {};
     const missingRequiredFields = [name, email, password].some(
-      (value) => value === undefined || value === null || String(value).trim() === "",
+      (value) =>
+        value === undefined || value === null || String(value).trim() === "",
     );
 
     if (missingRequiredFields) {
@@ -57,16 +46,7 @@ exports.create = async (req, res, next) => {
     if (existed) {
       return next(new ApiError(400, "Email đã được sử dụng"));
     }
-    const { insertedId, rawToken } = await userService.create(req.body);
-
-    const baseUrl = process.env.APP_URL || "http://localhost:3000";
-    const activationLink = `${baseUrl}/api/users/activate/${insertedId}?token=${rawToken}`;
-
-    await sendActivationEmail({
-      to: req.body.email,
-      name: req.body.name,
-      activationLink,
-    });
+    const { insertedId } = await userService.create(req.body);
     return res.status(201).json({
       message:
         "Đăng ký thành công! Vui lòng kiểm tra email để kích hoạt tài khoản.",
@@ -184,7 +164,7 @@ exports.update = async (req, res, next) => {
     });
   } catch (error) {
     return next(
-      new ApiError(500, `Error updating user with id=${req.params.id}`),
+      error instanceof ApiError ? error : new ApiError(500, `Error updating user with id=${req.params.id}`),
     );
   }
 };
@@ -192,7 +172,7 @@ exports.update = async (req, res, next) => {
 exports.delete = async (req, res, next) => {
   try {
     const userService = new UserService(MongoDB.client);
-    const result = await userService.delete(req.params.id);
+    const result = await userService.delete(req.params.id, { actorId: req.user?.id });
     if (!result) {
       return next(new ApiError(404, "User not found"));
     }
@@ -220,10 +200,6 @@ exports.updateAvatar = async (req, res, next) => {
 
     const newAvatarUrl = `/uploads/users/${req.file.filename}`;
 
-    if (existed.avatar_url) {
-      await safeDeleteLocalImage(existed.avatar_url);
-    }
-
     const result = await userService.update(req.params.id, {
       avatar_url: newAvatarUrl,
     });
@@ -232,6 +208,8 @@ exports.updateAvatar = async (req, res, next) => {
       await safeDeleteLocalImage(newAvatarUrl);
       return next(new ApiError(500, "Cập nhật ảnh đại diện thất bại"));
     }
+
+    if (existed.avatar_url) await safeDeleteLocalImage(existed.avatar_url);
 
     return res.send({
       message: "Cập nhật ảnh đại diện thành công",

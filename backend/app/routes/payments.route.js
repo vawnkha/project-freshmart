@@ -14,6 +14,7 @@ const canCreatePayment = authMiddleware.authorizeOwnerOrPermissions(
 );
 
 router.use(authMiddleware);
+router.get("/config", payment.config);
 
 router.post(
   "/create-order",
@@ -24,7 +25,6 @@ router.post(
 router.post(
   "/capture-order",
   validate({ body: paypalCaptureOrderSchema }),
-  canCreatePayment,
   payment.captureOrder,
 );
 

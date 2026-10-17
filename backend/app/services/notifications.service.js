@@ -2,6 +2,8 @@ const { ObjectId } = require("mongodb");
 
 class NotificationsService {
   constructor(client) {
+    const ResourceDeletionService = require("./resource-deletion.service");
+    this.deletion = new ResourceDeletionService(client);
     this.Notification = client.db().collection("notifications");
   }
 
@@ -11,6 +13,7 @@ class NotificationsService {
       title: payload.title?.trim(),
       content: payload.content?.trim(),
       data: payload.data || {},
+      outbox_event_id: payload.outbox_event_id,
       is_read: payload.is_read ?? false,
       created_at: payload.created_at || new Date(),
       updated_at: new Date(),
@@ -49,7 +52,24 @@ class NotificationsService {
 
   async create(payload) {
     const document = this.extractNotificationData(payload);
-    const result = await this.Notification.insertOne(document);
+    if (document.outbox_event_id) {
+      const existing = await this.Notification.findOne({
+        outbox_event_id: document.outbox_event_id,
+      });
+      if (existing) return existing;
+    }
+    let result;
+    try {
+      result = await this.deletion.withReferences([{ collection: "contacts", id: document.data?.contactId }],
+        (session) => this.Notification.insertOne(document, { session }));
+    } catch (error) {
+      if (error.code === 11000 && document.outbox_event_id) {
+        return this.Notification.findOne({
+          outbox_event_id: document.outbox_event_id,
+        });
+      }
+      throw error;
+    }
     return {
       _id: result.insertedId,
       ...document,
@@ -72,8 +92,10 @@ class NotificationsService {
   async update(id, payload) {
     if (!ObjectId.isValid(id)) return null;
 
-    const updateData = this.extractNotificationData(payload);
-    delete updateData.created_at;
+    const updateData = { updated_at: new Date() };
+    for (const field of ["type", "title", "content", "data", "is_read"]) {
+      if (payload[field] !== undefined) updateData[field] = payload[field];
+    }
 
     return await this.Notification.findOneAndUpdate(
       { _id: new ObjectId(id) },

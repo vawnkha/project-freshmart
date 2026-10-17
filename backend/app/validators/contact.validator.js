@@ -1,3 +1,6 @@
+const { z } = require("zod");
+const { emailSchema, nonEmptyString } = require("./common.validator");
+
 function hasValue(value) {
   return value !== undefined && value !== null && String(value).trim() !== "";
 }
@@ -30,6 +33,13 @@ function validateReply(req) {
 }
 
 module.exports = {
+  createContactSchema: z.object({
+    name: nonEmptyString,
+    email: emailSchema,
+    subject: nonEmptyString,
+    content: nonEmptyString,
+  }),
+  replyContactSchema: z.object({ admin_reply: nonEmptyString }),
   validateCreateContact,
   validateReply,
 };

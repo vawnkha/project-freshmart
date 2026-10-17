@@ -12,6 +12,7 @@ function hasInventoryItemId(value) {
 module.exports = {
   inventoryTransactionQuerySchema: z.object({
     type: transactionTypeSchema.optional(),
+    inventoryItemId: objectIdSchema.optional(),
   }),
   inventoryTransactionIdParamSchema: z.object({
     id: objectIdSchema,

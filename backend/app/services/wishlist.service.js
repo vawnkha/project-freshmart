@@ -1,9 +1,14 @@
 const { ObjectId } = require("mongodb");
+const ProductsService = require("./products.service");
+const { PUBLIC_PRODUCT_FILTER } = require("../utils/inventory-query.util");
 
 class WishlistService {
   constructor(client) {
+    const ResourceDeletionService = require("./resource-deletion.service");
+    this.deletion = new ResourceDeletionService(client);
     this.Wishlist = client.db().collection("wishlists");
     this.Product = client.db().collection("products");
+    this.productsService = new ProductsService(client);
   }
 
   async findByUserId(userId) {
@@ -20,8 +25,15 @@ class WishlistService {
       {
         $lookup: {
           from: "products",
-          localField: "items",
-          foreignField: "_id",
+          let: { productIds: "$items" },
+          pipeline: this.productsService.buildPopulatePipeline({
+            match: {
+              $and: [
+                { $expr: { $in: ["$_id", "$$productIds"] } },
+                PUBLIC_PRODUCT_FILTER,
+              ],
+            },
+          }),
           as: "products",
         },
       },
@@ -43,14 +55,14 @@ class WishlistService {
     const existedProduct = await this.Product.findOne({ _id: pid });
     if (!existedProduct) return null;
 
-    await this.Wishlist.updateOne(
+    await this.deletion.withReferences([{ collection: "users", id: uid }, { collection: "products", id: pid }], (session) => this.Wishlist.updateOne(
       { user_id: uid },
       {
         $setOnInsert: { user_id: uid },
         $addToSet: { items: pid },
       },
-      { upsert: true },
-    );
+      { upsert: true, session },
+    ));
     return await this.getWishlistWithProducts(userId);
   }
 
@@ -78,10 +90,10 @@ class WishlistService {
     const wishlist = await this.findByUserId(userId);
 
     if (!wishlist) {
-      await this.Wishlist.insertOne({
-        user_id: uid,
-        items: [pid],
-      });
+      await this.deletion.withReferences([{ collection: "users", id: uid }, { collection: "products", id: pid }],
+        (session) => this.Wishlist.updateOne({ user_id: uid }, {
+          $setOnInsert: { user_id: uid }, $addToSet: { items: pid },
+        }, { upsert: true, session }));
       return {
         action: "added",
         wishlist: await this.getWishlistWithProducts(userId),
@@ -98,10 +110,11 @@ class WishlistService {
         wishlist: await this.getWishlistWithProducts(userId),
       };
     }
-    await this.Wishlist.updateOne(
+    await this.deletion.withReferences([{ collection: "users", id: uid }, { collection: "products", id: pid }], (session) => this.Wishlist.updateOne(
       { user_id: uid },
       { $addToSet: { items: pid } },
-    );
+      { session },
+    ));
     return {
       action: "added",
       wishlist: await this.getWishlistWithProducts(userId),

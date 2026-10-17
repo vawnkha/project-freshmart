@@ -67,8 +67,31 @@ const INDEX_DEFINITIONS = [
     collection: "payments",
     indexes: [
       { key: { order_id: 1 }, options: { unique: true, sparse: true } },
-      { key: { transaction_id: 1 } },
+      {
+        key: { transaction_id: 1 },
+        options: {
+          unique: true,
+          partialFilterExpression: { transaction_id: { $type: "string" } },
+        },
+      },
+      {
+        key: { idempotency_key: 1 },
+        options: {
+          unique: true,
+          partialFilterExpression: { idempotency_key: { $type: "string" } },
+        },
+      },
+      { key: { user_id: 1, created_at: -1 } },
       { key: { status: 1, created_at: -1 } },
+    ],
+  },
+  {
+    collection: "payment_intents",
+    indexes: [
+      { key: { paypalOrderId: 1 }, options: { unique: true } },
+      { key: { userId: 1, createdAt: -1 } },
+      { key: { status: 1, updatedAt: -1 } },
+      { key: { expiresAt: 1 } },
     ],
   },
   {
@@ -123,6 +146,21 @@ const INDEX_DEFINITIONS = [
     indexes: [
       { key: { is_read: 1, created_at: -1 } },
       { key: { type: 1, created_at: -1 } },
+      {
+        key: { outbox_event_id: 1 },
+        options: {
+          unique: true,
+          partialFilterExpression: { outbox_event_id: { $type: "objectId" } },
+        },
+      },
+    ],
+  },
+  {
+    collection: "outbox_events",
+    indexes: [
+      { key: { idempotencyKey: 1 }, options: { unique: true } },
+      { key: { status: 1, nextAttemptAt: 1, createdAt: 1 } },
+      { key: { processedAt: 1 } },
     ],
   },
   {
@@ -238,6 +276,16 @@ const INDEX_DEFINITIONS = [
       { key: { expiryDate: 1, status: 1 } },
       { key: { supplierId: 1 } },
       { key: { purchaseOrderId: 1 } },
+      {
+        key: { purchaseOrderId: 1, purchaseOrderItemId: 1 },
+        options: {
+          unique: true,
+          partialFilterExpression: {
+            purchaseOrderId: { $type: "objectId" },
+            purchaseOrderItemId: { $type: "objectId" },
+          },
+        },
+      },
       { key: { inventoryItemId: 1, status: 1, expiryDate: 1 } },
       { key: { inventoryItemId: 1 } },
     ],

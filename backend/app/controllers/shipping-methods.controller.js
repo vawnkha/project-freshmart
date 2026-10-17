@@ -60,7 +60,7 @@ exports.remove = async (req, res, next) => {
     const document = await getService().remove(req.params.id);
     if (!document) return next(new ApiError(404, "Phuong thuc van chuyen khong ton tai"));
     return res.send({
-      message: "Da xoa/an phuong thuc van chuyen thanh cong",
+      message: "Đã xóa phương thức vận chuyển thành công",
       data: document,
     });
   } catch (error) {

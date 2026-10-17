@@ -1,5 +1,6 @@
 const MongoDB = require("../utils/mongodb.util");
 const ProductService = require("../services/products.service");
+const ApiError = require("../api-error");
 
 function normalizeText(text = "") {
   return String(text)
@@ -39,6 +40,7 @@ const STOP_WORDS = [
   "san",
   "pham",
   "gi",
+  "tim", "can", "muon", "tu", "van", "toi", "duoc",
 ];
 
 function getKeywords(message = "") {
@@ -85,6 +87,7 @@ function scoreProduct(product, normalizedMessage, keywords) {
 
 async function callGroq(userMessage, products) {
   const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new ApiError(503, "Dịch vụ AI chưa được cấu hình");
 
   const productContext = products.length
     ? products
@@ -96,10 +99,11 @@ async function callGroq(userMessage, products) {
     : "Không có sản phẩm phù hợp.";
 
   const prompt = `
-Bạn là trợ lý AI cho website bán thực phẩm.
+Bạn là trợ lý tìm sản phẩm cho website chế phẩm sinh học và sản phẩm phục vụ nuôi tôm.
 Chỉ trả lời dựa trên dữ liệu sản phẩm bên dưới.
+Không tự tạo công dụng, liều dùng, chứng nhận hoặc cam kết điều trị. Không coi hàng trong lô khóa là còn hàng.
 Nếu không có dữ liệu phù hợp thì nói rõ là chưa tìm thấy sản phẩm phù hợp.
-Nếu có dữ liệu phù hợp mà số lượng tồn kho là 0 thì nó rõ có bán sản phẩm nhưng đã hết hàng.
+Nếu có dữ liệu phù hợp mà số lượng tồn kho là 0 thì nói rõ có bán sản phẩm nhưng đã hết hàng.
 
 Câu hỏi người dùng:
 ${userMessage}
@@ -126,6 +130,7 @@ ${productContext}
         ],
         temperature: 0.3,
       }),
+      signal: AbortSignal.timeout(15_000),
     },
   );
 
@@ -135,7 +140,9 @@ ${productContext}
     throw new Error(data?.error?.message || "Groq API error");
   }
 
-  return data?.choices?.[0]?.message?.content || "Không có phản hồi.";
+  const reply = data?.choices?.[0]?.message?.content;
+  if (typeof reply !== "string" || !reply.trim()) throw new ApiError(502, "Dịch vụ AI chưa trả lời được. Vui lòng thử lại.");
+  return reply;
 }
 
 exports.chat = async (req, res, next) => {
@@ -147,9 +154,9 @@ exports.chat = async (req, res, next) => {
       return res.status(400).json({ message: "Thiếu nội dung câu hỏi." });
     }
 
-    const allProducts = await productService.getProductsForAI();
     const normalizedMessage = normalizeText(message);
     const keywords = getKeywords(message);
+    const allProducts = await productService.getProductsForAI(keywords.join(" "), 50);
 
     const scoredProducts = (allProducts || [])
       .map((p) => {
@@ -170,7 +177,7 @@ exports.chat = async (req, res, next) => {
         if (!keywords.length) return false;
 
         return keywords.some((word) =>
-          normalizeText(p.name || "").includes(word),
+          normalizeText(p.name || "").includes(word) || normalizeText(p.search_text || "").includes(word),
         );
       })
       .sort((a, b) => {
@@ -204,12 +211,16 @@ exports.chat = async (req, res, next) => {
         name: p.name,
         price: p.price,
         stock: p.stock,
+        availableStock: p.availableStock,
         unit: p.unit,
         thumbnail: p.thumbnail,
         status: p.status,
       })),
     });
   } catch (error) {
+    if (error.name === "TimeoutError" || error.name === "AbortError") {
+      return next(new ApiError(504, "Dịch vụ AI phản hồi quá lâu. Vui lòng thử lại."));
+    }
     next(error);
   }
 };

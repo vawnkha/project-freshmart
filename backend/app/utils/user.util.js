@@ -18,7 +18,7 @@ function sanitizeUsers(users = []) {
 }
 
 function pickUserUpdate(payload = {}, options = {}) {
-  const allowedFields = ["name", "email", "phone", "avatar_url", "address"];
+  const allowedFields = ["name", "email", "phone", "address"];
   const update = {};
 
   for (const field of allowedFields) {

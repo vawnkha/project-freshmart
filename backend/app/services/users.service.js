@@ -2,11 +2,15 @@ const { ObjectId } = require("mongodb");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const RbacService = require("./rbac.service");
+const OutboxService = require("./outbox.service");
 
 class UsersService {
   constructor(client) {
     this.client = client;
+    const ResourceDeletionService = require("./resource-deletion.service");
+    this.deletion = new ResourceDeletionService(client);
     this.User = client.db().collection("users");
+    this.outbox = new OutboxService(client);
   }
 
   extractData(payload, options = {}) {
@@ -57,8 +61,28 @@ class UsersService {
     data.phone = "";
     data.avatar_url = "";
     data.address = "";
-    const result = await this.User.insertOne(data);
-    return { insertedId: result.insertedId, rawToken };
+    const session = this.client.startSession();
+    let insertedId;
+    try {
+      await session.withTransaction(async () => {
+        await this.deletion.withReferences(this.deletion.referencesFor("users", data), async () => {}, { session });
+        const result = await this.User.insertOne(data, { session });
+        insertedId = result.insertedId;
+        const baseUrl = process.env.APP_URL || "http://localhost:3000";
+        await this.outbox.enqueue(
+          "mail.activation",
+          {
+            to: data.email,
+            name: data.name,
+            activationLink: `${baseUrl}/api/users/activate/${insertedId}?token=${rawToken}`,
+          },
+          { session, idempotencyKey: `activation:${insertedId}` },
+        );
+      });
+    } finally {
+      await session.endSession();
+    }
+    return { insertedId, rawToken };
   }
 
   async findByEmail(email) {
@@ -94,7 +118,7 @@ class UsersService {
   }
 
   async setResetPasswordTokenByEmail(email, expiresMinutes = 15) {
-    const user = await this.User.findOne({ email });
+    const user = await this.User.findOne({ email, status: "active" });
     if (!user) return null;
 
     const rawToken = crypto.randomBytes(32).toString("hex");
@@ -104,16 +128,43 @@ class UsersService {
       .digest("hex");
     const expiresAt = new Date(Date.now() + expiresMinutes * 60 * 1000);
 
-    await this.User.updateOne(
-      { _id: user._id, status: "active" },
-      {
-        $set: {
-          resetToken: tokenHash,
-          resetTokenExpiresAt: expiresAt,
-          updated_at: new Date(),
-        },
-      },
-    );
+    const session = this.client.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const updated = await this.User.updateOne(
+          { _id: user._id, status: "active" },
+          {
+            $set: {
+              resetToken: tokenHash,
+              resetTokenExpiresAt: expiresAt,
+              updated_at: new Date(),
+            },
+          },
+          { session },
+        );
+        if (updated.modifiedCount !== 1) {
+          throw new Error("User changed while creating reset token");
+        }
+
+        const frontendBaseUrl =
+          process.env.FRONTEND_BASE_URL || "http://localhost:3001";
+        await this.outbox.enqueue(
+          "mail.reset-password",
+          {
+            to: user.email,
+            name: user.name,
+            resetLink: `${frontendBaseUrl}/reset-password/${user._id}/${rawToken}`,
+            expiresMinutes,
+          },
+          {
+            session,
+            idempotencyKey: `password-reset:${user._id}:${tokenHash}`,
+          },
+        );
+      });
+    } finally {
+      await session.endSession();
+    }
 
     return {
       userId: user._id,
@@ -187,19 +238,19 @@ class UsersService {
     const filter = {
       _id: ObjectId.isValid(id) ? new ObjectId(id) : null,
     };
-    const result = await this.User.findOneAndUpdate(
-      filter,
-      { $set: update },
-      { returnDocument: "after" },
+    const result = await this.deletion.withReferences(
+      this.deletion.referencesFor("users", update),
+      (session) => this.User.findOneAndUpdate(
+        filter,
+        { $set: update },
+        { returnDocument: "after", session },
+      ),
     );
     return result;
   }
 
-  async delete(id) {
-    const result = await this.User.findOneAndDelete({
-      _id: ObjectId.isValid(id) ? new ObjectId(id) : null,
-    });
-    return result;
+  async delete(id, options = {}) {
+    return this.deletion.remove("users", id, options);
   }
 }
 

@@ -1,7 +1,7 @@
 const { z } = require("zod");
 const {
   nonEmptyString,
-  nonNegativeNumberSchema,
+  optionalNonNegativeNumberSchema,
   optionalObjectIdSchema,
   optionalString,
 } = require("./common.validator");
@@ -9,6 +9,8 @@ const {
 const inventoryItemStatusSchema = z.enum(["active", "inactive", "discontinued"], {
   message: "Trang thai hang kho khong hop le",
 });
+const clearableObjectIdSchema = z.union([z.null(), optionalObjectIdSchema]);
+const clearableExpiryMonthsSchema = z.union([z.null(), optionalNonNegativeNumberSchema]);
 
 function hasValue(value) {
   return value !== undefined && value !== null && String(value).trim() !== "";
@@ -45,15 +47,15 @@ module.exports = {
     packageSize: optionalString,
     unit: nonEmptyString,
     storageInstruction: optionalString,
-    expiryMonths: nonNegativeNumberSchema.optional(),
+    expiryMonths: optionalNonNegativeNumberSchema,
     note: optionalString,
     status: inventoryItemStatusSchema.optional(),
   }),
   updateInventoryItemSchema: z
     .object({
-      categoryId: optionalObjectIdSchema,
-      brandId: optionalObjectIdSchema,
-      manufacturerId: optionalObjectIdSchema,
+      categoryId: clearableObjectIdSchema,
+      brandId: clearableObjectIdSchema,
+      manufacturerId: clearableObjectIdSchema,
       itemCode: nonEmptyString.optional(),
       itemName: nonEmptyString.optional(),
       itemType: optionalString,
@@ -61,7 +63,7 @@ module.exports = {
       packageSize: optionalString,
       unit: nonEmptyString.optional(),
       storageInstruction: optionalString,
-      expiryMonths: nonNegativeNumberSchema.optional(),
+      expiryMonths: clearableExpiryMonthsSchema,
       note: optionalString,
       status: inventoryItemStatusSchema.optional(),
     })

@@ -56,7 +56,7 @@ function makeController(Repository, label, options = {}) {
       try {
         const document = await getService().remove(req.params.id);
         if (!document) return next(new ApiError(404, `${label} khong ton tai`));
-        return res.send({ message: `Da ngung hoat dong ${label}` });
+        return res.send({ message: `Đã xóa ${label} thành công` });
       } catch (error) {
         return next(error);
       }

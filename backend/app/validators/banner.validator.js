@@ -28,6 +28,17 @@ function isValidDate(value) {
   return !Number.isNaN(new Date(value).getTime());
 }
 
+function isValidPublicLink(value) {
+  if (!hasValue(value)) return true;
+  const link = String(value).trim();
+  if (link.startsWith("/") && !link.startsWith("//")) return true;
+  try {
+    return ["http:", "https:"].includes(new URL(link).protocol);
+  } catch (_) {
+    return false;
+  }
+}
+
 function validatePayload(payload = {}, options = {}) {
   if (options.requireImage && !hasValue(payload.imageUrl)) {
     return "imageUrl la bat buoc";
@@ -47,6 +58,7 @@ function validatePayload(payload = {}, options = {}) {
 
   if (!isValidDate(payload.startDate)) return "startDate khong hop le";
   if (!isValidDate(payload.endDate)) return "endDate khong hop le";
+  if (!isValidPublicLink(payload.link)) return "link khong hop le";
 
   if (hasValue(payload.startDate) && hasValue(payload.endDate)) {
     const startDate = new Date(payload.startDate);
@@ -93,7 +105,8 @@ module.exports = {
       (value) =>
         !value.startDate ||
         !value.endDate ||
-        new Date(value.startDate).getTime() <= new Date(value.endDate).getTime(),
+        new Date(value.startDate).getTime() <=
+          new Date(value.endDate).getTime(),
       {
         message: "endDate phai lon hon hoac bang startDate",
         path: ["endDate"],
@@ -121,7 +134,8 @@ module.exports = {
       (value) =>
         !value.startDate ||
         !value.endDate ||
-        new Date(value.startDate).getTime() <= new Date(value.endDate).getTime(),
+        new Date(value.startDate).getTime() <=
+          new Date(value.endDate).getTime(),
       {
         message: "endDate phai lon hon hoac bang startDate",
         path: ["endDate"],

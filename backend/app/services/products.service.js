@@ -1,8 +1,13 @@
+const ResourceDeletionService = require("./resource-deletion.service");
 const { ObjectId } = require("mongodb");
 const ApiError = require("../api-error");
 const ProductRepository = require("../repositories/product.repository");
 const InventoryItemRepository = require("../repositories/inventory-item.repository");
-const InventorySummaryRepository = require("../repositories/inventory-summary.repository");
+const InventoryStockService = require("./inventory-stock.service");
+const {
+  buildBatchStockLookup,
+  PUBLIC_PRODUCT_FILTER,
+} = require("../utils/inventory-query.util");
 const validator = require("../validators/product.validator");
 
 function hasValue(value) {
@@ -23,9 +28,10 @@ function deleteUndefined(document) {
 
 class ProductsService {
   constructor(client) {
+    this.deletion = new ResourceDeletionService(client);
     this.repository = new ProductRepository(client);
     this.inventoryItemRepository = new InventoryItemRepository(client);
-    this.inventorySummaryRepository = new InventorySummaryRepository(client);
+    this.inventoryStockService = new InventoryStockService(client);
     this.Product = this.repository.collection();
   }
 
@@ -84,11 +90,7 @@ class ProductsService {
   }
 
   getSummaryStock(summary) {
-    if (!summary) return 0;
-    if (summary.availableQuantity !== undefined) {
-      return Number(summary.availableQuantity || 0);
-    }
-    return Number(summary.quantity || 0);
+    return Number(summary?.availableQuantity || 0);
   }
 
   async resolveInventoryLink(inventoryItemId, currentProductId = null) {
@@ -96,21 +98,24 @@ class ProductsService {
     if (!itemId) throw new ApiError(400, "inventoryItemId khong hop le");
 
     const inventoryItem = await this.inventoryItemRepository.findById(itemId);
-    if (!inventoryItem) throw new ApiError(400, "inventoryItemId khong ton tai");
+    if (!inventoryItem)
+      throw new ApiError(400, "inventoryItemId khong ton tai");
     if (inventoryItem.status && inventoryItem.status !== "active") {
       throw new ApiError(400, "Hang kho khong o trang thai active");
     }
 
     const duplicate = currentProductId
-      ? await this.repository.findByInventoryItemIdExcept(itemId, currentProductId)
+      ? await this.repository.findByInventoryItemIdExcept(
+          itemId,
+          currentProductId,
+        )
       : await this.repository.findByInventoryItemId(itemId);
 
     if (duplicate) {
       throw new ApiError(400, "inventoryItemId da duoc lien ket san pham khac");
     }
 
-    const inventorySummary =
-      await this.inventorySummaryRepository.findByInventoryItemId(itemId);
+    const inventorySummary = await this.inventoryStockService.getTotals(itemId);
 
     return { inventoryItem, inventorySummary };
   }
@@ -176,8 +181,11 @@ class ProductsService {
           : inventoryItem?.categoryId,
       price: sellingPrice,
       sellingPrice,
-      stock,
-      status: payload.status || context.defaultStatus || this.compluteStatus(stock),
+      ...(!hasInventoryLink ? { stock } : {}),
+      status:
+        payload.status ||
+        context.defaultStatus ||
+        (hasInventoryLink ? "draft" : this.compluteStatus(stock)),
       unit: payload.unit !== undefined ? payload.unit : inventoryItem?.unit,
       description: payload.description,
       thumbnail: payload.thumbnail,
@@ -202,7 +210,6 @@ class ProductsService {
   extractUpdateData(payload, context = {}) {
     const current = context.current || {};
     const inventoryItem = context.inventoryItem || null;
-    const inventorySummary = context.inventorySummary || null;
     const product = {
       ...this.pickExtendedFields(payload),
       name: payload.name,
@@ -225,7 +232,10 @@ class ProductsService {
     };
 
     if (payload.price !== undefined || payload.sellingPrice !== undefined) {
-      const sellingPrice = this.resolvePrice(payload, current.sellingPrice || current.price);
+      const sellingPrice = this.resolvePrice(
+        payload,
+        current.sellingPrice || current.price,
+      );
       product.price = sellingPrice;
       product.sellingPrice = sellingPrice;
     }
@@ -234,13 +244,15 @@ class ProductsService {
       product.comparePrice = Number(payload.comparePrice || 0);
     }
 
-    if (inventoryItem) {
-      product.stock = this.getSummaryStock(inventorySummary);
-    } else if (payload.stock !== undefined) {
+    if (!inventoryItem && payload.stock !== undefined) {
       product.stock = Number(payload.stock || 0);
     }
 
-    if (payload.status === undefined && payload.stock !== undefined && !inventoryItem) {
+    if (
+      payload.status === undefined &&
+      payload.stock !== undefined &&
+      !inventoryItem
+    ) {
       product.status = this.compluteStatus(payload.stock);
     }
 
@@ -256,8 +268,12 @@ class ProductsService {
       : {};
 
     const product = this.extractCreateData(payload, inventoryContext);
-    const result = await this.Product.insertOne(product);
-    return { insertedId: result.insertedId, ...product };
+    const result = await this.deletion.withReferences(this.deletion.referencesFor("products", product),
+      (session) => this.Product.insertOne(product, { session }));
+    return {
+      insertedId: result.insertedId,
+      ...(await this.findById(result.insertedId)),
+    };
   }
 
   async createFromInventory(inventoryItemId, payload = {}) {
@@ -293,8 +309,12 @@ class ProductsService {
       },
     );
 
-    const result = await this.Product.insertOne(product);
-    return { insertedId: result.insertedId, ...product };
+    const result = await this.deletion.withReferences(this.deletion.referencesFor("products", product),
+      (session) => this.Product.insertOne(product, { session }));
+    return {
+      insertedId: result.insertedId,
+      ...(await this.findById(result.insertedId)),
+    };
   }
 
   async find(filter = {}, options = {}) {
@@ -335,15 +355,16 @@ class ProductsService {
         "productCode",
       ];
 
-      filter.$and = tokens.map((token) => {
-        const wordRegex = this.buildWordRegex(token);
+      if (tokens.length)
+        filter.$and = tokens.map((token) => {
+          const wordRegex = this.buildWordRegex(token);
 
-        return {
-          $or: searchableFields.map((field) => ({
-            [field]: { $regex: wordRegex },
-          })),
-        };
-      });
+          return {
+            $or: searchableFields.map((field) => ({
+              [field]: { $regex: wordRegex },
+            })),
+          };
+        });
     }
 
     if (categoryId !== undefined && categoryId !== "") {
@@ -375,14 +396,7 @@ class ProductsService {
           preserveNullAndEmptyArrays: true,
         },
       },
-      {
-        $lookup: {
-          from: "inventory_summaries",
-          localField: "inventoryItemId",
-          foreignField: "inventoryItemId",
-          as: "inventorySummary",
-        },
-      },
+      buildBatchStockLookup("inventoryItemId", "inventorySummary"),
       {
         $unwind: {
           path: "$inventorySummary",
@@ -404,12 +418,25 @@ class ProductsService {
             $cond: [
               { $ne: [{ $ifNull: ["$inventoryItemId", null] }, null] },
               {
-                $ifNull: [
-                  "$inventorySummary.availableQuantity",
-                  { $ifNull: ["$inventorySummary.quantity", 0] },
+                $cond: [
+                  {
+                    $and: [
+                      {
+                        $ne: [{ $ifNull: ["$inventoryItem._id", null] }, null],
+                      },
+                      {
+                        $in: [
+                          { $ifNull: ["$inventoryItem.status", "active"] },
+                          ["active"],
+                        ],
+                      },
+                    ],
+                  },
+                  { $ifNull: ["$inventorySummary.availableQuantity", 0] },
+                  0,
                 ],
               },
-              "$stock",
+              { $max: [0, { $ifNull: ["$stock", 0] }] },
             ],
           },
           unit: {
@@ -421,6 +448,29 @@ class ProductsService {
           },
         },
       },
+      {
+        $addFields: {
+          availableStock: "$stock",
+          inStock: {
+            $and: [
+              { $gt: ["$stock", 0] },
+              {
+                $cond: [
+                  { $ne: [{ $ifNull: ["$inventoryItemId", null] }, null] },
+                  { $eq: ["$status", "active"] },
+                  {
+                    $in: [
+                      { $ifNull: ["$status", "active"] },
+                      ["active", "in_stock"],
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      { $addFields: { outOfStock: { $not: ["$inStock"] } } },
     ];
   }
 
@@ -428,6 +478,7 @@ class ProductsService {
     match = {},
     includeInventoryDetails = false,
     includeSearchText = false,
+    limit = 0,
   } = {}) {
     const project = {
       review_stats: 0,
@@ -445,6 +496,7 @@ class ProductsService {
     return [
       { $match: match },
       { $sort: { created_at: -1 } },
+      ...(limit > 0 ? [{ $limit: limit }] : []),
 
       ...this.buildInventoryLookupStages(),
 
@@ -510,46 +562,54 @@ class ProductsService {
     ];
   }
 
-  async findByCategoryId(categoryId) {
+  async findByCategoryId(categoryId, query = {}, options = {}) {
     const category_id = ObjectId.isValid(categoryId)
       ? new ObjectId(categoryId)
       : null;
 
-    const data = await this.Product.aggregate(
-      this.buildPopulatePipeline({
-        match: { category_id },
-      }),
-    ).toArray();
-
-    return { data };
+    return this.search({ ...query, category_id: String(category_id) }, options);
   }
 
-  async search(query = {}) {
+  async search(query = {}, { publicOnly = false } = {}) {
     const filter = this.buildSearchFilter(query);
+    const match = publicOnly
+      ? { $and: [filter, PUBLIC_PRODUCT_FILTER] }
+      : filter;
 
     const data = await this.Product.aggregate(
       this.buildPopulatePipeline({
-        match: filter,
+        match,
       }),
     ).toArray();
 
     return { data };
   }
 
-  async getProductsForAI() {
+  async getProductsForAI(message, limit = 50) {
+    const filter = this.buildSearchFilter({ q: message });
+    // Chat can mention several product groups; match relevant tokens without
+    // changing the stricter public catalog search contract.
+    const match = filter.$and?.length ? { $or: filter.$and } : { _id: { $exists: false } };
     return this.Product.aggregate(
       this.buildPopulatePipeline({
-        match: {},
+        match: {
+          $and: [match, PUBLIC_PRODUCT_FILTER],
+        },
         includeSearchText: true,
+        limit,
       }),
     ).toArray();
   }
 
-  async findById(id) {
+  async findById(id, { publicOnly = false } = {}) {
     const _id = ObjectId.isValid(id) ? new ObjectId(id) : null;
 
     const result = await this.Product.aggregate([
-      { $match: { _id } },
+      {
+        $match: publicOnly
+          ? { $and: [{ _id }, PUBLIC_PRODUCT_FILTER] }
+          : { _id },
+      },
 
       ...this.buildInventoryLookupStages(),
 
@@ -686,20 +746,21 @@ class ProductsService {
       });
     }
 
-    const result = await this.Product.findOneAndUpdate(
+    const result = await this.deletion.withReferences(this.deletion.referencesFor("products", update),
+      (session) => this.Product.findOneAndUpdate(
       filter,
-      { $set: update },
-      { returnDocument: "after" },
-    );
+      {
+        $set: update,
+        ...(inventoryContext.inventoryItem ? { $unset: { stock: "" } } : {}),
+      },
+      { returnDocument: "after", session },
+    ));
 
-    return result;
+    return result ? this.findById(id) : null;
   }
 
   async delete(id) {
-    const result = await this.Product.findOneAndDelete({
-      _id: ObjectId.isValid(id) ? new ObjectId(id) : null,
-    });
-    return result;
+    return this.deletion.remove("products", id);
   }
 }
 

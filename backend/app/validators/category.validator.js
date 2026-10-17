@@ -4,6 +4,7 @@ const {
   optionalString,
   slugSchema,
   statusEnum,
+  booleanQuerySchema,
 } = require("./common.validator");
 
 function hasValue(value) {
@@ -45,6 +46,7 @@ module.exports = {
       slug: slugSchema.optional(),
       description: optionalString,
       status: statusEnum.optional(),
+      removeImage: booleanQuerySchema,
     })
     .refine((value) => Object.keys(value).length > 0, {
       message: "Du lieu cap nhat khong duoc de trong",

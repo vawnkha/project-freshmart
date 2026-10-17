@@ -66,6 +66,8 @@ const discountBaseSchema = z
   .object({
     code: nonEmptyString,
     name: nonEmptyString,
+    description: optionalString,
+    isPublic: z.boolean().optional().default(false),
     scope: scopeSchema,
     type: typeSchema,
     value: positiveNumberSchema,
@@ -87,6 +89,8 @@ const discountUpdateSchema = z
   .object({
     code: nonEmptyString.optional(),
     name: nonEmptyString.optional(),
+    description: optionalString,
+    isPublic: z.boolean().optional(),
     scope: scopeSchema.optional(),
     type: typeSchema.optional(),
     value: positiveNumberSchema.optional(),
@@ -118,6 +122,9 @@ function isNonNegativeNumber(value) {
 }
 
 function validateCommon(payload = {}, options = {}) {
+  if (payload.isPublic !== undefined && typeof payload.isPublic !== "boolean") {
+    return "isPublic phai la boolean";
+  }
   if (options.requireCode && !hasValue(payload.code)) return "code la bat buoc";
   if (options.requireName && !hasValue(payload.name)) return "name la bat buoc";
   if (options.requireScope && !hasValue(payload.scope)) return "scope la bat buoc";

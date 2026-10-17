@@ -5,17 +5,18 @@ const {
   optionalObjectIdSchema,
   optionalString,
 } = require("./common.validator");
+const PAYMENT_METHODS = require("../constants/payment-methods");
 
-const paymentMethodSchema = z.enum(["cod", "paypal", "cash"], {
+const paymentMethodSchema = z.literal(PAYMENT_METHODS.PAYPAL, {
   message: "payment_method khong hop le",
 });
 
 function normalizeCheckoutAliases(value) {
   return {
     ...value,
-    user_id: value.user_id || value.userId,
-    address_id: value.address_id || value.addressId,
-    payment_method: value.payment_method || value.paymentMethod,
+    user_id: value.user_id ?? value.userId,
+    address_id: value.address_id ?? value.addressId,
+    payment_method: value.payment_method ?? value.paymentMethod,
   };
 }
 
@@ -49,15 +50,39 @@ const paypalCreateOrderSchema = z
         message: "address_id la bat buoc",
       });
     }
+    if (!value.payment_method) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["payment_method"],
+        message: "payment_method la bat buoc",
+      });
+    }
+    if (value.address_id && value.addressId && value.address_id !== value.addressId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["address_id"],
+        message: "address_id va addressId khong khop",
+      });
+    }
+    if (value.payment_method && value.paymentMethod && value.payment_method !== value.paymentMethod) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["payment_method"],
+        message: "payment_method va paymentMethod khong khop",
+      });
+    }
   });
 
-const paypalCaptureOrderSchema = paypalCreateOrderSchema
-  .and(
-    z.object({
-      paypalOrderId: optionalString,
-      orderID: optionalString,
-    }).passthrough(),
-  )
+const paypalCaptureOrderSchema = z
+  .object({
+    paypalOrderId: optionalString,
+    orderID: optionalString,
+    user_id: objectIdSchema.optional(),
+    userId: objectIdSchema.optional(),
+    address_id: objectIdSchema.optional(),
+    addressId: objectIdSchema.optional(),
+  })
+  .passthrough()
   .transform((value) => ({
     ...value,
     paypalOrderId: value.paypalOrderId || value.orderID,
@@ -86,20 +111,16 @@ function bad(message) {
 
 function validateCreateOrder(req) {
   const body = req.body || {};
-  if (!hasValue(body.user_id) || !hasValue(body.address_id)) {
-    return bad("user_id va address_id la bat buoc");
+  if (!hasValue(body.user_id) || !hasValue(body.address_id) || !hasValue(body.payment_method)) {
+    return bad("user_id, address_id va payment_method la bat buoc");
   }
   return ok();
 }
 
 function validateCaptureOrder(req) {
   const body = req.body || {};
-  if (
-    !hasValue(body.paypalOrderId) ||
-    !hasValue(body.user_id) ||
-    !hasValue(body.address_id)
-  ) {
-    return bad("paypalOrderId, user_id, address_id la bat buoc");
+  if (!hasValue(body.paypalOrderId || body.orderID)) {
+    return bad("paypalOrderId la bat buoc");
   }
   return ok();
 }

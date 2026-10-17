@@ -1,7 +1,9 @@
 const { ObjectId } = require("mongodb");
+const ResourceDeletionService = require("./resource-deletion.service");
 
 class CategoriesService {
   constructor(client) {
+    this.deletion = new ResourceDeletionService(client);
     this.Category = client.db().collection("categories");
   }
   extractCreate(payload) {
@@ -10,6 +12,7 @@ class CategoriesService {
       slug: payload.slug,
       description: payload.description,
       image_url: payload.image_url,
+      status: payload.status || "active",
       created_at: new Date(),
       updated_at: new Date(),
     };
@@ -25,6 +28,7 @@ class CategoriesService {
       slug: payload.slug,
       description: payload.description,
       image_url: payload.image_url,
+      status: payload.status,
       updated_at: new Date(),
     };
     Object.keys(category).forEach(
@@ -74,10 +78,7 @@ class CategoriesService {
   }
 
   async delete(id) {
-    const result = await this.Category.findOneAndDelete({
-      _id: ObjectId.isValid(id) ? new ObjectId(id) : null,
-    });
-    return result;
+    return this.deletion.remove("categories", id);
   }
 }
 

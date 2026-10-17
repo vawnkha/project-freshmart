@@ -1,7 +1,6 @@
 const { z } = require("zod");
 const {
   objectIdSchema,
-  positiveNumberSchema,
 } = require("./common.validator");
 
 const cartUserParamSchema = z.object({

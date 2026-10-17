@@ -54,7 +54,7 @@ exports.delete = async (req, res, next) => {
   try {
     const document = await getService().delete(req.params.id);
     if (!document) return next(new ApiError(404, "Hang kho khong ton tai"));
-    return res.send({ message: "Da ngung hoat dong hang kho" });
+    return res.send({ message: "Đã xóa hàng kho thành công" });
   } catch (error) {
     return next(error);
   }

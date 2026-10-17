@@ -1,3 +1,36 @@
+const { z } = require("zod");
+const {
+  idParamSchema,
+  nonEmptyString,
+  objectIdSchema,
+  optionalObjectIdSchema,
+  optionalSlugSchema,
+  optionalString,
+  slugSchema,
+} = require("./common.validator");
+
+const statusSchema = z.enum(["draft", "published", "archived"]);
+const optionalDateSchema = z.preprocess(
+  (value) => value === "" || value === null ? undefined : value,
+  z.string().refine((value) => !Number.isNaN(new Date(value).getTime()), "publishedAt khong hop le").optional(),
+);
+const stringListSchema = z.array(z.string());
+
+const newsFields = {
+  categoryId: objectIdSchema,
+  title: nonEmptyString,
+  slug: slugSchema,
+  summary: optionalString,
+  content: optionalString,
+  thumbnail: optionalString,
+  images: stringListSchema.optional(),
+  tags: stringListSchema.optional(),
+  status: statusSchema.optional(),
+  publishedAt: optionalDateSchema,
+  seoTitle: optionalString,
+  seoDescription: optionalString,
+};
+
 function hasValue(value) {
   return value !== undefined && value !== null && String(value).trim() !== "";
 }
@@ -37,6 +70,23 @@ function validateUpdate(payload = {}) {
 }
 
 module.exports = {
+  newsIdParamSchema: idParamSchema,
+  newsQuerySchema: z.object({
+    status: statusSchema.optional(),
+    categoryId: optionalObjectIdSchema,
+    tag: optionalString,
+    keyword: optionalString,
+  }),
+  createNewsSchema: z.object(newsFields),
+  updateNewsSchema: z.object({
+    ...newsFields,
+    categoryId: optionalObjectIdSchema,
+    title: nonEmptyString.optional(),
+    slug: optionalSlugSchema,
+    publishedAt: z.union([z.literal(""), optionalDateSchema]),
+  }).refine((value) => Object.keys(value).length > 0, {
+    message: "Du lieu cap nhat khong duoc de trong",
+  }),
   validateCreate,
   validateUpdate,
 };

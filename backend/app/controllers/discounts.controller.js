@@ -6,6 +6,15 @@ function getService() {
   return new DiscountService(MongoDB.client);
 }
 
+exports.findPublic = async (req, res, next) => {
+  try {
+    res.set("Cache-Control", "no-store");
+    return res.send({ data: await getService().findPublic() });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 exports.findAll = async (req, res, next) => {
   try {
     const data = await getService().find(req.query);
@@ -55,7 +64,7 @@ exports.remove = async (req, res, next) => {
     const document = await getService().remove(req.params.id);
     if (!document) return next(new ApiError(404, "Ma giam gia khong ton tai"));
     return res.send({
-      message: "Da xoa/an ma giam gia thanh cong",
+      message: "Đã xóa mã giảm giá thành công",
       data: document,
     });
   } catch (error) {

@@ -1,7 +1,9 @@
+const ResourceDeletionService = require("./resource-deletion.service");
 const { ObjectId } = require("mongodb");
 const ApiError = require("../api-error");
 const NewsRepository = require("../repositories/news.repository");
 const validator = require("../validators/news.validator");
+const { sanitizeNewsHtml } = require("../utils/content-security.util");
 
 function hasValue(value) {
   return value !== undefined && value !== null && String(value).trim() !== "";
@@ -20,7 +22,9 @@ function clean(data, allowEmptyStringFields = new Set()) {
 }
 
 function normalizeSlug(slug) {
-  return String(slug || "").trim().toLowerCase();
+  return String(slug || "")
+    .trim()
+    .toLowerCase();
 }
 
 function toObjectId(id) {
@@ -44,6 +48,7 @@ function normalizeStringList(values = []) {
 
 class NewsService {
   constructor(client) {
+    this.deletion = new ResourceDeletionService(client);
     this.repository = new NewsRepository(client);
     this.NewsCategory = client.db().collection("news_categories");
   }
@@ -55,19 +60,33 @@ class NewsService {
     const data = clean(
       {
         categoryId:
-          payload.categoryId !== undefined ? toObjectId(payload.categoryId) : undefined,
-        title: hasValue(payload.title) ? String(payload.title).trim() : undefined,
+          payload.categoryId !== undefined
+            ? toObjectId(payload.categoryId)
+            : undefined,
+        title: hasValue(payload.title)
+          ? String(payload.title).trim()
+          : undefined,
         slug: hasValue(payload.slug) ? normalizeSlug(payload.slug) : undefined,
         summary:
-          payload.summary !== undefined ? String(payload.summary || "").trim() : undefined,
+          payload.summary !== undefined
+            ? String(payload.summary || "").trim()
+            : undefined,
         content:
-          payload.content !== undefined ? String(payload.content || "") : undefined,
+          payload.content !== undefined
+            ? sanitizeNewsHtml(payload.content)
+            : undefined,
         thumbnail:
           payload.thumbnail !== undefined
             ? String(payload.thumbnail || "").trim()
             : undefined,
-        images: payload.images !== undefined ? normalizeStringList(payload.images) : undefined,
-        tags: payload.tags !== undefined ? normalizeStringList(payload.tags) : undefined,
+        images:
+          payload.images !== undefined
+            ? normalizeStringList(payload.images)
+            : undefined,
+        tags:
+          payload.tags !== undefined
+            ? normalizeStringList(payload.tags)
+            : undefined,
         status:
           payload.status !== undefined
             ? String(payload.status).trim()
@@ -93,10 +112,20 @@ class NewsService {
         createdAt: includeCreatedAt ? now : undefined,
         updatedAt: now,
       },
-      new Set(["summary", "content", "thumbnail", "seoTitle", "seoDescription"]),
+      new Set([
+        "summary",
+        "content",
+        "thumbnail",
+        "seoTitle",
+        "seoDescription",
+      ]),
     );
 
-    if (data.status === "published" && data.publishedAt === undefined && includeCreatedAt) {
+    if (
+      data.status === "published" &&
+      data.publishedAt === undefined &&
+      includeCreatedAt
+    ) {
       data.publishedAt = now;
     }
 
@@ -107,6 +136,7 @@ class NewsService {
     const filter = {};
     if (options.publicOnly) {
       filter.status = "published";
+      filter.$and = [{ $or: [{ publishedAt: null }, { publishedAt: { $lte: new Date() } }] }];
     } else if (query.status) {
       filter.status = String(query.status);
     }
@@ -145,21 +175,48 @@ class NewsService {
     }
   }
 
-  find(query = {}, options = {}) {
-    return this.repository.findList(this.buildFilter(query, options), {
-      sort: options.publicOnly ? { publishedAt: -1, createdAt: -1 } : { createdAt: -1 },
-    });
+  async find(query = {}, options = {}) {
+    const filter = options.publicOnly ? await this.buildPublicFilter(query) : this.buildFilter(query, options);
+    const documents = await this.repository.findList(
+      filter,
+      {
+        sort: options.publicOnly
+          ? { publishedAt: -1, createdAt: -1 }
+          : { createdAt: -1 },
+      },
+    );
+    return documents.map((document) => ({
+      ...document,
+      content: sanitizeNewsHtml(document.content),
+    }));
   }
 
   async findById(id) {
-    return this.repository.findById(id);
+    const document = await this.repository.findById(id);
+    return document
+      ? { ...document, content: sanitizeNewsHtml(document.content) }
+      : null;
   }
 
   async findPublicBySlug(slug) {
-    return this.repository.findOne({
+    const filter = await this.buildPublicFilter();
+    const document = await this.repository.findOne({
+      ...filter,
       slug: normalizeSlug(slug),
-      status: "published",
     });
+    return document
+      ? { ...document, content: sanitizeNewsHtml(document.content) }
+      : null;
+  }
+
+  async buildPublicFilter(query = {}) {
+    const filter = this.buildFilter(query, { publicOnly: true });
+    const categories = await this.NewsCategory.find(
+      { $or: [{ status: "active" }, { status: { $exists: false } }] },
+      { projection: { _id: 1 } },
+    ).toArray();
+    filter.$and.push({ categoryId: { $in: categories.map((category) => category._id) } });
+    return filter;
   }
 
   async create(payload = {}, options = {}) {
@@ -172,7 +229,8 @@ class NewsService {
     });
     await this.ensureCategoryExists(data.categoryId);
     await this.ensureUniqueSlug(data);
-    return this.repository.create(data);
+    return this.deletion.withReferences(this.deletion.referencesFor("news", data),
+      (session) => this.repository.create(data, { session }));
   }
 
   async update(id, payload = {}, options = {}) {
@@ -187,24 +245,24 @@ class NewsService {
       userId: options.userId,
     });
 
-    if (data.categoryId !== undefined) await this.ensureCategoryExists(data.categoryId);
+    if (data.categoryId !== undefined)
+      await this.ensureCategoryExists(data.categoryId);
     await this.ensureUniqueSlug(data, current._id);
 
-    if (data.status === "published" && data.publishedAt === undefined && !current.publishedAt) {
+    if (
+      data.status === "published" &&
+      data.publishedAt === undefined &&
+      !current.publishedAt
+    ) {
       data.publishedAt = new Date();
     }
 
-    return this.repository.updateById(id, data);
+    return this.deletion.withReferences(this.deletion.referencesFor("news", data),
+      (session) => this.repository.updateById(id, data, { session }));
   }
 
   remove(id, options = {}) {
-    const data = {
-      status: "archived",
-      updatedAt: new Date(),
-    };
-    const updatedBy = toObjectId(options.userId);
-    if (updatedBy) data.updatedBy = updatedBy;
-    return this.repository.updateById(id, data);
+    return this.deletion.remove("news", id, options);
   }
 }
 

@@ -1,3 +1,9 @@
+const { z } = require("zod");
+const { idParamSchema, nonEmptyString, objectIdSchema, optionalString } = require("./common.validator");
+
+const statusSchema = z.enum(["active", "inactive"]);
+const permissionIdsSchema = z.array(objectIdSchema);
+
 function hasValue(value) {
   return value !== undefined && value !== null && String(value).trim() !== "";
 }
@@ -28,6 +34,31 @@ function validateAssignRole(req) {
 }
 
 module.exports = {
+  roleIdParamSchema: idParamSchema,
+  roleUserIdParamSchema: idParamSchema,
+  createRoleSchema: z.object({
+    name: nonEmptyString,
+    code: nonEmptyString,
+    description: optionalString,
+    status: statusSchema.optional(),
+    permissionIds: permissionIdsSchema.optional(),
+  }),
+  updateRoleSchema: z.object({
+    name: nonEmptyString.optional(),
+    code: nonEmptyString.optional(),
+    description: optionalString,
+    status: statusSchema.optional(),
+    permissionIds: permissionIdsSchema.optional(),
+  }).refine((value) => Object.keys(value).length > 0, {
+    message: "Du lieu cap nhat khong duoc de trong",
+  }),
+  assignRoleSchema: z.object({
+    role_id: nonEmptyString.optional(),
+    roleId: nonEmptyString.optional(),
+    code: nonEmptyString.optional(),
+  }).refine((value) => Boolean(value.role_id || value.roleId || value.code), {
+    message: "Role la bat buoc",
+  }),
   validateCreateRole,
   validateAssignRole,
 };

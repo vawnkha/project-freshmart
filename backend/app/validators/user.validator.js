@@ -1,5 +1,6 @@
 const { z } = require("zod");
 const { emailSchema, nonEmptyString, optionalString } = require("./common.validator");
+const nameSchema = nonEmptyString.pipe(z.string().max(120));
 
 function hasValue(value) {
   return value !== undefined && value !== null && String(value).trim() !== "";
@@ -29,12 +30,23 @@ function validateUpdateUser(req) {
 
 module.exports = {
   createUserSchema: z.object({
-    name: nonEmptyString,
+    name: nameSchema,
     email: emailSchema,
-    password: nonEmptyString,
-    phone: optionalString,
-    address: optionalString,
+    password: z.string().min(8).max(128),
+    phone: optionalString.refine((value) => !value || value.length <= 30),
+    address: optionalString.refine((value) => !value || value.length <= 500),
   }),
+  updateUserSchema: z
+    .object({
+      name: nameSchema.optional(),
+      email: emailSchema.optional(),
+      phone: optionalString.refine((value) => !value || value.length <= 30),
+      address: optionalString.refine((value) => !value || value.length <= 500),
+      status: z.enum(["pending", "active", "blocked"]).optional(),
+    })
+    .refine((value) => Object.keys(value).length > 0, {
+      message: "Data to update can not be empty",
+    }),
   validateCreateUser,
   validateUpdateUser,
 };

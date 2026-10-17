@@ -1,8 +1,6 @@
 const ApiError = require("../api-error");
 const MongoDB = require("../utils/mongodb.util");
 const ContactsService = require("../services/contacts.service");
-const { sendContactReplyEmail } = require("../utils/mailer.util");
-const { notifyAdmin } = require("../utils/notify-admin.util");
 
 exports.create = async (req, res, next) => {
   try {
@@ -24,18 +22,6 @@ exports.create = async (req, res, next) => {
       subject,
       content,
       status: "pending",
-    });
-
-    await notifyAdmin({
-      type: "contact",
-      title: "Có liên hệ mới",
-      content: `Có liên hệ mới từ ${document.email}`,
-      data: {
-        contactId: String(document._id),
-        name: document.name,
-        email: document.email,
-        subject: document.subject,
-      },
     });
 
     return res.send({
@@ -90,30 +76,16 @@ exports.reply = async (req, res, next) => {
     const updated = await contactsService.reply(req.params.id, {
       admin_reply,
     });
-
-    let mailSent = true;
-    let mailError = "";
-
-    try {
-      await sendContactReplyEmail({
-        to: contact.email,
-        name: contact.name,
-        subject: contact.subject,
-        originalContent: contact.content,
-        adminReply: admin_reply,
-      });
-    } catch (err) {
-      mailSent = false;
-      mailError = err.message;
+    if (!updated) {
+      return next(new ApiError(404, "Không tìm thấy liên hệ"));
     }
 
     return res.send({
-      message: mailSent
-        ? "Đã phản hồi và gửi email thành công"
-        : "Đã phản hồi nhưng gửi email thất bại",
+      message: "Đã phản hồi; email đang được gửi",
       data: updated,
-      mailSent,
-      mailError,
+      mailSent: false,
+      mailQueued: true,
+      mailError: "",
     });
   } catch (error) {
     return next(new ApiError(500, "Lỗi khi phản hồi liên hệ"));
@@ -131,7 +103,7 @@ exports.delete = async (req, res, next) => {
 
     return res.send({ message: "Xóa liên hệ thành công" });
   } catch (error) {
-    return next(new ApiError(500, "Không thể xóa liên hệ"));
+    return next(error instanceof ApiError ? error : new ApiError(500, "Không thể xóa liên hệ"));
   }
 };
 
@@ -144,6 +116,6 @@ exports.deleteAll = async (_req, res, next) => {
       message: `${deletedCount} liên hệ đã được xóa`,
     });
   } catch (error) {
-    return next(new ApiError(500, "Không thể xóa tất cả liên hệ"));
+    return next(error instanceof ApiError ? error : new ApiError(500, "Không thể xóa tất cả liên hệ"));
   }
 };

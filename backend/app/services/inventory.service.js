@@ -1,5 +1,6 @@
 const { ObjectId } = require("mongodb");
 const ApiError = require("../api-error");
+const InventoryStockService = require("./inventory-stock.service");
 const {
   FEFO_SORT,
   buildAvailableBatchFefoFilter,
@@ -8,56 +9,32 @@ const {
 
 class InventoryService {
   constructor(client) {
+    const ResourceDeletionService = require("./resource-deletion.service");
+    this.deletion = new ResourceDeletionService(client);
     const db = client.db();
     this.InventoryItem = db.collection("inventory_items");
     this.InventoryBatch = db.collection("inventory_batches");
     this.InventorySummary = db.collection("inventory_summaries");
     this.InventoryTransaction = db.collection("inventory_transactions");
+    this.stockService = new InventoryStockService(client);
   }
 
   getActorId(user) {
     return toObjectId(user?.id || user?._id) || null;
   }
 
-  async increaseSummary(inventoryItem, quantity) {
-    const itemId = toObjectId(inventoryItem.inventoryItemId || inventoryItem._id);
+  async increaseSummary(inventoryItem, quantity, options = {}) {
+    const itemId = toObjectId(
+      inventoryItem.inventoryItemId || inventoryItem._id,
+    );
     if (!itemId) throw new ApiError(400, "inventoryItemId khong hop le");
 
     const amount = Number(quantity || 0);
     if (amount <= 0) throw new ApiError(400, "So luong nhap khong hop le");
 
-    const current = await this.InventorySummary.findOne({
-      inventoryItemId: itemId,
-    });
-    const beforeQuantity = Number(current?.availableQuantity || 0);
-    const afterQuantity = beforeQuantity + amount;
-
-    await this.InventorySummary.updateOne(
-      { inventoryItemId: itemId },
-      {
-        $set: {
-          itemCode: inventoryItem.itemCode,
-          itemName: inventoryItem.itemName,
-          unit: inventoryItem.unit,
-          updatedAt: new Date(),
-        },
-        $setOnInsert: {
-          inventoryItemId: itemId,
-          lockedQuantity: 0,
-          expiredQuantity: 0,
-          minQuantity: Number(inventoryItem.minQuantity || 10),
-        },
-        $inc: {
-          quantity: amount,
-          availableQuantity: amount,
-        },
-      },
-      { upsert: true },
-    );
-
-    const summary = await this.InventorySummary.findOne({
-      inventoryItemId: itemId,
-    });
+    const summary = await this.stockService.syncSummary(itemId, options);
+    const afterQuantity = summary.availableQuantity;
+    const beforeQuantity = options.beforeQuantity ?? afterQuantity - amount;
 
     return {
       summary,
@@ -66,7 +43,7 @@ class InventoryService {
     };
   }
 
-  async createImportTransaction(data) {
+  async createImportTransaction(data, options = {}) {
     const transaction = {
       inventoryItemId: toObjectId(data.inventoryItemId),
       batchId: toObjectId(data.batchId),
@@ -82,20 +59,29 @@ class InventoryService {
       createdAt: new Date(),
     };
 
-    const result = await this.InventoryTransaction.insertOne(transaction);
+    const result = await this.deletion.withReferences([{ collection: "users", id: transaction.createdBy }],
+      (session) => this.InventoryTransaction.insertOne(transaction, { session }), options);
     return {
       _id: result.insertedId,
       ...transaction,
     };
   }
 
-  async createImportFromPurchaseOrder(purchaseOrder, user) {
+  async createImportFromPurchaseOrder(purchaseOrder, user, options = {}) {
+    if (!options.session)
+      return this.stockService.withTransaction(options, (session) =>
+        this.createImportFromPurchaseOrder(purchaseOrder, user, {
+          ...options,
+          session,
+        }),
+      );
     if (!purchaseOrder?._id) {
       throw new ApiError(400, "Phieu nhap khong hop le");
     }
 
     const imported = [];
-    const createdBy = this.getActorId(user) || toObjectId(purchaseOrder.createdBy);
+    const createdBy =
+      this.getActorId(user) || toObjectId(purchaseOrder.createdBy);
 
     for (const item of purchaseOrder.items || []) {
       const inventoryItemId = toObjectId(item.inventoryItemId);
@@ -104,7 +90,14 @@ class InventoryService {
       }
 
       const quantity = Number(item.quantity || 0);
-      if (quantity <= 0) throw new ApiError(400, "So luong nhap khong hop le");
+      if (!Number.isFinite(quantity) || quantity <= 0)
+        throw new ApiError(400, "So luong nhap khong hop le");
+      await this.stockService.acquireItem(inventoryItemId, options.session, {
+        requireActive: true,
+      });
+      const beforeQuantity = (
+        await this.stockService.getTotals(inventoryItemId, options)
+      ).availableQuantity;
 
       const batch = {
         inventoryItemId,
@@ -128,7 +121,9 @@ class InventoryService {
         updatedAt: new Date(),
       };
 
-      const batchResult = await this.InventoryBatch.insertOne(batch);
+      const batchResult = await this.InventoryBatch.insertOne(batch, {
+        session: options.session,
+      });
       const summaryResult = await this.increaseSummary(
         {
           _id: inventoryItemId,
@@ -137,24 +132,28 @@ class InventoryService {
           unit: item.unit,
         },
         quantity,
+        { ...options, beforeQuantity },
       );
 
-      const transaction = await this.createImportTransaction({
-        inventoryItemId,
-        batchId: batchResult.insertedId,
-        itemCode: item.itemCode,
-        itemName: item.itemName,
-        quantity,
-        beforeQuantity: summaryResult.beforeQuantity,
-        afterQuantity: summaryResult.afterQuantity,
-        reference: {
-          type: "purchase_order",
-          id: purchaseOrder._id,
-          code: purchaseOrder.purchaseCode,
+      const transaction = await this.createImportTransaction(
+        {
+          inventoryItemId,
+          batchId: batchResult.insertedId,
+          itemCode: item.itemCode,
+          itemName: item.itemName,
+          quantity,
+          beforeQuantity: summaryResult.beforeQuantity,
+          afterQuantity: summaryResult.afterQuantity,
+          reference: {
+            type: "purchase_order",
+            id: purchaseOrder._id,
+            code: purchaseOrder.purchaseCode,
+          },
+          note: `Nhap kho tu phieu ${purchaseOrder.purchaseCode}`,
+          createdBy,
         },
-        note: `Nhap kho tu phieu ${purchaseOrder.purchaseCode}`,
-        createdBy,
-      });
+        options,
+      );
 
       imported.push({
         batch: {
@@ -174,16 +173,29 @@ class InventoryService {
     if (!itemId) throw new ApiError(400, "inventoryItemId khong hop le");
 
     const requiredQuantity = Number(quantity || 0);
-    if (requiredQuantity <= 0) {
+    if (!Number.isFinite(requiredQuantity) || requiredQuantity <= 0) {
       throw new ApiError(400, "So luong xuat khong hop le");
     }
 
-    const batches = await this.InventoryBatch.find(
-      buildAvailableBatchFefoFilter(itemId, new Date()),
+    const batches = await this.InventoryBatch.aggregate(
+      [
+        {
+          $match: buildAvailableBatchFefoFilter(
+            itemId,
+            options.now || new Date(),
+          ),
+        },
+        {
+          $addFields: {
+            fefoExpiry: {
+              $ifNull: ["$expiryDate", new Date("9999-12-31T00:00:00Z")],
+            },
+          },
+        },
+        { $sort: FEFO_SORT },
+      ],
       { session: options.session },
-    )
-      .sort(FEFO_SORT)
-      .toArray();
+    ).toArray();
 
     let remaining = requiredQuantity;
     const allocation = [];
@@ -224,6 +236,13 @@ class InventoryService {
   }
 
   async exportAllocation(allocation, reference, user, options = {}) {
+    if (!options.session)
+      return this.stockService.withTransaction(options, (session) =>
+        this.exportAllocation(allocation, reference, user, {
+          ...options,
+          session,
+        }),
+      );
     const rows = Array.isArray(allocation) ? allocation : [allocation];
     const createdBy = this.getActorId(user);
     const results = [];
@@ -233,21 +252,34 @@ class InventoryService {
       const batchId = toObjectId(row.batchId);
       const inventoryItemId = toObjectId(row.inventoryItemId);
       const quantity = Number(row.quantity || 0);
-      if (!batchId || !inventoryItemId || quantity <= 0) {
+      if (
+        !batchId ||
+        !inventoryItemId ||
+        !Number.isFinite(quantity) ||
+        quantity <= 0
+      ) {
         throw new ApiError(400, "Allocation khong hop le");
       }
 
-      const batch = await this.InventoryBatch.findOne(
-        { _id: batchId },
-        { session },
-      );
+      await this.stockService.acquireItem(inventoryItemId, session, {
+        requireActive: true,
+      });
+      const filter = {
+        ...buildAvailableBatchFefoFilter(inventoryItemId),
+        _id: batchId,
+        quantity: { $gte: quantity },
+      };
+      const beforeQuantity = (
+        await this.stockService.getTotals(inventoryItemId, { session })
+      ).availableQuantity;
+      const batch = await this.InventoryBatch.findOne(filter, { session });
       if (!batch || Number(batch.quantity || 0) < quantity) {
-        throw new ApiError(400, "Lo hang khong du ton kho");
+        throw new ApiError(409, "Lo hang khong kha dung hoac khong du ton kho");
       }
 
       const nextBatchQuantity = Number(batch.quantity || 0) - quantity;
       const batchUpdate = await this.InventoryBatch.updateOne(
-        { _id: batchId, quantity: { $gte: quantity } },
+        filter,
         {
           $inc: { quantity: -quantity },
           $set: {
@@ -261,24 +293,10 @@ class InventoryService {
         throw new ApiError(400, "Lo hang khong du ton kho");
       }
 
-      const summary = await this.InventorySummary.findOne(
-        { inventoryItemId },
-        { session },
-      );
-      const beforeQuantity = Number(summary?.availableQuantity || 0);
-      const afterQuantity = beforeQuantity - quantity;
-
-      await this.InventorySummary.updateOne(
-        { inventoryItemId },
-        {
-          $inc: {
-            quantity: -quantity,
-            availableQuantity: -quantity,
-          },
-          $set: { updatedAt: new Date() },
-        },
-        { session },
-      );
+      const summary = await this.stockService.syncSummary(inventoryItemId, {
+        session,
+      });
+      const afterQuantity = summary.availableQuantity;
 
       const transaction = {
         inventoryItemId,
@@ -295,10 +313,8 @@ class InventoryService {
         createdAt: new Date(),
       };
 
-      const transactionResult = await this.InventoryTransaction.insertOne(
-        transaction,
-        { session },
-      );
+      const transactionResult = await this.deletion.withReferences([{ collection: "users", id: createdBy }],
+        () => this.InventoryTransaction.insertOne(transaction, { session }), { session });
       results.push({
         _id: transactionResult.insertedId,
         ...transaction,
@@ -309,6 +325,13 @@ class InventoryService {
   }
 
   async restoreAllocation(allocation, reference, user, options = {}) {
+    if (!options.session)
+      return this.stockService.withTransaction(options, (session) =>
+        this.restoreAllocation(allocation, reference, user, {
+          ...options,
+          session,
+        }),
+      );
     const rows = Array.isArray(allocation) ? allocation : [allocation];
     const createdBy = this.getActorId(user);
     const results = [];
@@ -318,44 +341,48 @@ class InventoryService {
       const batchId = toObjectId(row.batchId);
       const inventoryItemId = toObjectId(row.inventoryItemId);
       const quantity = Number(row.quantity || 0);
-      if (!batchId || !inventoryItemId || quantity <= 0) {
+      if (
+        !batchId ||
+        !inventoryItemId ||
+        !Number.isFinite(quantity) ||
+        quantity <= 0
+      ) {
         throw new ApiError(400, "Allocation khong hop le");
       }
 
+      await this.stockService.acquireItem(inventoryItemId, session);
+      const beforeQuantity = (
+        await this.stockService.getTotals(inventoryItemId, { session })
+      ).availableQuantity;
       const batch = await this.InventoryBatch.findOne(
-        { _id: batchId },
+        { _id: batchId, inventoryItemId },
         { session },
       );
+      if (!batch) throw new ApiError(409, "Lo hang hoan kho khong ton tai");
+      // Returning an order never unlocks a quarantined/disabled batch.
+      const expired =
+        batch.expiryDate && new Date(batch.expiryDate) < new Date();
+      const restoredStatus = ["available", "sold_out"].includes(batch.status)
+        ? expired
+          ? "expired"
+          : "available"
+        : batch.status;
       await this.InventoryBatch.updateOne(
-        { _id: batchId },
+        { _id: batchId, inventoryItemId },
         {
           $inc: { quantity },
           $set: {
-            status: "available",
+            status: restoredStatus,
             updatedAt: new Date(),
           },
         },
         { session },
       );
 
-      const summary = await this.InventorySummary.findOne(
-        { inventoryItemId },
-        { session },
-      );
-      const beforeQuantity = Number(summary?.availableQuantity || 0);
-      const afterQuantity = beforeQuantity + quantity;
-
-      await this.InventorySummary.updateOne(
-        { inventoryItemId },
-        {
-          $inc: {
-            quantity,
-            availableQuantity: quantity,
-          },
-          $set: { updatedAt: new Date() },
-        },
-        { session },
-      );
+      const summary = await this.stockService.syncSummary(inventoryItemId, {
+        session,
+      });
+      const afterQuantity = summary.availableQuantity;
 
       const transaction = {
         inventoryItemId,
@@ -372,10 +399,8 @@ class InventoryService {
         createdAt: new Date(),
       };
 
-      const transactionResult = await this.InventoryTransaction.insertOne(
-        transaction,
-        { session },
-      );
+      const transactionResult = await this.deletion.withReferences([{ collection: "users", id: createdBy }],
+        () => this.InventoryTransaction.insertOne(transaction, { session }), { session });
       results.push({
         _id: transactionResult.insertedId,
         ...transaction,

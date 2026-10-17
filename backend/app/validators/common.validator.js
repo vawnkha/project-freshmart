@@ -7,7 +7,9 @@ function emptyToUndefined(value) {
 
 function numberFromForm(value) {
   if (value === "" || value === null || value === undefined) return undefined;
-  return Number(value);
+  if (typeof value === "number") return value;
+  if (typeof value === "string") return value.trim() ? Number(value) : undefined;
+  return value;
 }
 
 const objectIdSchema = z

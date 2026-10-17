@@ -24,7 +24,7 @@ exports.create = async (req, res, next) => {
       data: document,
     });
   } catch (error) {
-    return next(new ApiError(500, "Không thể tạo thông báo"));
+    return next(error instanceof ApiError ? error : new ApiError(500, "Không thể tạo thông báo"));
   }
 };
 

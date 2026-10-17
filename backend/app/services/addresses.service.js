@@ -1,7 +1,9 @@
 const { ObjectId } = require("mongodb");
+const ResourceDeletionService = require("./resource-deletion.service");
 
 class AddressService {
   constructor(client) {
+    this.deletion = new ResourceDeletionService(client);
     this.Address = client.db().collection("addresses");
   }
 
@@ -28,14 +30,15 @@ class AddressService {
   async create(payload) {
     const data = this.extractData(payload);
     if (!data.user_id) return { error: "user_id khong hop le" };
-    if (data.is_default) {
-      await this.Address.updateMany(
-        { user_id: data.user_id },
-        { $set: { is_default: false } },
-      );
-    }
-    const result = await this.Address.insertOne(data);
-    return { insertedId: result.insertedId, ...data };
+    const result = await this.deletion.withReferences(this.deletion.referencesFor("addresses", data), async (session) => {
+      if (data.is_default) {
+        await this.Address.updateMany(
+          { user_id: data.user_id }, { $set: { is_default: false } }, { session },
+        );
+      }
+      return this.Address.insertOne(data, { session });
+    });
+    return { _id: result.insertedId, insertedId: result.insertedId, ...data };
   }
 
   async findByUserId(userId) {
@@ -66,27 +69,27 @@ class AddressService {
     Object.keys(update).forEach(
       (key) => update[key] === undefined && delete update[key],
     );
-    if (update.is_default === true) {
-      const existed = await this.Address.findOne(filter);
-      if (existed?.user_id) {
+    const existed = await this.Address.findOne(filter);
+    if (!existed) return null;
+    return this.deletion.withReferences(
+      [{ collection: "users", id: existed.user_id }],
+      async (session) => {
+        const current = await this.Address.findOne(filter, { session });
+        if (!current) return null;
+        if (update.is_default === true) {
         await this.Address.updateMany(
-          { user_id: existed.user_id },
+          { user_id: current.user_id },
           { $set: { is_default: false } },
+          { session },
         );
+        }
+        return this.Address.findOneAndUpdate(filter, { $set: update }, { returnDocument: "after", session });
       }
-    }
-    const result = await this.Address.findOneAndUpdate(
-      filter,
-      { $set: update },
-      { returnDocument: "after" },
     );
-    return result;
   }
 
   async delete(id) {
-    return await this.Address.findOneAndDelete({
-      _id: ObjectId.isValid(id) ? new ObjectId(id) : null,
-    });
+    return this.deletion.remove("addresses", id);
   }
 }
 

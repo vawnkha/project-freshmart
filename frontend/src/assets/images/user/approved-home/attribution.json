@@ -1,0 +1,20 @@
+[
+  {
+    "file": "mangroves-photo.jpg",
+    "sha256": "129361b1080fbf65a36d7f27b8ec7b670b5dba091cce2cceead043ad1f689df9",
+    "source": "approved prototype IMG.pondPhoto",
+    "original": "https://commons.wikimedia.org/wiki/File:Shrimp_Farm_by_the_Mangroves.jpg",
+    "author": "Amdadphoto",
+    "license": "CC BY-SA 4.0",
+    "licenseURL": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "changes": "Unmodified embedded JPEG. CSS crop/mask only. Bangladesh context, not FreshMart premises."
+  },
+  {
+    "file": "guidance.svg",
+    "sha256": "c1419df1ce9a02f79938f538e6c839eb4acee4bdcc14f0dc24aa94875815ada5",
+    "source": "approved prototype editorial guidance illustration",
+    "rights": "Original project illustration adapted from approved prototype; no external product or scientific claim.",
+    "changes": "Replaced prototype-only pending-asset footer with neutral information illustration caption. Geometry/colors unchanged.",
+    "originalSha256": "e4eb91b0703213caf77cf02e771eb5b04b93190f00bfef17b5ca67f42eab2bf8"
+  }
+]

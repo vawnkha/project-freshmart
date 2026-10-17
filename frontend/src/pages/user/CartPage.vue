@@ -1,369 +1,213 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useAuthStore } from "@/stores/user/auth";
 import { useCartStore } from "@/stores/user/cart";
-import { z } from "@/validators/common.validator";
-
-const authStore = useAuthStore();
-const cartStore = useCartStore();
-
-const { items, cartTotal, loading } = storeToRefs(cartStore);
-const pageLoading = ref(false);
-const actionLoadingMap = ref({});
-const quantityErrorMap = ref({});
-
-const cartQuantitySchema = z.preprocess(
-  (value) => Number(value),
-  z
-    .number({ message: "So luong phai la so" })
-    .int("So luong phai la so nguyen")
-    .positive("So luong phai lon hon 0"),
+import { formatMoney, productPrice } from "@/utils/storefront.util";
+import { catalogStock } from "@/utils/catalog-query.util";
+import { cartLineProblem } from "@/utils/storefront-shell.util";
+import { normalizeId } from "@/utils/id.util";
+import { notify } from "@/composables/useStorefrontNotice";
+import { userError } from "@/utils/user-error.util";
+import PageHeading from "@/components/user/common/PageHeading.vue";
+import AppState from "@/components/user/common/AppState.vue";
+import ResponsiveImage from "@/components/user/common/ResponsiveImage.vue";
+import SageButton from "@/components/user/sage/SageButton.vue";
+import SageSkeleton from "@/components/user/sage/SageSkeleton.vue";
+const auth = useAuthStore();
+const cart = useCartStore();
+const { items, cartTotal } = storeToRefs(cart);
+const loading = ref(true);
+const error = ref("");
+const busy = ref({});
+const quantityErrors = ref({});
+const confirmClear = ref(false);
+const clearing = ref(false), actionError = ref(''), root = ref(null), clearTrigger = ref(null);
+let generation = 0, readRequest = 0, disposed = false;
+const context = () => ({ owner: auth.userId, version: cart.ownerVersion, generation });
+const live = ctx => !disposed && ctx.owner === auth.userId && ctx.version === cart.ownerVersion && ctx.generation === generation;
+const pending = computed(() => loading.value || cart.loading || clearing.value || Object.values(busy.value).some(Boolean));
+const mutationsDisabled = computed(() => pending.value || !!error.value || cart.mutation.uncertain || !auth.userId);
+function problem(item) {
+  if (catalogStock(item) === null) return 'Chưa xác định tồn kho. Tải lại giỏ hàng để kiểm tra.';
+  return cartLineProblem(item);
+}
+function stockLabel(item) {
+  const stock = catalogStock(item);
+  return stock === null ? 'Chưa xác định tồn kho' : stock < 1 || item.outOfStock ? 'Hết hàng' : 'Còn ' + stock + ' sản phẩm';
+}
+function lineTotal(item) {
+  const raw = item.line_total ?? item.subtotal;
+  if (raw != null) return Number.isFinite(Number(raw)) && Number(raw) >= 0 ? formatMoney(raw) : 'Chưa có tổng tiền';
+  // Preserve legacy price × quantity presentation when the detailed field is absent.
+  const price = productPrice(item), qty = Number(item.quantity);
+  return price !== null && Number.isSafeInteger(qty) && qty > 0 ? formatMoney(price * qty) : 'Chưa có tổng tiền';
+}
+const insufficient = computed(() =>
+  items.value.some(
+    (item) =>
+      problem(item) ||
+      quantityErrors.value[item.product_id] ||
+      busy.value[item.product_id],
+  ),
 );
-
-const grandTotal = computed(() => Number(cartTotal.value || 0));
-
-function isBusy(productId) {
-  return !!actionLoadingMap.value[productId];
-}
-
-function setBusy(productId, value) {
-  actionLoadingMap.value = {
-    ...actionLoadingMap.value,
-    [productId]: value,
-  };
-}
-
-function setQuantityError(productId, message = "") {
-  quantityErrorMap.value = {
-    ...quantityErrorMap.value,
-    [productId]: message,
-  };
-}
-
-function validateCartQuantity(productId, value) {
-  const result = cartQuantitySchema.safeParse(value);
-  if (!result.success) {
-    setQuantityError(productId, result.error.issues?.[0]?.message || "So luong khong hop le");
-    return null;
-  }
-  setQuantityError(productId, "");
-  return result.data;
-}
-
-async function fetchCartData() {
-  if (!authStore.userId) return;
-  pageLoading.value = true;
+const checkoutBlocked = computed(() => mutationsDisabled.value || !items.value.length || insufficient.value);
+async function loadCart() {
+  if (!auth.userId || disposed) return;
+  const ctx = context(), request = ++readRequest;
+  loading.value = true;
+  error.value = "";
   try {
-    await cartStore.fetchCart(authStore.userId);
-  } catch (error) {
-    alert(error.message);
+    await cart.fetchCart(ctx.owner);
+    if (live(ctx) && request === readRequest) quantityErrors.value = {};
+  } catch {
+    if (live(ctx) && request === readRequest) error.value = "Không thể tải giỏ hàng. Vui lòng thử lại.";
   } finally {
-    pageLoading.value = false;
+    if (live(ctx) && request === readRequest) loading.value = false;
   }
 }
-
-onMounted(fetchCartData);
-
-watch(
-  () => authStore.userId,
-  async (newUserId) => {
-    if (newUserId) {
-      await fetchCartData();
-    }
-  },
-);
-
-async function increaseItemQty(item) {
-  if (!authStore.userId || isBusy(item.product_id)) return;
-
-  const nextQty = Number(item.quantity || 0) + 1;
-  if (validateCartQuantity(item.product_id, nextQty) === null) return;
-  const maxStock = Number(item.stock || 0);
-
-  if (nextQty > maxStock) {
-    alert("Số lượng vượt quá tồn kho");
+function acceptConfirmedQuantity(item, value) {
+  // A validation render can restore the store's input value before blur.
+  // Editing back to that confirmed value needs no PUT, even without a change event.
+  if (!mutationsDisabled.value && Number(value) === Number(item.quantity)) quantityErrors.value[item.product_id] = '';
+}
+async function updateQuantity(item, value) {
+  const qty = Number(value);
+  const id = item.product_id;
+  if (mutationsDisabled.value) return;
+  const stock = catalogStock(item);
+  if (stock === null || productPrice(item) === null || item.outOfStock || !normalizeId(id)) {
+    quantityErrors.value[id] = problem(item); return;
+  }
+  if (!Number.isSafeInteger(qty) || qty < 1 || qty > stock) {
+    quantityErrors.value[id] =
+      "Số lượng phải từ 1 đến " + stock + " sản phẩm.";
     return;
   }
-  setBusy(item.product_id, true);
+  if (qty === Number(item.quantity)) { quantityErrors.value[id] = ''; return; }
+  const ctx = context(); actionError.value = '';
+  quantityErrors.value[id] = "";
+  busy.value[id] = true;
   try {
-    await cartStore.updateQuantity(authStore.userId, item.product_id, nextQty);
+    await cart.updateQuantity(ctx.owner, id, qty);
   } catch (error) {
-    alert(error.message);
+    if (live(ctx) && !cart.mutation.uncertain) quantityErrors.value[id] = userError(error, "Không thể cập nhật số lượng. Vui lòng thử lại.");
   } finally {
-    setBusy(item.product_id, false);
+    if (live(ctx)) busy.value[id] = false;
   }
 }
-
-async function decreaseItemQty(item) {
-  if (!authStore.userId || isBusy(item.product_id)) return;
-
-  const nextQty = Number(item.quantity || 0) - 1;
-  if (nextQty < 1) return;
-  if (validateCartQuantity(item.product_id, nextQty) === null) return;
-
-  setBusy(item.product_id, true);
+async function restoreRemovedFocus(previous, ctx) {
+  await nextTick();
+  if (live(ctx) && previous && !previous.isConnected && document.activeElement === document.body && !document.querySelector('dialog[open]'))
+    root.value?.querySelector('.cart-remove:not(:disabled), .cart-empty a, .cart-actions a')?.focus({ preventScroll: true });
+}
+async function remove(id) {
+  if (mutationsDisabled.value || !normalizeId(id)) return;
+  const ctx = context(), previous = document.activeElement; actionError.value = '';
+  busy.value[id] = true;
   try {
-    await cartStore.updateQuantity(authStore.userId, item.product_id, nextQty);
-  } catch (error) {
-    alert(error.message);
+    await cart.removeFromCart(ctx.owner, id);
+  } catch {
+    if (live(ctx) && !cart.mutation.uncertain) { actionError.value = 'Không thể xóa sản phẩm. Vui lòng thử lại.'; notify(actionError.value, 'error'); }
   } finally {
-    setBusy(item.product_id, false);
+    if (live(ctx)) { busy.value[id] = false; void restoreRemovedFocus(previous, ctx); }
   }
 }
-
-async function handleQuantityInput(item, event) {
-  if (!authStore.userId || isBusy(item.product_id)) return;
-
-  const rawValue = Number(event.target.value);
-  const maxStock = Number(item.stock || 0);
-
-  let nextQty = validateCartQuantity(item.product_id, rawValue);
-  if (nextQty === null) return;
-  if (maxStock > 0 && nextQty > maxStock) nextQty = maxStock;
-
-  if (nextQty === Number(item.quantity)) return;
-
-  setBusy(item.product_id, true);
+async function clear() {
+  if (mutationsDisabled.value || !confirmClear.value) return;
+  const ctx = context(), previous = document.activeElement; clearing.value = true; actionError.value = '';
   try {
-    await cartStore.updateQuantity(authStore.userId, item.product_id, nextQty);
-  } catch (error) {
-    alert(error.message);
+    await cart.clearCart(ctx.owner);
+    if (live(ctx)) confirmClear.value = false;
+  } catch {
+    if (live(ctx) && !cart.mutation.uncertain) { actionError.value = 'Không thể xóa giỏ hàng. Vui lòng thử lại.'; notify(actionError.value, 'error'); }
   } finally {
-    setBusy(item.product_id, false);
+    if (live(ctx)) { clearing.value = false; void restoreRemovedFocus(previous, ctx); }
   }
 }
-
-async function handleRemoveItem(productId) {
-  if (!authStore.userId || !productId || isBusy(productId)) return;
-
-  setBusy(productId, true);
-  try {
-    await cartStore.removeFromCart(authStore.userId, productId);
-  } catch (error) {
-    alert(error.message);
-  } finally {
-    setBusy(productId, false);
-  }
-}
-
-async function handleClearCart() {
-  if (!authStore.userId || !items.value.length) return;
-
-  const confirmed = window.confirm("Bạn muốn xóa toàn bộ giỏ hàng?");
-  if (!confirmed) return;
-
-  try {
-    await cartStore.clearCart(authStore.userId);
-  } catch (error) {
-    alert(error.message);
-  }
-}
+async function cancelClear() { confirmClear.value = false; await nextTick(); if (!disposed && !document.querySelector('dialog[open]')) clearTrigger.value?.focus({ preventScroll: true }); }
+watch(() => cart.ownerVersion, () => {
+  ++generation; ++readRequest; busy.value = {}; quantityErrors.value = {}; confirmClear.value = false;
+  clearing.value = false; error.value = ''; actionError.value = ''; loading.value = !!auth.userId;
+  // The store increments its epoch before finishing reset; read after that reset.
+  if (auth.userId) { const ctx = context(); void nextTick(() => { if (live(ctx)) return loadCart(); }); }
+}, { immediate: true, flush: 'sync' });
+onBeforeUnmount(() => { disposed = true; ++generation; ++readRequest; });
 </script>
-
 <template>
-  <div id="content" class="site-content">
-    <!-- Breadcrumb -->
-    <div id="breadcrumb">
-      <div class="container">
-        <h2 class="title">Giỏ Hàng</h2>
-
-        <ul class="breadcrumb">
-          <li><router-link to="/">Trang Chủ</router-link></li>
-          <li><span>Giỏ Hàng</span></li>
-        </ul>
-      </div>
-    </div>
-
+  <div ref="root" class="site-content sage-cart">
+    <PageHeading title="Giỏ hàng của bạn" description="Kiểm tra sản phẩm trước khi tiếp tục thanh toán." />
     <div class="container">
-      <div
-        v-if="pageLoading"
-        class="cart-empty text-center"
-        style="padding: 60px 0"
-      >
-        <h3>Đang tải giỏ hàng...</h3>
-      </div>
-      <div
-        v-else-if="!items.length"
-        class="cart-empty text-center"
-        style="padding: 60px 0"
-      >
-        <h3>Giỏ hàng của bạn đang trống</h3>
-        <p>Bạn chưa thêm sản phẩm nào vào giỏ hàng.</p>
-        <div class="checkout-btn">
-          <router-link to="/products" class="btn btn-primary pull-center">
-            <span>Tiếp tục mua sắm</span>
-            <i class="fa fa-angle-right ml-xs"></i>
-          </router-link>
-        </div>
-      </div>
-
-      <div v-else class="page-cart">
-        <div class="cart-actions">
-          <router-link to="/products" class="btn btn-primary">
-            <i class="fa fa-angle-left ml-xs"></i>
-            <span>Tiếp tục mua sắm</span>
-          </router-link>
-
-          <button
-            class="btn btn-danger btn-circle"
-            @click="handleClearCart"
-            :disabled="loading"
-          >
-            <i class="fa-solid fa-trash-can"></i>
-          </button>
-        </div>
-
-        <div class="table-responsive">
-          <table class="cart-summary table table-bordered">
-            <thead>
-              <tr>
-                <th class="width-20">&nbsp;</th>
-                <th class="width-80 text-center">Ảnh</th>
-                <th>Tên</th>
-                <th style="width: 150px" class="text-center">Đơn Giá</th>
-                <th class="width-100 text-center">SL</th>
-                <th style="width: 150px" class="text-center">Thành Tiền</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              <tr v-for="item in items" :key="item.product_id">
-                <td class="product-remove">
-                  <a
-                    title="Remove this item"
-                    class="remove"
-                    href="#"
-                    @click.prevent="handleRemoveItem(item.product_id)"
-                  >
-                    <i class="fa fa-times"></i>
-                  </a>
-                </td>
-                <td>
-                  <router-link :to="`/products/${item.product_id}`">
-                    <img
-                      width="80"
-                      :alt="item.name"
-                      class="img-responsive"
-                      :src="item.thumbnail"
-                    />
-                  </router-link>
-                </td>
-                <td>
-                  <router-link
-                    :to="`/products/${item.product_id}`"
-                    class="product-name"
-                  >
-                    {{ item.name }}
-                  </router-link>
-                </td>
-                <td class="text-center">
-                  {{ Number(item.price).toLocaleString("vi-VN") }} đ/{{
-                    item.unit
-                  }}
-                </td>
-                <td>
-                  <div class="product-quantity">
-                    <div class="qty">
-                      <div class="input-group">
-                        <input
-                          type="number"
-                          min="1"
-                          :max="item.stock"
-                          :value="item.quantity"
-                          :disabled="isBusy(item.product_id)"
-                          @input="handleQuantityInput(item, $event)"
-                        />
-                        <span class="adjust-qty">
-                          <span
-                            class="adjust-btn plus"
-                            :class="{ disabled: isBusy(item.product_id) }"
-                            @click="increaseItemQty(item)"
-                            >+</span
-                          >
-                          <span
-                            class="adjust-btn minus"
-                            :class="{ disabled: isBusy(item.product_id) }"
-                            @click="decreaseItemQty(item)"
-                            >-</span
-                          >
-                        </span>
-                      </div>
-                      <div v-if="quantityErrorMap[item.product_id]" class="form-error">
-                        {{ quantityErrorMap[item.product_id] }}
-                      </div>
-                    </div>
+      <AppState v-if="!auth.userId" heading-tag="h2" title="Đăng nhập để xem giỏ hàng" description="Giỏ hàng được lưu theo tài khoản khách hàng." to="/login" action="Đăng nhập" />
+      <template v-else>
+        <template v-if="pending && !items.length">
+          <AppState kind="loading" heading-tag="h2" title="Đang tải giỏ hàng..." />
+          <div class="cart-loading" aria-hidden="true"><div><SageSkeleton v-for="n in 2" :key="n" class="cart-loading-row" /></div><SageSkeleton class="cart-loading-summary" /></div>
+        </template>
+        <AppState v-if="error" kind="error" heading-tag="h2" :title="error" retry @retry="loadCart" />
+        <section v-if="cart.mutation.uncertain" class="cart-recovery" role="alert" aria-labelledby="cart-recovery-title">
+          <h2 id="cart-recovery-title">Cần đối soát giỏ hàng</h2>
+          <p>{{ cart.mutation.error }}</p>
+          <p>Chưa xác định kết quả thao tác. Kiểm tra dữ liệu mới nhất trước khi tiếp tục; thao tác cũ không được gửi lại tự động.</p>
+          <div class="cart-recovery-actions">
+            <SageButton variant="secondary" :disabled="pending" :loading="loading" @click="loadCart">Tải lại giỏ hàng</SageButton>
+            <SageButton v-if="cart.mutation.fresh" variant="secondary" :disabled="pending" @click="cart.acknowledgeMutation()">Đã kiểm tra, tiếp tục</SageButton>
+          </div>
+        </section>
+        <p v-if="pending && items.length" class="cart-status" role="status">Đang cập nhật giỏ hàng. Vui lòng chờ xác nhận.</p>
+        <p v-if="actionError" class="cart-action-error" role="alert">{{ actionError }}</p>
+        <AppState v-if="!pending && !error && !items.length && !cart.mutation.uncertain" class="cart-empty" heading-tag="h2"
+          title="Giỏ hàng của bạn đang trống" description="Khám phá sản phẩm và lựa chọn giải pháp cho ao nuôi." to="/products" />
+        <div v-if="items.length" class="cart-layout">
+          <div class="cart-content">
+            <div class="cart-lines" :aria-busy="pending">
+              <article v-for="item in items" :key="item.product_id" class="cart-line">
+                <RouterLink v-if="normalizeId(item.product_id)" :to="'/products/' + normalizeId(item.product_id)" class="cart-line-image">
+                  <ResponsiveImage :src="item.thumbnail || item.image" :alt="item.name || item.productName || 'Sản phẩm'" />
+                </RouterLink>
+                <div v-else class="cart-line-image"><ResponsiveImage :src="item.thumbnail || item.image" :alt="item.name || 'Sản phẩm'" /></div>
+                <div class="cart-line-body">
+                  <h2 class="cart-line-title"><RouterLink v-if="normalizeId(item.product_id)" :to="'/products/' + normalizeId(item.product_id)">{{ item.name || item.productName || 'Sản phẩm' }}</RouterLink><span v-else>{{ item.name || 'Sản phẩm không còn khả dụng' }}</span></h2>
+                  <p v-if="item.packageSize" class="cart-line-package">{{ item.packageSize }}</p>
+                  <p class="cart-unit-price">{{ productPrice(item) === null ? 'Chưa có giá' : formatMoney(productPrice(item)) }}<span v-if="item.unit"> / {{ item.unit }}</span></p>
+                  <p class="stock-label" :class="catalogStock(item) === null ? 'unknown-stock' : catalogStock(item) > 0 && !item.outOfStock ? 'in-stock' : 'out-stock'">{{ stockLabel(item) }}</p>
+                  <div class="quantity-control" role="group" :aria-label="'Số lượng ' + item.name">
+                    <button type="button" :aria-label="'Giảm số lượng ' + item.name" :disabled="mutationsDisabled || item.quantity <= 1 || catalogStock(item) === null || catalogStock(item) < 1 || productPrice(item) === null || item.outOfStock"
+                      @click="updateQuantity(item, Number(item.quantity) - 1)">−</button>
+                    <input type="number" inputmode="numeric" step="1" min="1" :max="catalogStock(item) ?? undefined" :value="item.quantity" :aria-label="'Số lượng ' + item.name"
+                      :aria-invalid="!!quantityErrors[item.product_id]" :aria-describedby="'cart-quantity-error-' + item.product_id"
+                      :disabled="mutationsDisabled || catalogStock(item) === null || catalogStock(item) < 1 || productPrice(item) === null || item.outOfStock" @input="acceptConfirmedQuantity(item, $event.target.value)" @change="updateQuantity(item, $event.target.value)" />
+                    <button type="button" :aria-label="'Tăng số lượng ' + item.name" :disabled="mutationsDisabled || !!problem(item) || Number(item.quantity) >= catalogStock(item)"
+                      @click="updateQuantity(item, Number(item.quantity) + 1)">+</button>
                   </div>
-                </td>
-                <td class="text-center">
-                  {{
-                    Number(item.price * item.quantity).toLocaleString("vi-VN")
-                  }}
-                  đ
-                </td>
-              </tr>
-            </tbody>
-
-            <tfoot>
-              <tr class="cart-total">
-                <td rowspan="3" colspan="3"></td>
-                <td colspan="2" class="text-right">Tạm tính</td>
-                <td colspan="1" class="text-center">
-                  {{ Number(cartTotal).toLocaleString("vi-VN") }} đ
-                </td>
-              </tr>
-              <tr class="cart-total">
-                <td colspan="2" class="text-right">Phí vận chuyển</td>
-                <td colspan="1" class="text-center">
-                  Chọn ở bước thanh toán
-                </td>
-              </tr>
-              <tr class="cart-total">
-                <td colspan="2" class="total text-right">Tổng cộng</td>
-                <td colspan="1" class="total text-center">
-                  {{ Number(grandTotal).toLocaleString("vi-VN") }} đ
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+                  <p :id="'cart-quantity-error-' + item.product_id" class="form-error form-error--field" aria-live="polite">{{ quantityErrors[item.product_id] || problem(item) }}</p>
+                  <button type="button" class="cart-remove text-link" :aria-label="'Xóa ' + item.name" :aria-busy="busy[item.product_id] || undefined" :disabled="mutationsDisabled || !normalizeId(item.product_id)" @click="remove(item.product_id)">Xóa</button>
+                </div>
+                <div class="cart-line-end"><strong>{{ lineTotal(item) }}</strong></div>
+              </article>
+            </div>
+            <div class="cart-actions">
+              <RouterLink to="/products" class="text-link">Tiếp tục mua sắm <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></RouterLink>
+              <button ref="clearTrigger" type="button" class="text-button cart-clear-toggle" :disabled="mutationsDisabled" :aria-expanded="confirmClear" aria-controls="cart-clear-confirmation" @click="confirmClear = !confirmClear">Xóa giỏ hàng</button>
+            </div>
+            <section v-if="confirmClear" id="cart-clear-confirmation" class="cart-clear-confirmation" role="group" aria-labelledby="cart-clear-question">
+              <h2 id="cart-clear-question">Xóa toàn bộ sản phẩm trong giỏ?</h2>
+              <div><SageButton variant="secondary" :disabled="pending" @click="cancelClear">Giữ lại</SageButton><SageButton variant="danger" :disabled="mutationsDisabled" :loading="clearing" @click="clear">Xóa toàn bộ</SageButton></div>
+            </section>
+          </div>
+          <aside class="cart-summary-card" aria-labelledby="cart-summary-title">
+            <h2 id="cart-summary-title">Tóm tắt giỏ hàng</h2>
+            <div class="summary-row"><span>Số lượng</span><span>{{ cart.cartCount }} sản phẩm</span></div>
+            <div class="summary-row"><span>Tạm tính</span><strong>{{ formatMoney(cartTotal) }}</strong></div>
+            <div class="summary-row"><span>Vận chuyển</span><span>Tính ở bước tiếp theo</span></div>
+            <div class="summary-row total"><span>Tổng tiền hàng</span><strong>{{ formatMoney(cartTotal) }}</strong></div>
+            <p v-if="checkoutBlocked" class="cart-checkout-problem">Kiểm tra số lượng, đối soát khi cần và chờ giỏ hàng cập nhật trước khi thanh toán.</p>
+            <RouterLink v-if="!checkoutBlocked" to="/checkout" class="sage-button cart-checkout">Tiến hành thanh toán <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></RouterLink>
+            <SageButton v-else class="cart-checkout" disabled>Kiểm tra lại giỏ hàng</SageButton>
+            <p class="cart-summary-note">Phí vận chuyển và mã giảm giá được cập nhật khi thanh toán.</p>
+          </aside>
         </div>
-
-        <div class="checkout-btn">
-          <router-link to="/checkout" class="btn btn-primary pull-right">
-            <span>Tiến Hành Thanh Toán</span>
-            <i class="fa fa-angle-right ml-xs"></i>
-          </router-link>
-        </div>
-      </div>
+      </template>
     </div>
   </div>
 </template>
-<style>
-.cart-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin: 20px 0;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-.cart-actions .btn-danger {
-  color: black;
-  background-color: #fff;
-  border: 1px solid #ddd;
-}
-.cart-actions .btn-danger:hover {
-  color: #fff;
-  background-color: darkred;
-}
-
-.cart-actions .btn-circle {
-  width: 50px;
-  height: 50px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.3s ease;
-}
-</style>

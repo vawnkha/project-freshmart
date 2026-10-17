@@ -1,9 +1,9 @@
 <script setup>
-import { reactive, ref } from "vue";
-import { useForm } from "vee-validate";
+import { reactive, ref, onBeforeUnmount } from "vue";
+import { useSchemaForm } from "@/composables/useSchemaForm";
 import { toTypedSchema } from "@vee-validate/zod";
 import { useRouter } from "vue-router";
-import { useAuthStore } from "@/stores/user/auth";
+import { useAuthStore, captureLoginRequestContext, isAuthRequestInvalidated } from "@/stores/user/auth";
 import { decodeJwtPayload, hasJwtPermission } from "@/utils/jwt.util";
 import { emailSchema, passwordSchema, z } from "@/validators/common.validator";
 import { mapBackendValidationErrors } from "@/utils/validation-error.util";
@@ -13,6 +13,8 @@ const authStore = useAuthStore();
 
 const loading = ref(false);
 const errorMessage = ref("");
+let disposed = false, loginVersion = 0;
+onBeforeUnmount(() => { disposed = true; loginVersion++; });
 
 const form = reactive({
   email: "",
@@ -26,20 +28,25 @@ const loginSchema = toTypedSchema(
   }),
 );
 
-const { errors, setErrors, setValues, validate } = useForm({
+const { errors, setErrors, setValues, validate } = useSchemaForm({
   validationSchema: loginSchema,
+  values: () => ({ ...form }),
 });
 
 async function handleLogin() {
-  errorMessage.value = "";
-  setValues({ ...form });
-  const result = await validate();
-  if (!result.valid) return;
-
+  if (disposed || loading.value) return;
+  const version = ++loginVersion;
   loading.value = true;
-
+  let loginRequest;
   try {
-    const res = await authStore.login(form);
+    errorMessage.value = "";
+    setValues({ ...form });
+    const result = await validate();
+    if (!result.valid || disposed || version !== loginVersion) return;
+    const pending = authStore.login({ ...form });
+    loginRequest = captureLoginRequestContext(authStore);
+    const res = await pending;
+    if (disposed || version !== loginVersion || !loginRequest.isCurrent()) return;
 
     const token = res.accessToken;
     const decoded = decodeJwtPayload(token);
@@ -52,10 +59,12 @@ async function handleLogin() {
 
     router.push({ name: "admin-dashboard" });
   } catch (error) {
+    if (disposed || version !== loginVersion || isAuthRequestInvalidated(error) ||
+        (loginRequest && !loginRequest.isCurrent(false))) return;
     setErrors(mapBackendValidationErrors(error));
     errorMessage.value = error?.response?.data?.message || "Đăng nhập thất bại";
   } finally {
-    loading.value = false;
+    if (!disposed && version === loginVersion) loading.value = false;
   }
 }
 </script>

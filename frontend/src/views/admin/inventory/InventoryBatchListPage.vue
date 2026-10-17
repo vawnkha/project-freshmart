@@ -1,9 +1,11 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { normalizeId } from "@/utils/id.util";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import inventoryBatchService from "@/services/inventory-batch.service";
 import inventoryItemService from "@/services/inventory-item.service";
 import AdminPagination from "@/components/common/AdminPagination.vue";
+import { effectiveBatchStatus } from "@/utils/batch-availability.util";
 
 const route = useRoute();
 const batches = ref([]);
@@ -13,12 +15,17 @@ const itemLoading = ref(false);
 const actionLoadingId = ref("");
 const currentPage = ref(1);
 const pageSize = ref(12);
+const displayNow = ref(Date.now());
+let expiryTimer;
 
 const filters = reactive({
   keyword: "",
   status: "",
   inventoryItemId: "",
 });
+function batchStatus(batch) {
+  return effectiveBatchStatus(batch, inventoryItems.value.find((item) => normalizeId(item) === normalizeId(batch.inventoryItemId)), displayNow.value);
+}
 
 const filteredBatches = computed(() => {
   const q = filters.keyword.trim().toLowerCase();
@@ -36,7 +43,7 @@ const filteredBatches = computed(() => {
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(q));
 
-    const matchStatus = !filters.status || item.status === filters.status;
+    const matchStatus = !filters.status || batchStatus(item) === filters.status;
     const matchItem =
       !filters.inventoryItemId ||
       normalizeId(item.inventoryItemId) === filters.inventoryItemId;
@@ -55,16 +62,13 @@ const totalQuantity = computed(() =>
 );
 
 const availableCount = computed(
-  () => filteredBatches.value.filter((item) => item.status === "available").length,
+  () => filteredBatches.value.filter((item) => batchStatus(item) === "available").length,
 );
 
 const lockedCount = computed(
   () => filteredBatches.value.filter((item) => item.status === "locked").length,
 );
 
-const soldOutCount = computed(
-  () => filteredBatches.value.filter((item) => item.status === "sold_out").length,
-);
 
 function normalizeList(res) {
   return Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
@@ -72,13 +76,6 @@ function normalizeList(res) {
 
 function getId(item) {
   return item?._id || item?.id || "";
-}
-
-function normalizeId(value) {
-  if (!value) return "";
-  if (typeof value === "string") return value;
-  if (value.$oid) return value.$oid;
-  return String(value);
 }
 
 function formatDate(value) {
@@ -91,6 +88,8 @@ function formatPrice(value) {
 }
 
 function statusText(status) {
+  if (status === "expired") return "Hết hạn";
+  if (status === "unavailable") return "Không khả dụng";
   if (status === "available") return "Có sẵn";
   if (status === "locked") return "Đang khóa";
   if (status === "sold_out") return "Hết hàng";
@@ -109,6 +108,7 @@ function selectedInventoryItemLabel() {
 }
 
 function statusClass(status) {
+  if (["expired", "unavailable"].includes(status)) return "admin-badge--danger";
   if (status === "available") return "admin-badge--success";
   if (status === "locked") return "admin-badge--warning";
   if (status === "sold_out") return "admin-badge--danger";
@@ -200,9 +200,11 @@ watch(filteredBatches, (list) => {
 });
 
 onMounted(() => {
+  expiryTimer = setInterval(() => { displayNow.value = Date.now(); }, 60000);
   fetchBatches();
   fetchInventoryItems();
 });
+onUnmounted(() => clearInterval(expiryTimer));
 </script>
 
 <template>
@@ -235,9 +237,6 @@ onMounted(() => {
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
           <div class="admin-panel__header-title">Danh sách lô hàng</div>
-          <!-- <div class="admin-panel__header-subtitle">
-            Load toàn bộ dữ liệu và lọc/phân trang tại frontend.
-          </div> -->
         </div>
         <button class="admin-btn admin-btn--secondary" @click="fetchBatches">
           Làm mới
@@ -260,6 +259,8 @@ onMounted(() => {
               <option value="available">Có sẵn</option>
               <option value="locked">Đang khóa</option>
               <option value="sold_out">Hết hàng</option>
+              <option value="expired">Hết hạn</option>
+              <option value="unavailable">Không khả dụng</option>
             </select>
           </div>
           <div class="col-md-4">
@@ -320,8 +321,8 @@ onMounted(() => {
                 <td>{{ formatDate(item.expiryDate) }}</td>
                 <td>{{ item.warehouseLocation || "---" }}</td>
                 <td>
-                  <span class="admin-badge" :class="statusClass(item.status)">
-                    {{ statusText(item.status) }}
+                  <span class="admin-badge" :class="statusClass(batchStatus(item))">
+                    {{ statusText(batchStatus(item)) }}
                   </span>
                 </td>
                 <td>{{ formatDate(item.createdAt) }}</td>

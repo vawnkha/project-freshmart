@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, reactive, ref } from "vue";
-import { useForm } from "vee-validate";
+import { useSchemaForm } from "@/composables/useSchemaForm";
 import { toTypedSchema } from "@vee-validate/zod";
 import { useRouter } from "vue-router";
 import categoryService from "@/services/category.service";
@@ -40,9 +40,7 @@ const productCreateSchema = toTypedSchema(
     price: nonNegativeNumberSchema,
     stock: nonNegativeNumberSchema,
     unit: optionalString,
-    thumbnail: imageFileSchema.refine((file) => Boolean(file), {
-      message: "Anh dai dien la bat buoc",
-    }),
+    thumbnail: imageFileSchema,
     images: z.array(imageFileSchema).max(4, "Anh chi tiet toi da 4 file"),
   }),
 );
@@ -52,8 +50,9 @@ const {
   setErrors,
   setValues,
   validate: validateVee,
-} = useForm({
+} = useSchemaForm({
   validationSchema: productCreateSchema,
+  values: () => ({ ...form, images: [...form.images] }),
 });
 
 async function fetchCategories() {
@@ -262,9 +261,6 @@ onMounted(fetchCategories);
           </div>
 
           <div class="admin-form__actions">
-            <!-- <button type="reset" class="admin-btn admin-btn--secondary">
-              Reset
-            </button> -->
             <button
               type="submit"
               class="admin-btn admin-btn--success"

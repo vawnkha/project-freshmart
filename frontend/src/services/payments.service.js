@@ -10,6 +10,10 @@ class PaymentService {
     return res.data;
   }
 
+  async getConfig() {
+    return (await this.api.get("/config")).data;
+  }
+
   async capturePaypalOrder(payload) {
     const res = await this.api.post("/capture-order", payload);
     return res.data;

@@ -66,7 +66,9 @@ router.beforeEach(async (to, from, next) => {
           : next();
       }
 
-      if (!authStore.user) {
+      // Refresh permissions before entering protected pages, including role changes
+      // made by another administrator while this session is still open.
+      if (!authStore.user || to.meta.requiresAuth) {
         await authStore.fetchProfile();
       }
 

@@ -1,83 +1,93 @@
 <script setup>
-import { ref } from "vue";
+import { userError } from "@/utils/user-error.util";
+import { useAuthRequestContext } from "@/components/user/auth/useAuthRequestContext";
+import AuthPanel from "@/components/user/common/AuthPanel.vue";
+import { ref, watch, onBeforeUnmount } from "vue";
 import authService from "@/services/auth.service";
+import { emailSchema } from "@/validators/common.validator";
 
 const email = ref("");
+let disposed=false;
+onBeforeUnmount(()=>{disposed=true;});
+const requestContext=useAuthRequestContext();
 const loading = ref(false);
 const errorMessage = ref("");
 const successMessage = ref("");
 
+watch(email, () => {
+  errorMessage.value = "";
+});
+
+watch(requestContext.key,()=>{loading.value=false;errorMessage.value="";successMessage.value="";},{flush:"sync"});
+
 async function handleForgotPassword() {
+  if (disposed || loading.value) return;
   errorMessage.value = "";
   successMessage.value = "";
 
-  if (!email.value.trim()) {
-    errorMessage.value = "Vui lòng nhập email";
+  const parsed = emailSchema.safeParse(email.value);
+  if (!parsed.success) {
+    errorMessage.value =
+      parsed.error.issues[0]?.message || "Email không hợp lệ";
     return;
   }
 
+  const context=requestContext.capture();
   try {
     loading.value = true;
 
-    const res = await authService.forgotPassword(email.value);
+    const res = await authService.forgotPassword(parsed.data);
 
+    if (disposed || !requestContext.current(context)) return;
     successMessage.value =
       res.message || "vui lòng kiểm tra email để đặt lại mật khẩu.";
   } catch (error) {
-    error?.response?.data?.message || "Gửi yêu cầu thất bại";
+    if (disposed || !requestContext.current(context)) return;
+    errorMessage.value =
+      userError(error, "Gửi yêu cầu thất bại");
   } finally {
-    loading.value = false;
+    if (!disposed && requestContext.current(context)) loading.value = false;
   }
 }
 </script>
 
 <template>
-  <div id="content" class="site-content">
-    <div id="breadcrumb">
-      <div class="container">
-        <h2 class="title">Quên Mật Khẩu</h2>
-
-        <ul class="breadcrumb">
-          <li><router-link to="/">Trang Chủ</router-link></li>
-          <li><span>Quên Mật Khẩu</span></li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="container">
-      <div class="login-page">
-        <div class="login-form form">
-          <div class="block-title">
-            <h2 class="title"><span>Quên Mật Khẩu</span></h2>
-          </div>
-
-          <form @submit.prevent="handleForgotPassword">
-            <div class="form-group">
-              <label>Email</label>
-              <input v-model="email" type="email" name="email" />
-            </div>
-
-            <div v-if="errorMessage" class="alert alert-danger">
-              {{ errorMessage }}
-            </div>
-
-            <div v-if="successMessage" class="alert alert-success">
-              {{ successMessage }}
-            </div>
-
-            <div class="form-group text-center">
-              <input
-                type="submit"
-                class="btn btn-primary"
-                :value="
-                  loading ? 'Đang gửi...' : 'Gửi Liên Kết Đặt Lại Mật Khẩu'
-                "
-                :disabled="loading"
-              />
-            </div>
-          </form>
+  <AuthPanel
+    title="Quên mật khẩu"
+    description="Nhập email đã đăng ký để nhận liên kết đặt lại mật khẩu."
+    ><form @submit.prevent="handleForgotPassword" novalidate>
+      <div class="form-group">
+        <label for="forgot-email">Email</label
+        ><input
+          id="forgot-email"
+          v-model="email" :disabled="loading"
+          type="email" aria-required="true"
+          autocomplete="email"
+          :aria-invalid="!!errorMessage && !emailSchema.safeParse(email).success"
+          aria-describedby="forgot-error"
+        />
+        <div
+          id="forgot-error"
+          class="form-error form-error--field"
+          role="alert"
+        >
+          {{ errorMessage }}
         </div>
       </div>
-    </div>
-  </div>
+      <div v-if="successMessage" class="alert alert-success" role="status">
+        {{ successMessage }}
+      </div>
+      <button
+        type="submit"
+        class="btn btn-primary btn-block"
+        :disabled="loading"
+        :aria-busy="loading"
+      >
+        {{ loading ? "Đang gửi..." : "Gửi liên kết khôi phục" }}
+      </button>
+      <div class="link">
+        <router-link to="/login">Quay lại đăng nhập</router-link>
+      </div>
+    </form></AuthPanel
+  >
 </template>

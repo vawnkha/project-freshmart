@@ -1,11 +1,12 @@
 <script setup>
+import { normalizeId } from "@/utils/id.util";
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { useForm } from "vee-validate";
+import { useSchemaForm } from "@/composables/useSchemaForm";
 import { toTypedSchema } from "@vee-validate/zod";
 import AdminPagination from "@/components/common/AdminPagination.vue";
 import MultiSelectSearch from "@/components/admin/common/MultiSelectSearch.vue";
 import discountService from "@/services/discount.service";
-import productService from "@/services/product.service";
+import productService from "@/services/admin-product.service";
 import categoryService from "@/services/category.service";
 import {
   dateStringSchema,
@@ -17,6 +18,9 @@ import {
   z,
 } from "@/validators/common.validator";
 import { mapBackendValidationErrors } from "@/utils/validation-error.util";
+import { useAuthStore } from "@/stores/user/auth";
+import { loadWhenAllowed } from "@/utils/authorized-load.util";
+const authStore = useAuthStore();
 
 const discounts = ref([]);
 const products = ref([]);
@@ -36,6 +40,8 @@ const pageSize = ref(12);
 const form = reactive({
   code: "",
   name: "",
+  description: "",
+  isPublic: false,
   scope: "order",
   type: "percent",
   value: 0,
@@ -54,6 +60,8 @@ const discountSchema = toTypedSchema(
     .object({
       code: requiredString("Ma giam gia la bat buoc"),
       name: requiredString("Ten ma giam gia la bat buoc"),
+      description: z.string().optional(),
+      isPublic: z.boolean(),
       scope: z.enum(["order", "product", "category"], {
         message: "Pham vi ap dung khong hop le",
       }),
@@ -99,8 +107,9 @@ const {
   setErrors,
   setValues,
   validate: validateVee,
-} = useForm({
+} = useSchemaForm({
   validationSchema: discountSchema,
+  values: () => ({ ...form }),
 });
 
 const filteredDiscounts = computed(() => {
@@ -174,14 +183,7 @@ function normalizeList(res) {
 }
 
 function getId(item) {
-  return item?._id || item?.id || "";
-}
-
-function normalizeId(value) {
-  if (!value) return "";
-  if (typeof value === "string") return value;
-  if (value.$oid) return value.$oid;
-  return String(value);
+  return normalizeId(item);
 }
 
 function formatCurrency(value) {
@@ -235,6 +237,8 @@ function resetForm() {
   Object.assign(form, {
     code: "",
     name: "",
+    description: "",
+    isPublic: false,
     scope: "order",
     type: "percent",
     value: 0,
@@ -255,6 +259,8 @@ function fillForm(item) {
   Object.assign(form, {
     code: item.code || "",
     name: item.name || "",
+    description: item.description || "",
+    isPublic: item.isPublic === true,
     scope: item.scope || "order",
     type: item.type || "percent",
     value: item.value ?? 0,
@@ -273,6 +279,8 @@ function buildPayload() {
   const payload = {
     code: form.code.trim(),
     name: form.name.trim(),
+    description: form.description.trim(),
+    isPublic: form.isPublic,
     scope: form.scope,
     type: form.type,
     value: Number(form.value || 0),
@@ -283,13 +291,13 @@ function buildPayload() {
       productIds: form.scope === "product" ? [...form.productIds] : [],
       categoryIds: form.scope === "category" ? [...form.categoryIds] : [],
     },
-    startDate: form.startDate || undefined,
-    endDate: form.endDate || undefined,
+    startDate: form.startDate,
+    endDate: form.endDate,
     status: form.status || "active",
   };
 
   Object.keys(payload).forEach((key) => {
-    if (payload[key] === "") delete payload[key];
+    if (payload[key] === "" && !["startDate", "endDate", "description"].includes(key)) delete payload[key];
   });
 
   return payload;
@@ -318,7 +326,7 @@ async function fetchOptions() {
   optionLoading.value = true;
   try {
     const [productRes, categoryRes] = await Promise.all([
-      productService.getAll(),
+      loadWhenAllowed(authStore, ["admin:access", "product:manage"], () => productService.getAll()),
       categoryService.getAll(),
     ]);
     products.value = normalizeList(productRes);
@@ -340,6 +348,7 @@ function openCreateModal() {
 }
 
 function openEditModal(item) {
+  resetValidation();
   modalMode.value = "edit";
   currentId.value = getId(item);
   fillForm(item);
@@ -378,9 +387,7 @@ async function submitForm() {
 }
 
 async function removeDiscount(item) {
-  if (item.status === "inactive") return;
-
-  if (!window.confirm("Bạn có chắc muốn xóa mã giảm giá này?")) return;
+  if (!window.confirm("Bạn có chắc muốn xóa mã giảm giá này?\n\nDữ liệu sau khi xóa sẽ không thể khôi phục.")) return;
 
   try {
     await discountService.remove(getId(item));
@@ -500,6 +507,7 @@ onMounted(() => {
                 <th>Lượt dùng</th>
                 <th>Thời gian</th>
                 <th>Trạng thái</th>
+                <th>Homepage</th>
                 <th>Thao tác</th>
               </tr>
             </thead>
@@ -520,20 +528,19 @@ onMounted(() => {
                     {{ statusText(item.status) }}
                   </span>
                 </td>
+                <td>{{ item.isPublic === true ? 'Công khai' : 'Riêng tư' }}</td>
                 <td>
                   <div class="admin-table__actions">
                     <button type="button" class="admin-btn admin-btn--secondary" @click.stop="openEditModal(item)">
                       Sửa
                     </button>
                     <button
-                      v-if="item.status !== 'inactive'"
                       type="button"
                       class="admin-btn admin-btn--danger"
                       @click.stop="removeDiscount(item)"
                     >
                       Xóa
                     </button>
-                    <span v-else class="admin-badge admin-badge--danger">Đã xóa</span>
                   </div>
                 </td>
               </tr>
@@ -587,6 +594,17 @@ onMounted(() => {
               </div>
             </div>
 
+            <div class="admin-form__row">
+              <label for="discount-description" class="admin-form__label">Mô tả hiển thị</label>
+              <textarea id="discount-description" v-model="form.description" class="admin-form__textarea" rows="2" />
+            </div>
+            <div class="admin-form__row">
+              <span class="admin-form__label">Hiển thị Homepage</span>
+              <div>
+                <label><input v-model="form.isPublic" type="checkbox" /> Công khai mã trên Homepage</label>
+                <p class="admin-form__hint">Chỉ mã đang hoạt động, trong thời gian áp dụng và còn lượt dùng được hiển thị.</p>
+              </div>
+            </div>
             <div class="admin-form__row">
               <label class="admin-form__label">Phạm vi *</label>
               <select v-model="form.scope" class="admin-form__select">

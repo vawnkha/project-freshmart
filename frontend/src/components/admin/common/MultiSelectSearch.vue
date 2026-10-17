@@ -1,4 +1,5 @@
 <script setup>
+import { normalizeId } from "@/utils/id.util";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 const props = defineProps({
@@ -77,13 +78,6 @@ const debouncedSearch = ref("");
 const isOpen = ref(false);
 const highlightedIndex = ref(-1);
 let debounceTimer = null;
-
-function normalizeId(value) {
-  if (!value) return "";
-  if (typeof value === "string") return value;
-  if (value.$oid) return value.$oid;
-  return String(value);
-}
 
 function readValue(item, key) {
   if (!item || !key) return "";

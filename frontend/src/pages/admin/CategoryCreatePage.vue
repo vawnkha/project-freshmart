@@ -1,10 +1,12 @@
 <script setup>
-import { reactive, ref } from "vue";
+import { reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import categoryService from "@/services/category.service";
+import { categoryFormSchema } from "@/validators/category.validator";
 
 const router = useRouter();
 const preview = ref("");
+const validationError = ref("");
 
 const form = reactive({
   name: "",
@@ -13,6 +15,8 @@ const form = reactive({
   image: null,
 });
 
+watch(form, () => { validationError.value = ""; });
+
 function onImageChange(event) {
   const file = event.target.files?.[0];
   form.image = file || null;
@@ -20,14 +24,23 @@ function onImageChange(event) {
 }
 
 async function submitForm() {
+  const parsed = categoryFormSchema.safeParse({ ...form });
+  if (!parsed.success) {
+    validationError.value = parsed.error.issues[0]?.message || "Dữ liệu không hợp lệ";
+    return;
+  }
   const data = new FormData();
-  data.append("name", form.name);
-  data.append("slug", form.slug);
-  data.append("description", form.description);
+  data.append("name", parsed.data.name);
+  data.append("slug", parsed.data.slug);
+  data.append("description", parsed.data.description || "");
   if (form.image) data.append("image", form.image);
 
-  await categoryService.create(data);
-  router.push({ name: "admin-categories" });
+  try {
+    await categoryService.create(data);
+    router.push({ name: "admin-categories" });
+  } catch (error) {
+    validationError.value = error?.response?.data?.message || "Không thể tạo danh mục";
+  }
 }
 </script>
 
@@ -39,6 +52,7 @@ async function submitForm() {
       <div class="admin-panel__header">Thêm Danh Mục Mới</div>
       <div class="admin-panel__body">
         <form class="admin-form" @submit.prevent="submitForm">
+          <div v-if="validationError" class="admin-form__error">{{ validationError }}</div>
           <div class="admin-form__row">
             <label class="admin-form__label">Tên Danh Mục *</label>
             <input v-model="form.name" class="admin-form__control" />
@@ -73,9 +87,6 @@ async function submitForm() {
           </div>
 
           <div class="admin-form__actions">
-            <!-- <button type="reset" class="admin-btn admin-btn--primary">
-              Reset
-            </button> -->
             <button type="submit" class="admin-btn admin-btn--success">
               Thêm Danh Mục
             </button>

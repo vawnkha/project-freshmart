@@ -192,7 +192,7 @@ async function submitRole() {
 }
 
 async function removeRole(role) {
-  if (!window.confirm(`Ban co chac muon xoa role "${role.name}"?`)) return;
+  if (!window.confirm(`Bạn có chắc muốn xóa role "${role.name}"?\n\nDữ liệu sau khi xóa sẽ không thể khôi phục.`)) return;
 
   try {
     await roleService.deleteRole(role._id);

@@ -1,10 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import { useAdminStore } from "@/stores/admin/admin";
-import userService from "@/services/user.service";
-import ordersService from "@/services/orders.service";
-import categoryService from "@/services/category.service";
-import productService from "@/services/product.service";
+import { buildDashboardLists, getOrderRevenue } from "@/utils/dashboard.util";
 
 const adminStore = useAdminStore();
 
@@ -20,6 +17,7 @@ const selectedMonth = ref("");
 const stats = computed(() => adminStore.dashboard);
 
 function formatCurrency(value) {
+  if (value === null) return "---";
   return Number(value || 0).toLocaleString("vi-VN") + " VNĐ";
 }
 
@@ -28,45 +26,17 @@ function formatDate(value) {
   return new Date(value).toLocaleString("vi-VN");
 }
 
-function getOrderRevenue(order) {
-  const total = Number(order?.total_price || 0);
-  if (!total) return 0;
-
-  const isPaid = order?.payment_status === "completed";
-  const isCompleted = order?.status === "completed";
-
-  return isPaid || isCompleted ? total : 0;
-}
-
 function getOrderDate(order) {
   return order?.created_at ? new Date(order.created_at) : null;
 }
 
 async function fetchExtra() {
-  const [userRes, orderRes, categoryRes, productRes] = await Promise.all([
-    userService.getAll(),
-    ordersService.getAll(),
-    categoryService.getAll(),
-    productService.getAll(),
-  ]);
-
-  const users = userRes?.data || userRes || [];
-  const orderData = orderRes?.data || orderRes || [];
-  const categoryData = categoryRes?.data || categoryRes || [];
-  const products = productRes?.data || productRes || [];
-
-  orders.value = orderData;
-
-  newestUsers.value = [...users].slice(-5).reverse();
-  newestOrders.value = [...orderData].slice(0, 5).reverse();
-
-  bestSelling.value = [...products]
-    .sort((a, b) => Number(b.sold || 0) - Number(a.sold || 0))
-    .slice(0, 5);
-
-  categories.value = [...categoryData]
-    .sort((a, b) => Number(b.product_count || 0) - Number(a.product_count || 0))
-    .slice(0, 5);
+  orders.value = adminStore.resources.orders || [];
+  const lists = buildDashboardLists(adminStore.resources);
+  newestUsers.value = lists.newestUsers;
+  newestOrders.value = lists.newestOrders;
+  bestSelling.value = lists.bestSelling;
+  categories.value = lists.categories;
 }
 
 const availableYears = computed(() => {
@@ -114,7 +84,7 @@ const periodOrders = computed(() => revenueFilteredOrders.value.length);
 const paidOrders = computed(() => {
   return revenueFilteredOrders.value.filter(
     (order) =>
-      order?.payment_status === "completed" || order?.status === "completed",
+      getOrderRevenue(order) > 0,
   ).length;
 });
 
@@ -220,6 +190,8 @@ onMounted(async () => {
     <div class="admin-page-title admin-page-title--stack">
       <h1>Tổng quan hệ thống</h1>
       <p>Thống kê nhanh hoạt động bán hàng, doanh thu và dữ liệu mới nhất</p>
+      <p v-if="adminStore.limitedAccess">Bạn chưa có quyền xem một số số liệu.</p>
+      <p v-if="adminStore.loadErrors.length" role="alert">Một số số liệu chưa tải được. Vui lòng tải lại trang.</p>
     </div>
 
     <div class="admin-stat-row dashboard-stat-row">
@@ -248,7 +220,7 @@ onMounted(async () => {
 
       <div class="admin-stat-card dashboard-stat-card">
         <div class="admin-stat-card__label">
-          <i class="fa-solid fa-money-bill me-1"></i> Tổng doanh thu
+          <i class="fa-solid fa-money-bill me-1"></i> Tổng tiền đã thanh toán
         </div>
         <div class="admin-stat-card__value">
           {{ formatCurrency(stats.revenue) }}

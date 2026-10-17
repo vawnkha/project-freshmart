@@ -75,6 +75,12 @@ const adminRoutes = [
         meta: { requiredPermission: "purchase-order:manage" },
       },
       {
+        path: "purchase-orders/:id/edit",
+        name: "admin-purchase-order-edit",
+        component: () => import("@/views/admin/inventory/PurchaseOrderCreatePage.vue"),
+        meta: { requiredPermission: "purchase-order:manage" },
+      },
+      {
         path: "purchase-orders/:id",
         name: "admin-purchase-order-detail",
         component: () =>

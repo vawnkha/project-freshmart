@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { useForm } from "vee-validate";
+import { useSchemaForm } from "@/composables/useSchemaForm";
 import { toTypedSchema } from "@vee-validate/zod";
 import AdminPagination from "@/components/common/AdminPagination.vue";
 import newsCategoryService from "@/services/news-category.service";
@@ -12,6 +12,7 @@ import {
   z,
 } from "@/validators/common.validator";
 import { mapBackendValidationErrors } from "@/utils/validation-error.util";
+import { normalizeId } from "@/utils/id.util";
 
 const categories = ref([]);
 const loading = ref(false);
@@ -47,8 +48,9 @@ const {
   setErrors,
   setValues,
   validate: validateVee,
-} = useForm({
+} = useSchemaForm({
   validationSchema: newsCategorySchema,
+  values: () => ({ ...form }),
 });
 
 const filteredCategories = computed(() => {
@@ -83,7 +85,7 @@ function normalizeList(res) {
 }
 
 function getId(item) {
-  return item?._id || item?.id || "";
+  return normalizeId(item);
 }
 
 function slugify(value) {
@@ -140,7 +142,7 @@ function buildPayload() {
   };
 
   Object.keys(payload).forEach((key) => {
-    if (payload[key] === "") delete payload[key];
+    if (payload[key] === "" && key !== "description") delete payload[key];
   });
 
   return payload;
@@ -173,6 +175,7 @@ function openCreateModal() {
 }
 
 function openEditModal(item) {
+  resetValidation();
   modalMode.value = "edit";
   currentId.value = getId(item);
   fillForm(item);
@@ -211,9 +214,7 @@ async function submitForm() {
 }
 
 async function removeCategory(item) {
-  if (item.status === "inactive") return;
-
-  if (!window.confirm("Bạn có chắc muốn xóa danh mục tin tức này?")) return;
+  if (!window.confirm("Bạn có chắc muốn xóa danh mục tin tức này?\n\nDữ liệu sau khi xóa sẽ không thể khôi phục.")) return;
 
   try {
     await newsCategoryService.remove(getId(item));
@@ -277,9 +278,6 @@ onMounted(fetchCategories);
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
           <div class="admin-panel__header-title">Danh sách danh mục bài viết</div>
-          <!-- <div class="admin-panel__header-subtitle">
-            Dữ liệu lấy từ /api/news-categories, filter xử lý ở frontend.
-          </div> -->
         </div>
         <button type="button" class="admin-btn admin-btn--primary" @click="openCreateModal">
           Thêm danh mục
@@ -336,14 +334,12 @@ onMounted(fetchCategories);
                       Sửa
                     </button>
                     <button
-                      v-if="item.status !== 'inactive'"
                       type="button"
                       class="admin-btn admin-btn--danger"
                       @click.stop="removeCategory(item)"
                     >
                       Xóa
                     </button>
-                    <span v-else class="admin-badge admin-badge--danger">Đã xóa</span>
                   </div>
                 </td>
               </tr>

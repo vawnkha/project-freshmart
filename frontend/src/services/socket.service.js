@@ -13,14 +13,16 @@ class SocketService {
     this.socket = io(SOCKET_URL, {
       transports: ["websocket"],
       withCredentials: true,
+      auth: (callback) => {
+        callback({ token: localStorage.getItem("accessToken") || "" });
+      },
     });
 
     return this.socket;
   }
 
   joinAdminRoom() {
-    if (!this.socket) this.connect();
-    this.socket.emit("admin:join");
+    return this.connect();
   }
 
   onAdminNotification(callback) {

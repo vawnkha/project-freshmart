@@ -1,8 +1,12 @@
 <script setup>
+import { normalizeId } from "@/utils/id.util";
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import purchaseOrderService from "@/services/purchase-order.service";
 import supplierService from "@/services/supplier.service";
+import { useAuthStore } from "@/stores/user/auth";
+import { loadWhenAllowed } from "@/utils/authorized-load.util";
+const authStore = useAuthStore();
 
 const route = useRoute();
 const router = useRouter();
@@ -50,13 +54,6 @@ function getId(item) {
   return item?._id || item?.id || "";
 }
 
-function normalizeId(value) {
-  if (!value) return "";
-  if (typeof value === "string") return value;
-  if (value.$oid) return value.$oid;
-  return String(value);
-}
-
 function formatPrice(value) {
   return Number(value || 0).toLocaleString("vi-VN") + " VND";
 }
@@ -92,7 +89,7 @@ async function fetchData() {
   try {
     const [orderRes, supplierRes] = await Promise.all([
       purchaseOrderService.getById(route.params.id),
-      supplierService.getAll(),
+      loadWhenAllowed(authStore, ["supplier:manage"], () => supplierService.getAll()),
     ]);
 
     purchaseOrder.value = orderRes;
@@ -162,6 +159,8 @@ onMounted(fetchData);
             </div>
           </div>
           <div class="purchase-order-detail-actions">
+            <button v-if="purchaseOrder.status === 'draft'" class="admin-btn admin-btn--primary" :disabled="actionLoading"
+              @click="router.push({ name: 'admin-purchase-order-edit', params: { id: route.params.id } })">Sửa bản nháp</button>
             <button
               class="admin-btn admin-btn--secondary"
               @click="router.push({ name: 'admin-purchase-orders' })"

@@ -1,4 +1,5 @@
 <script setup>
+import { normalizeId } from "@/utils/id.util";
 import { computed, onMounted, ref, watch } from "vue";
 import AdminPagination from "@/components/common/AdminPagination.vue";
 import newsService from "@/services/news.service";
@@ -50,13 +51,6 @@ function normalizeList(res) {
   return Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
 }
 
-function normalizeId(value) {
-  if (!value) return "";
-  if (typeof value === "string") return value;
-  if (value.$oid) return value.$oid;
-  return String(value);
-}
-
 function getId(item) {
   return item?._id || item?.id || "";
 }
@@ -104,9 +98,7 @@ async function fetchData() {
 }
 
 async function removeArticle(item) {
-  if (item.status === "archived") return;
-
-  if (!window.confirm("Bạn có chắc muốn xóa bài viết này?")) return;
+  if (!window.confirm("Bạn có chắc muốn xóa bài viết này?\n\nDữ liệu sau khi xóa sẽ không thể khôi phục.")) return;
 
   try {
     await newsService.remove(getId(item));
@@ -156,9 +148,6 @@ onMounted(fetchData);
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
           <div class="admin-panel__header-title">Danh sách bài viết</div>
-          <!-- <div class="admin-panel__header-subtitle">
-            Dữ liệu lấy từ /api/news, filter và phân trang xử lý ở frontend.
-          </div> -->
         </div>
 
         <RouterLink class="admin-btn admin-btn--primary" :to="{ name: 'admin-news-create' }">
@@ -249,14 +238,12 @@ onMounted(fetchData);
                       Sửa
                     </RouterLink>
                     <button
-                      v-if="item.status !== 'archived'"
                       type="button"
                       class="admin-btn admin-btn--danger"
                       @click.stop="removeArticle(item)"
                     >
                       Xóa
                     </button>
-                    <span v-else class="admin-badge admin-badge--danger">Đã xóa</span>
                   </div>
                 </td>
               </tr>

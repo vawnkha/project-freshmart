@@ -1,856 +1,113 @@
-﻿<script setup>
-import { computed, reactive, ref, watch } from "vue";
-import { useRoute } from "vue-router";
-import { useCartStore } from "@/stores/user/cart";
-import { useWishlistStore } from "@/stores/user/wishlist";
-import { useAuthStore } from "@/stores/user/auth";
-import productService from "@/services/product.service";
-import reviewService from "@/services/review.service";
-
-import { Swiper, SwiperSlide } from "swiper/vue";
-import { Autoplay, Navigation } from "swiper/modules";
-
-import "swiper/css";
-import "swiper/css/navigation";
-
+<script setup>
+import { computed, nextTick, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
+import { useProductDetail } from '@/composables/useProductDetail';
+import { useProductPurchase } from '@/composables/useProductPurchase';
+import { useProductReviews } from '@/composables/useProductReviews';
+import { detailId, detailStock, productSpecifications, quantityMessage } from '@/utils/product-detail.util';
+import { productPrice } from '@/utils/storefront.util';
+import StorefrontBreadcrumb from '@/components/user/common/StorefrontBreadcrumb.vue';
+import ProductPrice from '@/components/user/product/ProductPrice.vue';
+import ProductGallery from '@/components/user/product/ProductGallery.vue';
+import ProductInformation from '@/components/user/product/ProductInformation.vue';
+import ProductReviews from '@/components/user/product/ProductReviews.vue';
+import QuantityControl from '@/components/user/product/QuantityControl.vue';
+import CatalogProductCard from '@/components/user/catalog/CatalogProductCard.vue';
+import SageButton from '@/components/user/sage/SageButton.vue';
+import SageSkeleton from '@/components/user/sage/SageSkeleton.vue';
+import SageErrorState from '@/components/user/sage/SageErrorState.vue';
+import SageEmptyState from '@/components/user/sage/SageEmptyState.vue';
 const route = useRoute();
-const cartStore = useCartStore();
-const wishlistStore = useWishlistStore();
-const authStore = useAuthStore();
-
-const loading = ref(false);
-const product = ref(null);
-const relatedProducts = ref([]);
-const reviews = ref([]);
-const reviewStars = ref({ total_reviews: 0, average_rating: 0 });
-const canReview = ref(false);
-const canReviewMessage = ref("");
-const quantity = ref(1);
-const selectedImage = ref("");
-const activeTab = ref("description");
-
-const reviewForm = reactive({
-  rating: 5,
-  comment: "",
-});
-
-const swiperModules = [Navigation];
-const relatedSwiperModules = [Navigation, Autoplay];
-
-const productId = computed(() => route.params.id);
-const isLoved = computed(() => wishlistStore.isInWishlist(productId.value));
-
-const productGallery = computed(() => {
-  if (!product.value) return [];
-  return [
-    ...new Set(
-      [product.value.thumbnail, ...(product.value.images || [])].filter(
-        Boolean,
-      ),
-    ),
-  ];
-});
-
-async function fetchProductDetail() {
-  loading.value = true;
-  try {
-    const data = await productService.getById(productId.value);
-    product.value = data;
-    selectedImage.value = data.thumbnail || "";
-
-    try {
-      const reviewRes = await reviewService.getByProduct(productId.value);
-      reviews.value = reviewRes.reviews || [];
-      reviewStars.value = reviewRes.stars || {
-        total_reviews: 0,
-        average_rating: 0,
-      };
-    } catch (error) {
-      reviews.value = [];
-      reviewStars.value = {
-        total_reviews: 0,
-        average_rating: 0,
-      };
-    }
-
-    if (authStore.userId) {
-      const permission = await reviewService.canReview(
-        authStore.userId,
-        productId.value,
-      );
-      canReview.value = !!permission.canReview;
-      canReviewMessage.value = permission.message || "";
-    }
-
-    if (data.category_id) {
-      const related = await productService.getByCategory(data.category_id);
-
-      let list = related.data || [];
-
-      list = list.filter((item) => String(item._id) !== String(data._id));
-
-      if (list.length < 8) {
-        const fallback = await productService.getAll();
-
-        list = [
-          ...list,
-          ...(fallback.data || []).filter(
-            (item) =>
-              String(item._id) !== String(data._id) &&
-              !list.some((p) => String(p._id) === String(item._id)),
-          ),
-        ];
-      }
-
-      relatedProducts.value = list.slice(0, 8);
-    }
-  } catch (error) {
-    alert(error.message);
-  } finally {
-    loading.value = false;
-  }
+const { product, loading, error, notFound, unavailable, related, relatedLoading, relatedError, load, loadRelated } = useProductDetail(() => route.params.id);
+const purchase = useProductPurchase();
+const reviews = useProductReviews(computed(() => detailId(product.value?._id || product.value?.id)));
+const quantity = ref(1), touched = ref(false), feedback = ref(null);
+const stock = computed(() => detailStock(product.value)), maximum = computed(() => purchase.maximum(product.value));
+const packageSize = computed(() => productSpecifications(product.value).find(row => row.label === 'Quy cách đóng gói')?.value);
+const quantityError = computed(() => touched.value && stock.value >= 1 ? quantityMessage(quantity.value, maximum.value) : '');
+const stockLabel = computed(() => stock.value === null ? 'Chưa xác định tồn kho' : stock.value >= 1 ? 'Còn ' + stock.value + ' ' + (product.value?.unit || 'sản phẩm') : 'Hết hàng');
+const addLabel = computed(() => stock.value === null ? 'Chưa xác định tồn kho' : stock.value < 1 ? 'Hết hàng' : productPrice(product.value) === null ? 'Chưa có giá' : maximum.value < 1 ? 'Đã đủ trong giỏ' : 'Thêm vào giỏ hàng');
+const quantityHint = computed(() => stock.value === null ? 'Tải lại thông tin để kiểm tra khả dụng.' : 'Đã có ' + purchase.quantity(product.value) + ' trong giỏ. Có thể thêm tối đa ' + (maximum.value ?? 0) + '.');
+const catalogLink = computed(() => ({ path: '/products', query: { ...route.query } }));
+const categoryLink = computed(() => ({ path: '/products', query: { ...route.query, category_id: detailId(product.value?.category_id), page: undefined } }));
+const crumbs = computed(() => [{ label: 'Trang chủ', to: '/' }, { label: 'Sản phẩm', to: catalogLink.value },
+  ...(product.value?.category_name && product.value.category_id ? [{ label: product.value.category_name, to: categoryLink.value }] : []),
+  { label: product.value?.name || 'Chi tiết sản phẩm' }]);
+function setQuantity(value) { quantity.value = value; touched.value = true; }
+async function add() {
+  touched.value = true;
+  if (quantityError.value) { document.getElementById('pdp-quantity')?.focus(); return; }
+  await purchase.add(product.value, quantity.value);
+  if (purchase.state.error) { await nextTick(); feedback.value?.focus({ preventScroll: true }); }
 }
-
-function changeImage(image) {
-  selectedImage.value = image;
-}
-function increaseQty() {
-  if (quantity.value < Number(product.value.stock || 0)) {
-    quantity.value++;
-  }
-}
-function decreaseQty() {
-  if (quantity.value > 1) {
-    quantity.value--;
-  }
-}
-
-async function addCurrentProductToCart() {
-  if (!authStore.userId) {
-    alert("Vui lÃ²ng Ä‘Äƒng nháº­p Ä‘á»ƒ thÃªm vÃ o giá» hÃ ng");
-    return;
-  }
-
-  if (!product.value || Number(product.value.stock || 0) <= 0) {
-    alert("Sáº£n pháº©m Ä‘Ã£ háº¿t hÃ ng");
-    return;
-  }
-
-  try {
-    await cartStore.addToCart(
-      authStore.userId,
-      product.value._id,
-      quantity.value,
-    );
-    alert("ÄÃ£ thÃªm sáº£n pháº©m vÃ o giá» hÃ ng");
-  } catch (error) {
-    alert(error.message);
-  }
-}
-
-async function toggleWishlist() {
-  if (!authStore.userId) {
-    alert("Vui lÃ²ng Ä‘Äƒng nháº­p Ä‘á»ƒ thÃªm vÃ o yÃªu thÃ­ch");
-    return;
-  }
-
-  try {
-    const result = await wishlistStore.toggleWishlist(
-      authStore.userId,
-      productId.value,
-    );
-    alert(result.message);
-  } catch (error) {
-    alert(error.message);
-  }
-}
-
-async function submitReview() {
-  if (!authStore.userId) {
-    alert("Vui lÃ²ng Ä‘Äƒng nháº­p Ä‘á»ƒ Ä‘Ã¡nh giÃ¡");
-    return;
-  }
-
-  if (!canReview.value) {
-    alert(canReviewMessage.value || "Báº¡n chÆ°a thá»ƒ Ä‘Ã¡nh giÃ¡ sáº£n pháº©m nÃ y");
-    return;
-  }
-
-  if (!reviewForm.comment.trim()) {
-    alert("Vui lÃ²ng nháº­p ná»™i dung Ä‘Ã¡nh giÃ¡");
-    return;
-  }
-
-  try {
-    await reviewService.create({
-      user_id: authStore.userId,
-      product_id: productId.value,
-      rating: reviewForm.rating,
-      comment: reviewForm.comment.trim(),
-    });
-
-    reviewForm.rating = 5;
-    reviewForm.comment = "";
-    activeTab.value = "review";
-    await fetchProductDetail();
-    alert("ÄÃ¡nh giÃ¡ sáº£n pháº©m thÃ nh cÃ´ng");
-  } catch (error) {
-    alert(error.message);
-  }
-}
-
-function setReviewRating(star) {
-  reviewForm.rating = star;
-}
-
-async function addToCart(productId) {
-  if (!authStore.userId) {
-    alert("Vui lÃ²ng Ä‘Äƒng nháº­p");
-    return;
-  }
-
-  await cartStore.addToCart(authStore.userId, productId, 1);
-}
-
-async function toggleWishlistItem(productId) {
-  if (!authStore.userId) return alert("Vui lÃ²ng Ä‘Äƒng nháº­p");
-
-  try {
-    const res = await wishlistStore.toggleWishlist(authStore.userId, productId);
-    alert(res.message);
-  } catch (error) {
-    alert(error.message);
-  }
-}
-
-watch(
-  () => route.params.id,
-  () => {
-    quantity.value = 1;
-    activeTab.value = "description";
-    fetchProductDetail();
-  },
-  { immediate: true },
-);
-
-function printPage() {
-  window.print();
-}
+watch(() => route.params.id, () => { quantity.value = 1; touched.value = false; });
 </script>
-
 <template>
-  <div id="content" class="site-content">
-    <!-- Breadcrumb -->
-    <div v-if="product">
-      <div id="breadcrumb">
-        <div class="container">
-          <h2 class="title">{{ product.name }}</h2>
-
-          <ul class="breadcrumb">
-            <li><router-link to="/">Trang Chủ</router-link></li>
-            <li><router-link to="/products">Sản phẩm</router-link></li>
-            <li>
-              <span>{{ product.name }}</span>
-            </li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="container">
-        <div class="product-detail">
-          <div class="products-block layout-5">
-            <div class="product-item">
-              <div class="product-title">{{ product.name }}</div>
-
-              <div class="row">
-                <div class="product-left col-md-4 col-sm-4 col-xs-12">
-                  <div class="product-image horizontal">
-                    <div class="main-image">
-                      <img
-                        class="img-responsive"
-                        :src="selectedImage"
-                        :alt="product.name"
-                      />
-                    </div>
-                    <div class="thumb-images thumb-swiper-wrapper">
-                      <Swiper
-                        :modules="swiperModules"
-                        :slides-per-view="4"
-                        :space-between="10"
-                        :navigation="true"
-                        class="thumb-swiper"
-                        :breakpoints="{
-                          0: { slidesPerView: 2 },
-                          576: { slidesPerView: 3 },
-                          768: { slidesPerView: 4 },
-                        }"
-                      >
-                        <SwiperSlide
-                          v-for="(image, index) in productGallery"
-                          :key="index"
-                        >
-                          <div
-                            class="thumb-item"
-                            :class="{ active: selectedImage === image }"
-                            @click="changeImage(image)"
-                          >
-                            <img
-                              class="img-responsive"
-                              :src="image"
-                              :alt="product.name"
-                            />
-                          </div>
-                        </SwiperSlide>
-                      </Swiper>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="product-right col-md-5 col-sm-4 col-xs-12">
-                  <div class="product-info">
-                    <div class="product-price">
-                      <span class="sale-price"
-                        >{{ Number(product.price).toLocaleString("vi-VN") }} đ/
-                        {{ product.unit }}</span
-                      >
-                    </div>
-
-                    <div class="product-stock">
-                      <span class="availability">Trạng thái:</span
-                      ><i class="fa fa-check-square-o" aria-hidden="true"></i>
-                      {{ product.stock > 0 ? "Còn hàng" : "Hết hàng" }}
-                    </div>
-
-                    <div class="product-short-description">
-                      {{ product.description }}
-                    </div>
-
-                    <div class="product-info-options border-bottom">
-                      <div class="product-info-options-item"></div>
-
-                      <div class="product-info-options-item"></div>
-                    </div>
-
-                    <div class="product-add-to-cart border-bottom">
-                      <div class="product-quantity">
-                        <span class="control-label">SL :</span>
-                        <div class="qty">
-                          <div class="input-group">
-                            <input :value="quantity" data-min="1" readonly />
-                            <span class="adjust-qty">
-                              <span class="adjust-btn plus" @click="increaseQty"
-                                >+</span
-                              >
-                              <span
-                                class="adjust-btn minus"
-                                @click="decreaseQty"
-                                >-</span
-                              >
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div class="product-buttons" style="margin-right: 20px">
-                        <a
-                          class="add-to-cart"
-                          href="#"
-                          @click.prevent="addCurrentProductToCart"
-                        >
-                          <i
-                            class="fa fa-shopping-basket"
-                            aria-hidden="true"
-                          ></i>
-                          <span>ThÃªm giá» hÃ ng</span>
-                        </a>
-                        <a
-                          class="add-wishlist"
-                          href="#"
-                          @click.prevent="toggleWishlist"
-                        >
-                          <i
-                            class="fa fa-heart"
-                            :style="{ color: isLoved ? 'red' : '' }"
-                            aria-hidden="true"
-                          ></i>
-                        </a>
-                      </div>
-                    </div>
-
-                    <div class="product-share border-bottom">
-                      <div class="item">
-                        <a href="#" @click.prevent
-                          ><i class="zmdi zmdi-share" aria-hidden="true"></i
-                          ><span class="text">Chia sẻ</span></a
-                        >
-                      </div>
-                      <div class="item">
-                        <a href="#" @click.prevent
-                          ><i class="zmdi zmdi-email" aria-hidden="true"></i
-                          ><span class="text">Gửi cho bạn bè</span></a
-                        >
-                      </div>
-                      <div class="item">
-                        <a href="#" @click.prevent="printPage"
-                          ><i class="zmdi zmdi-print" aria-hidden="true"></i
-                          ><span class="text">In</span></a
-                        >
-                      </div>
-                    </div>
-
-                    <div class="product-review border-bottom">
-                      <div class="item">
-                        <div class="product-quantity">
-                          <span class="control-label">Đánh giá:</span>
-                          <div class="product-rating">
-                            <div
-                              v-for="star in 5"
-                              :key="star"
-                              class="star"
-                              :class="{
-                                on:
-                                  star <=
-                                  Math.round(reviewStars.average_rating || 5),
-                              }"
-                            ></div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div class="item">
-                        <a href="#" @click.prevent="activeTab = 'review'"
-                          ><i class="zmdi zmdi-comments" aria-hidden="true"></i
-                          ><span class="text"
-                            >Đọc đánh giá ({{ reviews.length }})</span
-                          ></a
-                        >
-                      </div>
-
-                      <div class="item">
-                        <a href="#" @click.prevent="activeTab = 'review'"
-                          ><i class="zmdi zmdi-edit" aria-hidden="true"></i
-                          ><span class="text">Viết đánh giá</span></a
-                        >
-                      </div>
-                    </div>
-
-                    <div class="product-extra">
-                      <div class="item">
-                        <!-- <span class="control-label">Review :</span
-                          ><span class="control-label">E-02154</span> -->
-                      </div>
-                      <div class="item">
-                        <span class="control-label">Danh Mục:</span>
-                        <a href="#">{{ product.category_name }}</a>
-                      </div>
-                      <div class="item">
-                        <!-- <span class="control-label">Tags :</span>
-                          <a href="#" title="Vegetables">Hot Trend,</a>
-                          <a href="#" title="Fruits">Summer</a> -->
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="payment-intro col-md-3 col-sm-4 col-xs-12">
-                  <div class="block-content">
-                    <div class="item">
-                      <img
-                        class="img-responsive"
-                        src="/img/home2-payment-1.png"
-                        alt="Payment Intro"
-                      />
-                      <h3 class="title">Miá»…n phÃ­ váº­n chuyá»ƒn</h3>
-                      <div class="content">
-                        Sáº£n pháº©m cháº¥t lÆ°á»£ng cao vá»›i dá»‹ch vá»¥ giao hÃ ng nhanh
-                        chÃ³ng vÃ  uy tÃ­n trÃªn toÃ n quá»‘c.
-                      </div>
-                    </div>
-                    <div class="item">
-                      <img
-                        class="img-responsive"
-                        src="/img/home2-payment-2.png"
-                        alt="Payment Intro"
-                      />
-                      <h3 class="title">Thanh toÃ¡n báº£o máº­t</h3>
-                      <div class="content">
-                        Cam káº¿t báº£o máº­t thÃ´ng tin thanh toÃ¡n vÃ  Ä‘a dáº¡ng cÃ¡c
-                        phÆ°Æ¡ng thá»©c tráº£ tiá»n an toÃ n.
-                      </div>
-                    </div>
-                    <div class="item">
-                      <img
-                        class="img-responsive"
-                        src="/img/home2-payment-3.png"
-                        alt="Payment Intro"
-                      />
-                      <h3 class="title">HoÃ n tiá»n 100%</h3>
-                      <div class="content">
-                        Cam káº¿t hoÃ n tráº£ chi phÃ­ náº¿u sáº£n pháº©m khÃ´ng Ä‘Ãºng mÃ´ táº£
-                        hoáº·c gáº·p lá»—i tá»« nhÃ  sáº£n xuáº¥t.
-                      </div>
-                    </div>
-                  </div>
-                </div>
+  <div class="site-content sage-pdp">
+    <div class="container">
+      <div class="pdp-breadcrumb"><StorefrontBreadcrumb :items="crumbs" /></div>
+      <template v-if="loading">
+        <h1 class="pdp-state-heading">Chi tiết sản phẩm</h1><p role="status">Đang tải thông tin sản phẩm...</p>
+        <div class="pdp-grid pdp-loading" aria-hidden="true"><SageSkeleton class="pdp-skeleton-image" /><div><SageSkeleton /><SageSkeleton /><SageSkeleton /></div></div>
+      </template>
+      <template v-else-if="notFound || unavailable">
+        <h1 class="pdp-state-heading">{{ notFound ? 'Không tìm thấy sản phẩm' : 'Sản phẩm không còn khả dụng' }}</h1>
+        <SageEmptyState title="Khám phá sản phẩm khác" description="Sản phẩm này không tồn tại hoặc không được phép hiển thị tại cửa hàng.">
+          <RouterLink :to="catalogLink" class="sage-button">Xem sản phẩm</RouterLink>
+        </SageEmptyState>
+      </template>
+      <template v-else-if="error">
+        <h1 class="pdp-state-heading">Chi tiết sản phẩm</h1><SageErrorState :title="error" retry @retry="load" />
+      </template>
+      <template v-else-if="product">
+        <div class="pdp-grid">
+          <ProductGallery :key="detailId(product._id || product.id)" :product="product" />
+          <div class="pdp-summary sage-panel-in">
+            <RouterLink v-if="product.category_name && product.category_id" :to="categoryLink" class="pdp-category">{{ product.category_name }}</RouterLink>
+            <h1>{{ product.name || 'Chi tiết sản phẩm' }}</h1>
+            <p v-if="product.productCode" class="pdp-product-code">Mã sản phẩm: {{ product.productCode }}</p>
+            <ProductPrice :product="product" />
+            <p v-if="product.shortDescription" class="pdp-short-description">{{ product.shortDescription }}</p>
+            <dl class="pdp-facts">
+              <div v-if="packageSize" class="pdp-fact"><dt>Quy cách đóng gói</dt><dd>{{ packageSize }}</dd></div>
+              <div class="pdp-fact"><dt>Tình trạng</dt><dd><p class="stock-label pdp-stock" :class="stock === null ? 'unknown-stock' : stock >= 1 ? 'in-stock' : 'out-stock'"><i class="fa-solid fa-circle" aria-hidden="true"></i>{{ stockLabel }}</p></dd></div>
+            </dl>
+            <SageButton v-if="stock === null" variant="secondary" @click="load">Tải lại sản phẩm</SageButton>
+            <div class="pdp-purchase">
+              <QuantityControl :model-value="quantity" :maximum="maximum" :error="quantityError" :hint="quantityHint"
+                :disabled="purchase.locked() || maximum === null || maximum < 1" @update:model-value="setQuantity" />
+              <div class="pdp-purchase-actions">
+                <SageButton class="pdp-add" :loading="purchase.state.busy === 'cart' && purchase.state.productId === detailId(product._id || product.id)"
+                  :disabled="!purchase.canAdd(product, quantity)" @click="add"><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i>{{ addLabel }}</SageButton>
+                <SageButton variant="secondary" class="pdp-save sage-icon-button" :aria-label="purchase.isSaved(product) ? 'Bỏ yêu thích sản phẩm' : 'Lưu sản phẩm yêu thích'"
+                  :aria-pressed="purchase.isSaved(product)" :disabled="purchase.locked()" @click="purchase.toggle(product)"><i class="fa-regular fa-heart" aria-hidden="true"></i></SageButton>
               </div>
-
-              <div class="product-tab">
-                <!-- Tab Navigation -->
-                <div class="tab-nav">
-                  <ul>
-                    <li :class="{ active: activeTab === 'description' }">
-                      <a href="#" @click.prevent="activeTab = 'description'">
-                        <span>MÃ´ Táº£</span>
-                      </a>
-                    </li>
-
-                    <li :class="{ active: activeTab === 'review' }">
-                      <a href="#" @click.prevent="activeTab = 'review'">
-                        <span>ÄÃ¡nh GiÃ¡</span>
-                      </a>
-                    </li>
-                  </ul>
-                </div>
-
-                <!-- Tab Content -->
-                <div class="tab-content">
-                  <!-- Description -->
-                  <div
-                    v-if="activeTab === 'description'"
-                    role="tabpanel"
-                    class="tab-pane fade in active"
-                    id="description"
-                  >
-                    <p>
-                      {{ product.description }}
-                    </p>
-                  </div>
-
-                  <!-- Review -->
-                  <div
-                    v-if="activeTab === 'review'"
-                    role="tabpanel"
-                    class="tab-pane fade in active"
-                    id="review"
-                  >
-                    <div class="reviews">
-                      <div v-if="reviews.length === 0" class="text-center py-3">
-                        ChÆ°a cÃ³ Ä‘Ã¡nh giÃ¡ nÃ o cho sáº£n pháº©m nÃ y
-                      </div>
-                      <div
-                        v-else
-                        class="comments-list"
-                        v-for="comment in reviews"
-                        :key="comment.id"
-                      >
-                        <div class="item">
-                          <div class="comment-left pull-left">
-                            <div class="avatar">
-                              <img
-                                :src="comment.avatar || '/img/avatar.jpg'"
-                                :alt="comment.author || 'avatar'"
-                                width="90"
-                                height="90"
-                              />
-                            </div>
-                            <div class="product-rating">
-                              <div
-                                v-for="star in 5"
-                                :key="star"
-                                class="star"
-                                :class="{
-                                  on: star <= Number(comment.rating || 0),
-                                }"
-                              ></div>
-                            </div>
-                          </div>
-                          <div class="comment-body">
-                            <div class="comment-meta">
-                              <span class="author">{{
-                                comment.author || "NgÆ°á»i dÃ¹ng"
-                              }}</span>
-                              -
-                              <span class="time">{{ comment.time }}</span>
-                            </div>
-                            <div class="comment-content">
-                              {{ comment.content }}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div
-                        v-if="!canReview"
-                        class="review-note review-note-warning"
-                      >
-                        {{ canReviewMessage }}
-                      </div>
-                      <div v-else class="review-form">
-                        <h4 class="title">Viáº¿t ÄÃ¡nh GiÃ¡</h4>
-
-                        <form
-                          @submit.prevent="submitReview"
-                          action="#"
-                          method="post"
-                          class="form-validate"
-                        >
-                          <div class="form-group">
-                            <div class="text">ÄÃ¡nh GiÃ¡</div>
-                            <div class="product-rating">
-                              <div
-                                v-for="star in 5"
-                                :key="star"
-                                class="star"
-                                :class="{ on: star <= reviewForm.rating }"
-                                @click="setReviewRating(star)"
-                                style="cursor: pointer"
-                              ></div>
-                            </div>
-                          </div>
-                          <div class="form-group">
-                            <div class="text">
-                              Ná»™i Dung<sup class="required">*</sup>
-                            </div>
-                            <textarea
-                              v-model="reviewForm.comment"
-                              id="comment"
-                              name="comment"
-                              cols="45"
-                              rows="6"
-                              aria-required="true"
-                              :disabled="!canReview"
-                            ></textarea>
-                          </div>
-
-                          <div class="form-group">
-                            <button
-                              class="btn btn-primary"
-                              :disabled="!canReview"
-                            >
-                              Gá»­i ÄÃ¡nh GiÃ¡
-                            </button>
-                          </div>
-                        </form>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <p class="pdp-cart-note">Giỏ hàng không giữ chỗ tồn kho. Số lượng được kiểm tra lại khi thao tác.</p>
             </div>
+            <div v-if="purchase.state.error || purchase.state.success" ref="feedback" tabindex="-1" class="pdp-feedback" :class="{ 'pdp-feedback--error': purchase.state.error }" :role="purchase.state.error ? 'alert' : 'status'">
+              <p>{{ purchase.state.error || purchase.state.success }}</p>
+              <SageButton v-if="purchase.state.error && !purchase.state.uncertain" variant="secondary" :disabled="purchase.locked()" @click="load">Tải lại sản phẩm</SageButton>
+              <template v-if="purchase.state.uncertain">
+                <RouterLink :to="purchase.state.uncertain === 'cart' ? '/cart' : '/wishlist'">Xem dữ liệu mới nhất</RouterLink>
+                <SageButton variant="secondary" :loading="purchase.state.busy === 'read'" @click="purchase.refresh">Tải lại dữ liệu</SageButton>
+                <SageButton v-if="purchase.state.fresh" variant="secondary" :disabled="!!purchase.state.busy" @click="purchase.acknowledge">Đã kiểm tra dữ liệu mới nhất</SageButton>
+              </template>
+            </div>
+            <p v-if="reviews.summary?.total && !reviews.state.error" class="pdp-rating-link">{{ reviews.summary.average.toFixed(1) }}/5 · {{ reviews.summary.total }} đánh giá</p>
+            <RouterLink to="/contact" class="pdp-support">Cần hỗ trợ lựa chọn? Liên hệ với chúng tôi <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></RouterLink>
           </div>
         </div>
-
-        <!-- Related Products -->
-        <div class="products-block related-products item-4">
-          <div class="block-title">
-            <h2 class="title"><span>Sáº£n Pháº©m</span> TÆ°Æ¡ng Tá»±</h2>
-          </div>
-
-          <div v-if="relatedProducts.length" class="block-content">
-            <Swiper
-              class="related-products-swiper"
-              :modules="relatedSwiperModules"
-              :slides-per-view="4"
-              :space-between="30"
-              :navigation="true"
-              :loop="relatedProducts.length > 4"
-              :breakpoints="{
-                0: { slidesPerView: 1, spaceBetween: 12 },
-                576: { slidesPerView: 2, spaceBetween: 16 },
-                992: { slidesPerView: 3, spaceBetween: 20 },
-                1200: { slidesPerView: 4, spaceBetween: 30 },
-              }"
-            >
-              <SwiperSlide v-for="item in relatedProducts" :key="item._id">
-                <div class="product-item">
-                  <div class="product-image">
-                    <router-link
-                      :to="`/products/${item._id}`"
-                      class="product-image-link"
-                    >
-                      <img :src="item.thumbnail" :alt="item.name" />
-                    </router-link>
-                  </div>
-
-                  <div class="product-title">
-                    <router-link :to="`/products/${item._id}`">
-                      {{ item.name }}
-                    </router-link>
-                  </div>
-
-                  <div class="product-rating">
-                    <div
-                      v-for="star in 5"
-                      :key="star"
-                      class="star"
-                      :class="{ on: star <= item.rating || 5 }"
-                    ></div>
-                  </div>
-
-                  <div class="product-price">
-                    <span class="sale-price"
-                      >{{ Number(item.price).toLocaleString("vi-VN") }} Ä‘</span
-                    >
-                  </div>
-
-                  <div class="product-buttons">
-                    <a
-                      class="add-to-cart"
-                      href="#"
-                      @click.prevent="addToCart(item._id)"
-                    >
-                      <i class="fa fa-shopping-basket" aria-hidden="true"></i>
-                    </a>
-
-                    <a
-                      class="add-wishlist"
-                      href="#"
-                      @click.prevent="toggleWishlistItem(item._id)"
-                    >
-                      <i
-                        class="fa fa-heart"
-                        aria-hidden="true"
-                        :style="{
-                          color: wishlistStore.isInWishlist(item._id)
-                            ? 'red'
-                            : '',
-                        }"
-                      ></i>
-                    </a>
-
-                    <router-link
-                      class="quickview"
-                      :to="`/products/${item._id}`"
-                    >
-                      <i class="fa fa-eye" aria-hidden="true"></i>
-                    </router-link>
-                  </div>
-                </div>
-              </SwiperSlide>
-            </Swiper>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div v-else id="content" class="site-content">
-      <div id="breadcrumb">
-        <div class="container">
-          <h2 class="title"></h2>
-
-          <ul class="breadcrumb">
-            <li><router-link to="/">Trang Chá»§</router-link></li>
-            <li><router-link to="/products">Sáº£n Pháº©m</router-link></li>
-          </ul>
-        </div>
-      </div>
-      <div class="container text-center">
-        <h2>KhÃ´ng tÃ¬m tháº¥y sáº£n pháº©m</h2>
-      </div>
+        <ProductInformation :key="detailId(product._id || product.id)" :product="product" :review-count="reviews.state.error ? undefined : reviews.summary?.total">
+          <template #reviews><ProductReviews :resource="reviews" /></template>
+        </ProductInformation>
+        <section v-if="relatedLoading || relatedError || related.length" class="pdp-related sage-catalog sage-reveal">
+          <div class="pdp-section-heading"><h2 class="pdp-section-title">Sản phẩm cùng danh mục</h2><RouterLink :to="categoryLink" class="pdp-support">Xem danh mục <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></RouterLink></div>
+          <p v-if="relatedLoading" role="status">Đang tải sản phẩm cùng danh mục...</p>
+          <div v-if="relatedLoading" class="catalog-product-grid" aria-hidden="true"><SageSkeleton v-for="n in 4" :key="n" class="pdp-related-skeleton" /></div>
+          <SageErrorState v-else-if="relatedError" :title="relatedError" retry @retry="loadRelated" />
+          <div v-else class="catalog-product-grid"><CatalogProductCard v-for="item in related" :key="detailId(item._id || item.id)" :product="item" :actions="purchase" /></div>
+        </section>
+      </template>
     </div>
   </div>
 </template>
-<style>
-.thumb-swiper-wrapper {
-  margin-top: 15px;
-}
-
-.thumb-swiper {
-  position: relative;
-}
-
-.thumb-swiper .swiper-slide {
-  height: auto;
-}
-
-.thumb-item {
-  cursor: pointer;
-  padding: 4px;
-  transition: all 0.2s ease;
-  background: #fff;
-}
-
-.thumb-item.active {
-  border-color: #7a9c59;
-}
-
-.thumb-item img {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
-.thumb-swiper .swiper-button-prev,
-.thumb-swiper .swiper-button-next {
-  width: 28px;
-  height: 28px;
-  margin-top: -14px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid #78b144;
-}
-.thumb-swiper .swiper-button-prev .swiper-navigation-icon,
-.thumb-swiper .swiper-button-next .swiper-navigation-icon {
-  height: 70%;
-  color: #78b144;
-}
-
-/* Related Product */
-
-.related-products .block-content {
-  position: relative;
-}
-
-.related-products-swiper {
-  width: 100%;
-  padding: 5px 2px;
-}
-
-.related-products-swiper .swiper-slide {
-  height: auto;
-  box-sizing: border-box;
-}
-
-.related-products-swiper .product-item {
-  width: 100%;
-  height: 100%;
-  background: #fff;
-  border: 1px solid #e5dfd3;
-  padding: 20px 15px;
-  text-align: center;
-  overflow: hidden;
-  box-sizing: border-box;
-}
-
-.related-products-swiper .product-image {
-  width: 100%;
-  height: 220px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 15px;
-  overflow: hidden;
-}
-
-.related-products-swiper .product-image-link {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.related-products-swiper .product-image img {
-  display: block;
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
-  object-fit: contain;
-}
-
-.related-products-swiper .swiper-button-prev .swiper-navigation-icon,
-.related-products-swiper .swiper-button-next .swiper-navigation-icon {
-  height: 70%;
-  color: #78b144;
-}
-</style>

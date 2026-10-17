@@ -1,11 +1,9 @@
 <script setup>
-import { computed, onMounted } from "vue";
+import { computed } from "vue";
 import { useRouter } from "vue-router";
-import { useAuthStore } from "@/stores/user/auth";
 import { useAdminNotificationStore } from "@/stores/admin/notification";
 
 const router = useRouter();
-const authStore = useAuthStore();
 const notificationStore = useAdminNotificationStore();
 
 const notificationCount = computed(() => notificationStore.unreadCount);
@@ -42,22 +40,6 @@ const contactCount = computed(
         </span>
       </div>
 
-      <!-- <div class="d-flex align-items-center gap-2">
-        <img
-          :src="
-            authStore.user?.avatar ||
-            authStore.user?.avatar_url ||
-            'https://via.placeholder.com/40'
-          "
-          style="
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            object-fit: cover;
-          "
-        />
-        <span style="color: #667a93; font-weight: 600">Admin</span>
-      </div> -->
     </div>
   </header>
 </template>

@@ -5,6 +5,7 @@ import roleService from "@/services/role.service";
 import AdminPagination from "@/components/common/AdminPagination.vue";
 import { useAuthStore } from "@/stores/user/auth";
 import { hasPermission } from "@/utils/permission.util";
+import { normalizeId } from "@/utils/id.util";
 
 const authStore = useAuthStore();
 const users = ref([]);
@@ -69,7 +70,7 @@ async function fetchRoles() {
 }
 
 function roleIdForUser(user) {
-  return (
+  return normalizeId(
     user.role_id ||
     roles.value.find((role) => role.code === user.role)?._id ||
     ""
@@ -139,13 +140,13 @@ async function removeUser(user) {
     return;
   }
 
-  if (!window.confirm("Bạn có chắc muốn xóa người dùng này?")) return;
+  if (!window.confirm("Bạn có chắc muốn xóa người dùng này?\n\nDữ liệu sau khi xóa sẽ không thể khôi phục.")) return;
 
   try {
     await userService.deleteUser(user._id);
     await fetchUsers();
   } catch (error) {
-    alert(error?.message || "Không thể xóa người dùng");
+    alert(error?.response?.data?.message || error?.message || "Không thể xóa người dùng");
   }
 }
 
@@ -372,7 +373,7 @@ onMounted(initialize);
               </button>
 
               <button
-                v-if="canDeleteUsers && item.status !== 'blocked'"
+                v-if="canDeleteUsers"
                 class="admin-btn admin-btn--danger"
                 @click="removeUser(item)"
               >

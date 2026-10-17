@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { useForm } from "vee-validate";
+import { useSchemaForm } from "@/composables/useSchemaForm";
 import { toTypedSchema } from "@vee-validate/zod";
 import AdminPagination from "@/components/common/AdminPagination.vue";
 import bannerService from "@/services/banner.service";
@@ -14,8 +14,9 @@ import {
   z,
 } from "@/validators/common.validator";
 import { mapBackendValidationErrors } from "@/utils/validation-error.util";
+import { normalizeId } from "@/utils/id.util";
 
-const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 const banners = ref([]);
@@ -102,8 +103,13 @@ const {
   setErrors,
   setValues,
   validate: validateVee,
-} = useForm({
+} = useSchemaForm({
   validationSchema: bannerSchema,
+  values: () => ({
+    ...form,
+    image: desktopFile.value,
+    mobileImage: mobileFile.value,
+  }),
 });
 
 const filteredBanners = computed(() => {
@@ -140,7 +146,7 @@ function normalizeList(res) {
 }
 
 function getId(item) {
-  return item?._id || item?.id || "";
+  return normalizeId(item);
 }
 
 function positionText(position) {
@@ -183,7 +189,7 @@ function formatDateInput(value) {
 function validateImageFile(file) {
   if (!file) return "";
   if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-    return "Ảnh banner chỉ hỗ trợ JPG, PNG hoặc WEBP";
+    return "Ảnh banner chỉ hỗ trợ JPG, PNG, WEBP hoặc GIF";
   }
   if (file.size > MAX_FILE_SIZE) {
     return "Ảnh banner tối đa 10MB";
@@ -255,13 +261,16 @@ function buildPayload() {
     buttonText: form.buttonText.trim(),
     position: form.position,
     sortOrder: Number(form.sortOrder || 0),
-    startDate: form.startDate || undefined,
-    endDate: form.endDate || undefined,
+    startDate: form.startDate,
+    endDate: form.endDate,
     status: form.status || "active",
   };
 
   Object.keys(payload).forEach((key) => {
-    const allowEmptyString = ["title", "subtitle", "description"].includes(key);
+    const allowEmptyString = [
+      "title", "subtitle", "description", "mobileImageUrl", "link",
+      "buttonText", "startDate", "endDate",
+    ].includes(key);
     if (
       payload[key] === undefined ||
       (payload[key] === "" && !allowEmptyString)
@@ -364,6 +373,7 @@ function openCreateModal() {
 }
 
 function openEditModal(item) {
+  resetValidation();
   modalMode.value = "edit";
   currentId.value = getId(item);
   fillForm(item);
@@ -404,7 +414,7 @@ async function submitForm() {
 }
 
 async function removeBanner(item) {
-  if (!window.confirm("Bạn có chắc muốn xóa banner này?")) return;
+  if (!window.confirm("Bạn có chắc muốn xóa banner này?\n\nDữ liệu sau khi xóa sẽ không thể khôi phục.")) return;
 
   try {
     await bannerService.remove(getId(item));
@@ -477,9 +487,6 @@ onMounted(fetchBanners);
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
           <div class="admin-panel__header-title">Danh sách banner</div>
-          <!-- <div class="admin-panel__header-subtitle">
-            Dữ liệu lấy từ /api/banners, filter và phân trang xử lý ở frontend.
-          </div> -->
         </div>
 
         <button type="button" class="admin-btn admin-btn--primary" @click="openCreateModal">
@@ -528,6 +535,7 @@ onMounted(fetchBanners);
                 <th>Thứ tự</th>
                 <th>Thời gian active</th>
                 <th>Trạng thái</th>
+                <th>Cập nhật</th>
                 <th>Thao tác</th>
               </tr>
             </thead>
@@ -550,6 +558,7 @@ onMounted(fetchBanners);
                         class="banner-row__link"
                         :href="item.link"
                         target="_blank"
+                        rel="noopener noreferrer"
                       >
                         {{ item.link }}
                       </a>
@@ -589,6 +598,7 @@ onMounted(fetchBanners);
                     </button>
                   </div>
                 </td>
+                <td>{{ formatDate(item.updatedAt || item.createdAt) }}</td>
                 <td>
                   <div class="admin-table__actions">
                     <button
@@ -654,7 +664,7 @@ onMounted(fetchBanners);
                 ref="desktopInput"
                 class="admin-form__control"
                 type="file"
-                accept="image/jpeg,image/png,image/webp"
+                accept="image/jpeg,image/png,image/webp,image/gif"
                 :class="{ 'is-invalid': errors.image }"
                 @change="handleImageChange('desktop', $event)"
               />
@@ -678,7 +688,7 @@ onMounted(fetchBanners);
                 ref="mobileInput"
                 class="admin-form__control"
                 type="file"
-                accept="image/jpeg,image/png,image/webp"
+                accept="image/jpeg,image/png,image/webp,image/gif"
                 :class="{ 'is-invalid': errors.mobileImage }"
                 @change="handleImageChange('mobile', $event)"
               />

@@ -1,4 +1,5 @@
 <script setup>
+import { normalizeId } from "@/utils/id.util";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import RichTextEditor from "@/components/admin/common/RichTextEditor.vue";
@@ -17,7 +18,7 @@ const thumbnailInputRef = ref(null);
 const thumbnailFile = ref(null);
 const thumbnailPreview = ref("");
 
-const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 
 const form = reactive({
@@ -39,13 +40,6 @@ const activeCategories = computed(() =>
 
 function normalizeList(res) {
   return Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
-}
-
-function normalizeId(value) {
-  if (!value) return "";
-  if (typeof value === "string") return value;
-  if (value.$oid) return value.$oid;
-  return String(value);
 }
 
 function slugify(value) {
@@ -78,7 +72,7 @@ function toDateTimeLocal(value) {
 function validateImage(file) {
   if (!file) return "";
   if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-    return "Thumbnail chỉ hỗ trợ JPG, PNG hoặc WEBP";
+    return "Thumbnail chỉ hỗ trợ JPG, PNG, WEBP hoặc GIF";
   }
   if (file.size > MAX_IMAGE_SIZE) {
     return "Thumbnail tối đa 5MB";
@@ -150,10 +144,9 @@ function buildPayload() {
     summary: form.summary.trim(),
     content: form.content,
     thumbnail: form.thumbnail.trim(),
-    images: [],
     tags: parseTags(tagText.value),
     status: form.status,
-    publishedAt: form.publishedAt || undefined,
+    publishedAt: form.publishedAt,
     seoTitle: form.seoTitle.trim(),
     seoDescription: form.seoDescription.trim(),
   };
@@ -277,7 +270,7 @@ onMounted(fetchData);
               ref="thumbnailInputRef"
               type="file"
               class="admin-form__control"
-              accept="image/jpeg,image/png,image/webp"
+              accept="image/jpeg,image/png,image/webp,image/gif"
               @change="handleThumbnailChange"
             />
             <div class="news-thumbnail-preview" v-if="thumbnailPreview || form.thumbnail">

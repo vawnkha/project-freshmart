@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 730" role="img" aria-labelledby="scene-title"><title id="scene-title">Minh họa cảnh ao nuôi tôm và hệ thống quạt nước</title>
+   <path d="M80 0h520v730H40Z" fill="#627761"/><circle cx="432" cy="116" r="78" fill="#B6C3A6"/>
+   <path d="M100 216 342 150 600 220v510H40Z" fill="#91A77F"/><path d="m106 228 218-65 276 75-47 202-392-52Z" fill="#B9CBC0"/>
+   <path d="m111 246 206-61 264 73-46 158-370-45Z" fill="#416C62"/><path d="m171 254 300 65M148 295l310 67M190 235l299 64M263 214l235 66" stroke="#DCE6D6" stroke-width="2" opacity=".5"/>
+   <path d="m74 400 465 40 61 219-482-52Z" fill="#C8CEAC"/><path d="m96 421 425 39 52 159-442-47Z" fill="#416C62"/>
+   <path d="m137 447 317 34M153 480l322 35M169 513l332 35M185 546l321 35" stroke="#DCE6D6" stroke-width="2" opacity=".5"/>
+   <g stroke="#394F3B" stroke-width="5" stroke-linecap="round"><path d="m276 315 49 13m-41-24-8 23m24-18-8 23m24-18-8 23m40-75 49 13m-41-24-8 23m24-18-8 23m24-18-8 23M305 501l49 7m-42-19-5 25m22-23-5 25m22-23-5 25"/></g>
+   <g fill="none" stroke="#DCE6D6" stroke-width="3" opacity=".9"><path d="m268 334-19 13m47-5-11 16m40-6-9 17m70-64-18 14m42-5-11 15m-109 176-19 12m41-5-10 13m38-5-8 14"/></g>
+   <path d="M25 654 65 688l535 42H0Z" fill="#394F3B"/><g fill="#394F3B"><path d="M569 115c-34 64-22 119 2 167 20-40 36-97-2-167Z"/><path d="M535 157c-36 44-21 84 6 113 15-36 17-75-6-113Z"/><path d="M91 484c-26 42-30 81-8 125 28-39 42-80 8-125Z"/></g>
+   <path d="m82 544-1 96m487-450 7 154" stroke="#C8CEAC" stroke-width="4"/>
+   </svg>

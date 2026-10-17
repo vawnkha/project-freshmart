@@ -26,6 +26,7 @@ function formatDate(value) {
 }
 
 async function handleSendInvoice() {
+  if (sendingInvoice.value) return;
   if (!canUpdateOrders.value) {
     alert("Ban khong co quyen cap nhat don hang");
     return;
@@ -36,10 +37,8 @@ async function handleSendInvoice() {
 
     const res = await ordersService.sendInvoice(order.value._id);
 
-    alert(res.message || "Đã gửi hóa đơn");
-
-    order.value.invoice_sent = true;
-    order.value.invoice_sent_at = new Date().toISOString();
+    alert(res.queued ? "Đã đưa hóa đơn vào hàng đợi gửi" : res.message || "Yêu cầu gửi hóa đơn đã được tiếp nhận");
+    await fetchOrder();
   } catch (err) {
     alert(err?.response?.data?.message || "Lỗi gửi hóa đơn");
   } finally {
@@ -189,7 +188,7 @@ onMounted(fetchOrder);
               <button
                 v-if="!order?.invoice_sent"
                 class="admin-btn admin-btn--success"
-                :disabled="sendingInvoice || !canUpdateOrders"
+                :disabled="sendingInvoice || !canUpdateOrders || ['queued', 'processing', 'failed'].includes(order.invoice_status)"
                 :title="
                   !canUpdateOrders
                     ? 'Ban khong co quyen cap nhat don hang'
@@ -199,7 +198,7 @@ onMounted(fetchOrder);
               >
                 <i class="fa-solid fa-paper-plane"></i>
                 <span>{{
-                  sendingInvoice ? "Đang gửi..." : "Gửi hóa đơn"
+                  sendingInvoice ? "Đang tiếp nhận..." : "Gửi hóa đơn"
                 }}</span>
               </button>
               <div
@@ -207,6 +206,11 @@ onMounted(fetchOrder);
                 style="color: #28a745; font-weight: 600"
               >
                 ✔ Hóa đơn đã được gửi
+              </div>
+              <div v-else-if="order.invoice_status" role="status">
+                {{ order.invoice_status === 'failed' ? 'Lần gửi gần nhất thất bại; hệ thống sẽ thử lại.'
+                  : order.invoice_status === 'processing' ? 'Đang xử lý gửi hóa đơn' : 'Hóa đơn đã được đưa vào hàng đợi' }}
+                <button class="invoice-link-btn" @click="fetchOrder">Làm mới trạng thái</button>
               </div>
             </div>
           </div>

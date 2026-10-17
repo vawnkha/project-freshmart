@@ -1,74 +1,52 @@
 <script setup>
+import AppState from "@/components/user/common/AppState.vue";
+import {
+  formatMoney,
+  orderStatusLabel,
+  orderStatusClass,
+} from "@/utils/storefront.util";
 defineProps({
-  orders: {
-    type: Array,
-    required: true,
-  },
+  orders: { type: Array, required: true },
+  loading: Boolean,
+  error: String,
 });
-
-defineEmits(["view-order-detail"]);
-
-function getStatusClass(status) {
-  switch ((status || "").toLowerCase()) {
-    case "chờ xác nhận":
-      return "status-pending";
-    case "đã xác nhận":
-    case "đang xử lý":
-      return "status-processing";
-    case "đang giao":
-      return "status-shipping";
-    case "đã giao":
-    case "hoàn thành":
-      return "status-success";
-    case "đã hủy":
-      return "status-cancelled";
-    default:
-      return "status-pending";
-  }
-}
+defineEmits(["view-order-detail", "retry"]);
+const money = value => value === null || value === undefined || !Number.isFinite(Number(value)) ? 'Chưa xác định' : formatMoney(value);
 </script>
-
 <template>
   <div class="profile-content-box">
-    <div class="table-responsive">
-      <table class="table profile-table">
-        <thead>
-          <tr>
-            <th>Đơn hàng</th>
-            <th>Ngày đặt</th>
-            <th>Trạng thái</th>
-            <th>Tổng tiền</th>
-            <th>Hành động</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="!orders.length">
-            <td colspan="5" class="text-center">Chưa có đơn hàng nào</td>
-          </tr>
-
-          <tr v-for="order in orders" :key="order.id || order._id">
-            <td>#{{ order.id || order._id }}</td>
-            <td>{{ order.orderDate }}</td>
-            <td>
-              <span class="status-badge" :class="getStatusClass(order.status)">
-                {{ order.status }}
-              </span>
-            </td>
-            <td>
-              {{ Number(order.total).toLocaleString("vi-VN") }}
-              đ
-            </td>
-            <td>
-              <button
-                class="btn btn-primary"
-                @click="$emit('view-order-detail', order)"
-              >
-                Xem chi tiết
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <h2 class="profile-section-title">Đơn hàng của bạn</h2>
+    <AppState
+      v-if="loading"
+      kind="loading"
+      title="Đang tải đơn hàng..."
+    /><AppState
+      v-else-if="error"
+      kind="error"
+      :title="error"
+      retry
+      @retry="$emit('retry')"
+    /><AppState
+      v-else-if="!orders.length"
+      title="Bạn chưa có đơn hàng"
+      description="Các đơn hàng của bạn sẽ hiển thị tại đây."
+      to="/products"
+    />
+    <div v-else class="order-list">
+      <article v-for="order in orders" :key="order.id" class="order-card">
+        <div>
+          <h3>Đơn hàng #{{ order.id }}</h3>
+          <p>{{ order.orderDate || 'Chưa có ngày đặt' }}</p>
+        </div>
+        <span class="status-badge" :class="orderStatusClass(order)">{{
+          orderStatusLabel(order)
+        }}</span
+        ><strong>{{ money(order.total) }}</strong
+        ><button class="btn" @click="$emit('view-order-detail', order)">
+          Xem chi tiết
+          <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+        </button>
+      </article>
     </div>
   </div>
 </template>

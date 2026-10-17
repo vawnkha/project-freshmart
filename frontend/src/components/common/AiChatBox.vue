@@ -1,358 +1,163 @@
 <script setup>
-import { nextTick, ref, onBeforeUnmount } from "vue";
-import aiService from "@/services/ai.service";
-import { useRouter } from "vue-router";
-
-const router = useRouter();
-
+import { computed, nextTick, ref, watch, onMounted, onBeforeUnmount } from 'vue';
+import aiService from '@/services/ai.service';
+import { useAuthStore, captureAuthRequestContext } from '@/stores/user/auth';
+import { userError } from '@/utils/user-error.util';
+import { productPrice, formatMoney } from '@/utils/storefront.util';
+import { catalogStock } from '@/utils/catalog-query.util';
+import { normalizeId } from '@/utils/id.util';
+import ResponsiveImage from '@/components/user/common/ResponsiveImage.vue';
+const auth = useAuthStore();
 const opened = ref(false);
 const loading = ref(false);
-const input = ref("");
+const input = ref('');
 const bodyRef = ref(null);
-
-const debounceTimer = ref(null);
-const lastSentText = ref("");
-
-const messages = ref([
-  {
-    role: "assistant",
-    text: "Xin chào 👋 Mình có thể giúp bạn tìm sản phẩm, hỏi giá, hoặc gợi ý sản phẩm có trên website.",
-    products: [],
-  },
-]);
-
-function toggleChat() {
-  opened.value = !opened.value;
+const panel = ref(null);
+const widget = ref(null);
+const composer = ref(null);
+const viewportStyle = ref({});
+const compactViewport = ref(false);
+const canSend = computed(() => !loading.value && !!input.value.trim() && input.value.trim().length <= 1000);
+let request = null;
+let disposed = false;
+let trigger, modalObserver;
+const initialMessages = () => [{ role: 'assistant', text: 'Xin chào! Mình có thể giúp bạn tìm sản phẩm, hỏi giá và xem tình trạng còn hàng trên website.', products: [] }];
+const messages = ref(initialMessages());
+// Presentation entry point for the approved Home support callout.
+defineExpose({ open: () => { opened.value = true; } });
+function close(restore = true) {
+  const ownsFocus = panel.value?.contains(document.activeElement);
+  opened.value = false;
+  if (restore && ownsFocus && trigger?.isConnected) trigger.focus({ preventScroll: true });
 }
-
+function preparePanel(element) {
+  element.inert = false;
+  element.removeAttribute('aria-hidden');
+}
+function hidePanel(element) {
+  // Vue keeps the leaving DOM until the Sage transition finishes. It must
+  // stop receiving Tab immediately, including when reopened during that exit.
+  element.inert = true;
+  element.setAttribute('aria-hidden', 'true');
+}
+function resetSession() {
+  const previous = request;
+  request = null;
+  previous?.controller.abort();
+  loading.value = false;
+  input.value = '';
+  messages.value = initialMessages();
+  close(false);
+}
+// These are local presentation fences, not a second auth/session store. The
+// existing authority also catches a same-ID/same-JWT login intent.
+const stopActions = auth.$onAction(({ name }) => {
+  if (['login', 'logout', '$reset'].includes(name)) resetSession();
+});
+watch(() => [auth.userId, auth.accessToken, auth.isLoggedIn], resetSession, { flush: 'sync' });
+watch(opened, async (value) => {
+  if (!value) return;
+  trigger = document.activeElement;
+  await nextTick();
+  if (!disposed && opened.value) composer.value?.focus({ preventScroll: true });
+});
 async function scrollToBottom() {
   await nextTick();
-  if (bodyRef.value) {
-    bodyRef.value.scrollTop = bodyRef.value.scrollHeight;
-  }
+  if (bodyRef.value) bodyRef.value.scrollTop = bodyRef.value.scrollHeight;
 }
-
-function openProduct(product) {
-  router.push(`/products/${product._id}`);
-}
-
-function clearDebounceTimer() {
-  if (debounceTimer.value) {
-    clearTimeout(debounceTimer.value);
-    debounceTimer.value = null;
-  }
-}
-
-function handleInput() {
-  clearDebounceTimer();
-
-  const text = input.value.trim();
-  if (!text) return;
-
-  debounceTimer.value = setTimeout(() => {
-    debounceTimer.value = null;
-  }, 5000);
-}
-
-async function sendMessage() {
-  const text = input.value.trim();
-
-  if (!text || loading.value) return;
-
-  if (text === lastSentText.value) return;
-
-  clearDebounceTimer();
-
-  messages.value.push({
-    role: "user",
-    text,
-    products: [],
-  });
-
-  input.value = "";
+async function sendMessage(text = input.value.trim()) {
+  text = String(text).trim();
+  if (disposed || !text || loading.value || text.length > 1000) return;
+  const context = captureAuthRequestContext();
+  const current = { controller: new AbortController() };
+  const isCurrent = () => !disposed && request === current && (!context || context.isCurrent());
+  request = current;
+  messages.value.push({ role: 'user', text, products: [] });
+  input.value = '';
   loading.value = true;
-  lastSentText.value = text;
-
   await scrollToBottom();
-
   try {
-    const res = await aiService.chat(text);
-
-    messages.value.push({
-      role: "assistant",
-      text: res.reply || "Mình chưa có câu trả lời phù hợp.",
-      products: res.products || [],
-    });
+    if (!isCurrent()) return;
+    const response = await aiService.chat(text, { signal: current.controller.signal });
+    if (!isCurrent()) return;
+    if (typeof response.reply !== 'string' || !response.reply.trim()) throw new Error('Chưa nhận được câu trả lời. Vui lòng thử lại.');
+    messages.value.push({ role: 'assistant', text: response.reply, products: Array.isArray(response.products) ? response.products.filter(product => !!normalizeId(product?._id)) : [] });
   } catch (error) {
-    messages.value.push({
-      role: "assistant",
-      text:
-        error?.response?.data?.message ||
-        "Xin lỗi, hiện tại chat AI đang gặp lỗi.",
-      products: [],
-    });
+    if (isCurrent()) messages.value.push({ role: 'assistant', text: userError(error, 'Chưa thể kết nối hỗ trợ trực tuyến. Vui lòng thử lại.'), products: [], retry: text });
   } finally {
-    loading.value = false;
-    await scrollToBottom();
+    if (isCurrent()) {
+      request = null;
+      loading.value = false;
+      await scrollToBottom();
+    }
   }
 }
-
 function handleEnter(event) {
-  if (event.key === "Enter" && !event.shiftKey) {
-    event.preventDefault();
-    sendMessage();
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); sendMessage(); }
+}
+function updateViewport() {
+  const viewport = window.visualViewport;
+  compactViewport.value = (viewport?.height ?? window.innerHeight) < 480;
+  viewportStyle.value = viewport ? {
+    '--chat-visible-height': `${viewport.height}px`,
+    '--chat-keyboard-inset': `${Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)}px`,
+  } : {};
+}
+onMounted(() => {
+  updateViewport();
+  window.visualViewport?.addEventListener('resize', updateViewport);
+  window.visualViewport?.addEventListener('scroll', updateViewport);
+  const root = widget.value?.closest('.user-app.sage-storefront');
+  if (root && typeof MutationObserver !== 'undefined') {
+    modalObserver = new MutationObserver(() => {
+      if (opened.value && root.querySelector('dialog[open]')) close(false);
+    });
+    modalObserver.observe(root, { subtree: true, attributes: true, attributeFilter: ['open'] });
   }
-}
-
-function handleFocus() {
-  clearDebounceTimer();
-}
-
+});
 onBeforeUnmount(() => {
-  clearDebounceTimer();
+  disposed = true;
+  request?.controller.abort();
+  request = null;
+  stopActions();
+  modalObserver?.disconnect();
+  window.visualViewport?.removeEventListener('resize', updateViewport);
+  window.visualViewport?.removeEventListener('scroll', updateViewport);
 });
 </script>
-
 <template>
-  <div class="ai-chat">
-    <button class="ai-chat__toggle" @click="toggleChat">
-      <i class="fa-solid fa-comment"></i>
+  <div ref="widget" class="ai-chat" :class="{ 'ai-chat--compact': compactViewport }" :style="viewportStyle">
+    <button aria-label="Mở hỗ trợ trực tuyến" :aria-expanded="opened" aria-controls="support-panel" class="ai-chat__toggle" @click="opened = !opened">
+      <i class="fa-solid fa-comment" aria-hidden="true"></i>
     </button>
-
-    <div v-if="opened" class="ai-chat__panel">
-      <div class="ai-chat__header">
-        <div>
-          <strong>Hỗ Trợ Trực Tuyến</strong>
-          <div class="ai-chat__sub">Hỏi giá hoặc tìm sản phẩm</div>
-        </div>
-        <button class="ai-chat__close" @click="toggleChat">×</button>
+    <Transition name="client-chat-panel" @before-enter="preparePanel" @before-leave="hidePanel">
+    <section v-if="opened" id="support-panel" ref="panel" class="ai-chat__panel" role="dialog" aria-label="Hỗ trợ trực tuyến" tabindex="-1" @keydown.esc.stop.prevent="close()">
+      <div class="ai-chat__header"><div><strong>Hỗ trợ trực tuyến</strong><div class="ai-chat__sub">Hỏi giá hoặc tìm sản phẩm</div></div>
+        <button aria-label="Đóng hỗ trợ trực tuyến" class="ai-chat__close" @click="close()">×</button>
       </div>
-
-      <div ref="bodyRef" class="ai-chat__body">
-        <div
-          v-for="(msg, index) in messages"
-          :key="index"
-          class="ai-chat__msg"
-          :class="msg.role"
-        >
-          <div class="ai-chat__bubble">
-            {{ msg.text }}
-          </div>
-
-          <div
-            v-if="msg.products && msg.products.length"
-            class="ai-chat__products"
-          >
-            <div
-              v-for="product in msg.products"
-              :key="product._id"
-              class="ai-chat__product"
-              @click="openProduct(product)"
-            >
-              <img
-                :src="product.thumbnail"
-                alt=""
-                class="ai-chat__product-thumb"
-              />
-              <div class="ai-chat__product-info">
-                <div class="ai-chat__product-name">{{ product.name }}</div>
-                <div class="ai-chat__product-price">
-                  {{ Number(product.price || 0).toLocaleString("vi-VN") }} VND
-                </div>
-                <div class="ai-chat__product-stock">
-                  {{ Number(product.stock) > 0 ? "Còn hàng" : "Hết hàng" }}
-                </div>
+      <div ref="bodyRef" class="ai-chat__body" role="log" aria-live="polite" aria-relevant="additions" :aria-busy="loading">
+        <div v-for="(message, index) in messages" :key="index" class="ai-chat__msg" :class="message.role">
+          <div class="ai-chat__bubble" :role="message.retry ? 'alert' : undefined">{{ message.text }}</div>
+          <button v-if="message.retry" class="text-button" :disabled="loading" @click="sendMessage(message.retry)">Thử gửi lại câu hỏi</button>
+          <div v-if="message.products.length" class="ai-chat__products">
+            <router-link v-for="product in message.products" :key="product._id" class="ai-chat__product" :to="'/products/' + product._id">
+              <ResponsiveImage :src="product.thumbnail" :alt="product.name" class="ai-chat__product-thumb" />
+              <div class="ai-chat__product-info"><div class="ai-chat__product-name">{{ product.name }}</div>
+                <div>{{ productPrice(product) === null ? 'Chưa có giá' : formatMoney(productPrice(product)) }}</div>
+                <div class="ai-chat__product-stock">{{ catalogStock(product) === null ? 'Chưa xác định tồn kho' : catalogStock(product) > 0 ? 'Còn hàng' : 'Hết hàng' }}</div>
               </div>
-            </div>
+            </router-link>
           </div>
         </div>
-
-        <div v-if="loading" class="ai-chat__msg assistant">
-          <div class="ai-chat__bubble">Đang trả lời...</div>
-        </div>
+        <div v-if="loading" class="ai-chat__bubble" role="status">Đang trả lời...</div>
       </div>
-
       <div class="ai-chat__footer">
-        <textarea
-          v-model="input"
-          class="ai-chat__input"
-          rows="2"
-          placeholder="Ví dụ: giá thịt bò bao nhiêu?"
-          @input="handleInput"
-          @focus="handleFocus"
-          @keydown="handleEnter"
-        ></textarea>
-
-        <button class="ai-chat__send" :disabled="loading" @click="sendMessage">
-          Gửi
-        </button>
+        <textarea ref="composer" v-model="input" class="ai-chat__input" rows="2" maxlength="1000" placeholder="Tìm chế phẩm sinh học hoặc hỏi giá sản phẩm..." aria-label="Tin nhắn hỗ trợ" aria-describedby="support-limit support-ai-note" @keydown="handleEnter"></textarea>
+        <small id="support-limit">{{ input.length }}/1000 ký tự · Shift + Enter để xuống dòng</small>
+        <button class="btn btn-primary btn-block ai-chat__send" :disabled="!canSend" :aria-busy="loading" @click="sendMessage()">{{ loading ? 'Đang gửi...' : 'Gửi' }}</button>
+        <p id="support-ai-note" class="ai-chat__note">Trợ lý AI hỗ trợ tra cứu sản phẩm. Kết quả chỉ để tham khảo.</p>
       </div>
-    </div>
+    </section>
+    </Transition>
   </div>
 </template>
-
-<style>
-.ai-chat {
-  position: fixed;
-  top: 580px;
-  right: 5px;
-  z-index: 4000;
-}
-
-.ai-chat__toggle {
-  width: 58px;
-  height: 58px;
-  border-radius: 50%;
-  border: 0;
-  background: #78b144;
-  color: #fff;
-  font-size: 22px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.18);
-}
-
-.ai-chat__panel {
-  position: absolute;
-  right: 70px;
-  bottom: 50px;
-  width: 360px;
-  height: 520px;
-  background: #fff;
-  border-radius: 14px;
-  overflow: hidden;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.18);
-  display: flex;
-  flex-direction: column;
-}
-
-.ai-chat__header {
-  background: #78b144;
-  color: #fff;
-  padding: 12px 14px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.ai-chat__sub {
-  font-size: 12px;
-  opacity: 0.9;
-}
-
-.ai-chat__close {
-  border: 0;
-  background: transparent;
-  color: #fff;
-  font-size: 24px;
-}
-
-.ai-chat__body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px;
-  background: #f7fafc;
-}
-
-.ai-chat__msg {
-  margin-bottom: 12px;
-}
-
-.ai-chat__msg.user {
-  text-align: right;
-}
-
-.ai-chat__bubble {
-  display: inline-block;
-  max-width: 85%;
-  padding: 10px 12px;
-  border-radius: 12px;
-  font-size: 14px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-
-.ai-chat__msg.user .ai-chat__bubble {
-  background: #78b144;
-  color: #fff;
-}
-
-.ai-chat__msg.assistant .ai-chat__bubble {
-  background: #fff;
-  color: #334155;
-  border: 1px solid #e2e8f0;
-}
-
-.ai-chat__products {
-  margin-top: 8px;
-  display: grid;
-  gap: 8px;
-}
-
-.ai-chat__product {
-  display: flex;
-  gap: 10px;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 8px;
-  cursor: pointer;
-}
-
-.ai-chat__product-thumb {
-  width: 52px;
-  height: 52px;
-  object-fit: cover;
-  border-radius: 8px;
-}
-
-.ai-chat__product-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.ai-chat__product-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1e293b;
-}
-
-.ai-chat__product-price {
-  font-size: 13px;
-  color: #dc2626;
-}
-
-.ai-chat__product-stock {
-  font-size: 12px;
-  color: #64748b;
-}
-
-.ai-chat__footer {
-  border-top: 1px solid #e2e8f0;
-  padding: 10px;
-  background: #fff;
-}
-
-.ai-chat__input {
-  width: 100%;
-  resize: none;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  padding: 10px;
-  outline: none;
-  font-size: 14px;
-}
-
-.ai-chat__send {
-  width: 100%;
-  margin-top: 8px;
-  border: 0;
-  background: #78b144;
-  color: #fff;
-  border-radius: 10px;
-  padding: 10px 12px;
-  font-weight: 600;
-}
-
-.ai-chat__send:disabled {
-  opacity: 0.6;
-}
-</style>

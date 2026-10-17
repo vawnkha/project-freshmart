@@ -79,20 +79,22 @@ async function handleClick(item) {
 }
 
 async function removeNotification(item) {
-  await notificationStore.removeOne(item._id || item.id);
+  if (!window.confirm("Bạn có chắc muốn xóa thông báo này?\n\nDữ liệu sau khi xóa sẽ không thể khôi phục.")) return;
+  try { await notificationStore.removeOne(item._id || item.id); }
+  catch (error) { alert(error?.response?.data?.message || "Không thể xóa thông báo"); }
 }
 
 async function removeSelected() {
   if (!selectedIds.value.length) return;
-  await notificationStore.removeSelected();
+  if (!window.confirm("Bạn có chắc muốn xóa các thông báo đã chọn?\n\nDữ liệu sau khi xóa sẽ không thể khôi phục.")) return;
+  try { await notificationStore.removeSelected(); }
+  catch (error) { alert(error?.response?.data?.message || "Không thể xóa thông báo"); }
 }
 
 async function removeAllFiltered() {
-  await notificationStore.removeAllFiltered();
-}
-
-async function markAllAsRead() {
-  await notificationStore.markAllAsRead();
+  if (!window.confirm("Bạn có chắc muốn xóa tất cả thông báo theo bộ lọc?\n\nDữ liệu sau khi xóa sẽ không thể khôi phục.")) return;
+  try { await notificationStore.removeAllFiltered(); }
+  catch (error) { alert(error?.response?.data?.message || "Không thể xóa thông báo"); }
 }
 
 watch(
@@ -168,9 +170,6 @@ onMounted(async () => {
           </label>
 
           <div class="notification-actions__right">
-            <!-- <button class="admin-btn admin-btn--warning" @click="markAllAsRead">
-              Đánh dấu đã đọc
-            </button> -->
 
             <button
               class="admin-btn admin-btn--danger"

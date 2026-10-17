@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { useForm } from "vee-validate";
+import { useSchemaForm } from "@/composables/useSchemaForm";
 import { toTypedSchema } from "@vee-validate/zod";
 import AdminPagination from "@/components/common/AdminPagination.vue";
 import {
@@ -13,6 +13,7 @@ import {
   z,
 } from "@/validators/common.validator";
 import { mapBackendValidationErrors } from "@/utils/validation-error.util";
+import { normalizeId } from "@/utils/id.util";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const IMAGE_MAX_SIZE = 10 * 1024 * 1024;
@@ -62,6 +63,7 @@ const currentId = ref("");
 const imageInputRef = ref(null);
 const imageFile = ref(null);
 const imagePreview = ref("");
+const imageRemoved = ref(false);
 
 const form = reactive({
   code: "",
@@ -112,8 +114,9 @@ const {
   setErrors,
   setValues,
   validate: validateVee,
-} = useForm({
+} = useSchemaForm({
   validationSchema,
+  values: () => ({ ...form, image: imageFile.value }),
 });
 
 const hasStatus = computed(() =>
@@ -160,7 +163,7 @@ const inactiveCount = computed(
 );
 
 function getId(item) {
-  return item?._id || item?.id || "";
+  return normalizeId(item);
 }
 
 function normalizeList(res) {
@@ -168,6 +171,7 @@ function normalizeList(res) {
 }
 
 function resetForm() {
+  imageRemoved.value = false;
   Object.assign(form, {
     code: "",
     name: "",
@@ -184,6 +188,7 @@ function resetForm() {
 }
 
 function fillForm(item) {
+  imageRemoved.value = false;
   Object.assign(form, {
     code: item.code || "",
     name: item.name || "",
@@ -209,6 +214,11 @@ function clearImage() {
   imageFile.value = null;
   imagePreview.value = "";
   if (imageInputRef.value) imageInputRef.value.value = "";
+}
+
+function removeImage() {
+  clearImage();
+  imageRemoved.value = modalMode.value === "edit";
 }
 
 function validateImage(file) {
@@ -238,6 +248,7 @@ function onImageChange(event) {
 
   revokePreview();
   imageFile.value = file;
+  imageRemoved.value = false;
   imagePreview.value = URL.createObjectURL(file);
   setErrors({ image: "" });
 }
@@ -249,6 +260,7 @@ function buildPayload() {
     data.append("slug", form.slug.trim());
     data.append("description", form.description.trim());
     if (imageFile.value) data.append("image", imageFile.value);
+    if (imageRemoved.value) data.append("removeImage", "true");
     return data;
   }
 
@@ -264,7 +276,7 @@ function buildPayload() {
   };
 
   Object.keys(payload).forEach((key) => {
-    if (payload[key] === "") delete payload[key];
+    if (payload[key] === "" && !["code", "description", "email", "phone", "address", "note"].includes(key)) delete payload[key];
   });
 
   return payload;
@@ -301,6 +313,7 @@ function openCreateModal() {
 }
 
 function openEditModal(item) {
+  resetValidation();
   modalMode.value = "edit";
   currentId.value = getId(item);
   clearImage();
@@ -339,9 +352,7 @@ async function submitForm() {
 }
 
 async function removeItem(item) {
-  if (hasStatus.value && item.status === "inactive") return;
-
-  if (!window.confirm(`Bạn có chắc muốn xóa ${props.entityLabel} này?`)) {
+  if (!window.confirm(`Bạn có chắc muốn xóa ${props.entityLabel} này?\n\nDữ liệu sau khi xóa sẽ không thể khôi phục.`)) {
     return;
   }
 
@@ -350,7 +361,7 @@ async function removeItem(item) {
     await fetchItems();
     alert(`Đã xóa ${props.entityLabel}`);
   } catch (error) {
-    console.error(error);
+    if (!error?.response || error.response.status >= 500) console.error(error);
     alert(error?.response?.data?.message || `Không thể xóa ${props.entityLabel}`);
   }
 }
@@ -503,14 +514,12 @@ onMounted(fetchItems);
                       Sửa
                     </button>
                     <button
-                      v-if="!hasStatus || item.status !== 'inactive'"
                       type="button"
                       class="admin-btn admin-btn--danger"
                       @click.stop="removeItem(item)"
                     >
                       Xóa
                     </button>
-                    <span v-else class="admin-badge admin-badge--danger">Đã xóa</span>
                   </div>
                 </td>
               </tr>
@@ -631,12 +640,11 @@ onMounted(fetchItems);
                 <div v-if="imagePreview" class="catalog-image-preview">
                   <img :src="imagePreview" alt="preview" />
                   <button
-                    v-if="imageFile"
                     type="button"
                     class="admin-btn admin-btn--danger"
-                    @click="clearImage"
+                    @click="removeImage"
                   >
-                    Xóa ảnh đã chọn
+                    Xóa ảnh
                   </button>
                 </div>
               </div>

@@ -95,11 +95,6 @@ const menus = [
     names: ["admin-products", "admin-product-create", "admin-product-edit"],
     permission: "product:manage",
     children: [
-      // {
-      //   label: "Thêm sản phẩm",
-      //   to: { name: "admin-product-create" },
-      //   names: ["admin-product-create"],
-      // },
       {
         label: "Danh sách sản phẩm",
         to: { name: "admin-products" },
@@ -384,7 +379,7 @@ watch(
 
     <div class="admin-sidebar__logout">
       <a href="#" @click.prevent="handleLogout">
-        <i class="fa fa-sign-out"></i> Đăng xuất
+        <i class="fa-solid fa-arrow-right-from-bracket"></i> Đăng xuất
       </a>
     </div>
   </aside>

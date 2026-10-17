@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { useForm } from "vee-validate";
+import { useSchemaForm } from "@/composables/useSchemaForm";
 import { toTypedSchema } from "@vee-validate/zod";
 import AdminPagination from "@/components/common/AdminPagination.vue";
 import shippingMethodService from "@/services/shipping-method.service";
@@ -12,6 +12,7 @@ import {
   z,
 } from "@/validators/common.validator";
 import { mapBackendValidationErrors } from "@/utils/validation-error.util";
+import { normalizeId } from "@/utils/id.util";
 
 const methods = ref([]);
 const loading = ref(false);
@@ -50,8 +51,9 @@ const {
   setErrors,
   setValues,
   validate: validateVee,
-} = useForm({
+} = useSchemaForm({
   validationSchema: shippingSchema,
+  values: () => ({ ...form }),
 });
 
 const filteredMethods = computed(() => {
@@ -86,7 +88,7 @@ function normalizeList(res) {
 }
 
 function getId(item) {
-  return item?._id || item?.id || "";
+  return normalizeId(item);
 }
 
 function formatCurrency(value) {
@@ -139,7 +141,7 @@ function buildPayload() {
   };
 
   Object.keys(payload).forEach((key) => {
-    if (payload[key] === "") delete payload[key];
+    if (payload[key] === "" && !["code", "description"].includes(key)) delete payload[key];
   });
 
   return payload;
@@ -172,6 +174,7 @@ function openCreateModal() {
 }
 
 function openEditModal(item) {
+  resetValidation();
   modalMode.value = "edit";
   currentId.value = getId(item);
   fillForm(item);
@@ -210,9 +213,7 @@ async function submitForm() {
 }
 
 async function removeMethod(item) {
-  if (item.status === "inactive") return;
-
-  if (!window.confirm("Bạn có chắc muốn xóa phương thức vận chuyển này?")) {
+  if (!window.confirm("Bạn có chắc muốn xóa phương thức vận chuyển này?\n\nDữ liệu sau khi xóa sẽ không thể khôi phục.")) {
     return;
   }
 
@@ -336,14 +337,12 @@ onMounted(fetchMethods);
                       Sửa
                     </button>
                     <button
-                      v-if="item.status !== 'inactive'"
                       type="button"
                       class="admin-btn admin-btn--danger"
                       @click.stop="removeMethod(item)"
                     >
                       Xóa
                     </button>
-                    <span v-else class="admin-badge admin-badge--danger">Đã xóa</span>
                   </div>
                 </td>
               </tr>

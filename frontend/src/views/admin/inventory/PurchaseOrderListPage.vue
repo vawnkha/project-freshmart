@@ -1,4 +1,5 @@
 <script setup>
+import { normalizeId } from "@/utils/id.util";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import purchaseOrderService from "@/services/purchase-order.service";
@@ -61,9 +62,6 @@ const draftCount = computed(
 const importedCount = computed(
   () => filteredOrders.value.filter((item) => item.status === "imported").length,
 );
-const cancelledCount = computed(
-  () => filteredOrders.value.filter((item) => item.status === "cancelled").length,
-);
 
 function normalizeList(res) {
   return Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
@@ -71,13 +69,6 @@ function normalizeList(res) {
 
 function getId(item) {
   return item?._id || item?.id || "";
-}
-
-function normalizeId(value) {
-  if (!value) return "";
-  if (typeof value === "string") return value;
-  if (value.$oid) return value.$oid;
-  return String(value);
 }
 
 function getSupplierName(id) {
@@ -203,9 +194,6 @@ onMounted(fetchData);
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
           <div class="admin-panel__header-title">Danh sách phiếu nhập</div>
-          <!-- <div class="admin-panel__header-subtitle">
-            Dữ liệu được tải toàn bộ từ backend và lọc/phân trang ở frontend.
-          </div> -->
         </div>
         <div class="purchase-order-actions">
           <button class="admin-btn admin-btn--secondary" @click="fetchData">

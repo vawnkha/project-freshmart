@@ -17,7 +17,6 @@ export function hasPermission(authState = {}, permission) {
   const permissions = normalizePermissions(authState.permissions);
 
   return (
-    authState.role === "admin" ||
     permissions.includes("*") ||
     permissions.includes(permission)
   );

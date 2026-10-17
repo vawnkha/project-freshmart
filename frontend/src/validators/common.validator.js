@@ -5,10 +5,12 @@ const IMAGE_MAX_SIZE = 10 * 1024 * 1024;
 
 function numberFromForm(value) {
   if (value === "" || value === null || value === undefined) return undefined;
-  return Number(value);
+  if (typeof value === "number") return value;
+  if (typeof value === "string") return value.trim() ? Number(value) : undefined;
+  return value;
 }
 
-export const requiredString = (message = "Truong nay la bat buoc") =>
+export const requiredString = (message = "Trường này là bắt buộc") =>
   z.preprocess(
     (value) => (value === undefined || value === null ? "" : value),
     z.string().trim().min(1, message),
@@ -21,14 +23,14 @@ export const optionalString = z
 
 export const emailSchema = z.preprocess(
   (value) => (value === undefined || value === null ? "" : value),
-  z.string().trim().email("Email khong hop le"),
+  z.string().trim().email("Email không hợp lệ"),
 );
 
 export const optionalEmailSchema = z
   .union([z.literal(""), emailSchema])
   .optional();
 
-export const passwordSchema = z.string().min(1, "Mat khau la bat buoc");
+export const passwordSchema = z.string().min(1, "Mật khẩu là bắt buộc");
 
 export const slugSchema = z.preprocess(
   (value) => (value === undefined || value === null ? "" : value),
@@ -89,12 +91,18 @@ export const statusSchema = z.enum(["active", "inactive"], {
 });
 
 export const imageFileSchema = z
-  .any()
+  .custom(
+    (file) =>
+      file === null ||
+      file === undefined ||
+      (typeof File !== "undefined" && file instanceof File),
+    { message: "Tệp ảnh không hợp lệ" },
+  )
   .refine((file) => !file || IMAGE_TYPES.includes(file.type), {
-    message: "Chi chap nhan anh jpeg, png, webp hoac gif",
+    message: "Chỉ chấp nhận ảnh JPEG, PNG, WebP hoặc GIF",
   })
   .refine((file) => !file || file.size <= IMAGE_MAX_SIZE, {
-    message: "Moi file anh toi da 10MB",
+    message: "Mỗi ảnh tối đa 10 MB",
   });
 
 export { z };

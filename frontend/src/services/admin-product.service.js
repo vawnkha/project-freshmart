@@ -5,6 +5,11 @@ class AdminProductService {
     this.api = api(baseUrl);
   }
 
+  async getAll(params = {}) {
+    const res = await this.api.get("/", { params });
+    return res.data;
+  }
+
   async createFromInventory(inventoryItemId, payload) {
     const res = await this.api.post(
       `/from-inventory/${inventoryItemId}`,

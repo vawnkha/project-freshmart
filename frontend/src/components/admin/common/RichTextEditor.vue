@@ -93,8 +93,8 @@ function triggerImageInput() {
 
 function validateImage(file) {
   if (!file) return "";
-  const ok = ["image/jpeg", "image/png", "image/webp"].includes(file.type);
-  if (!ok) return "Ảnh nội dung chỉ hỗ trợ JPG, PNG hoặc WEBP";
+  const ok = ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type);
+  if (!ok) return "Ảnh nội dung chỉ hỗ trợ JPG, PNG, WEBP hoặc GIF";
   if (file.size > 5 * 1024 * 1024) return "Ảnh nội dung tối đa 5MB";
   return "";
 }
@@ -187,7 +187,7 @@ onMounted(() => syncFromModel(props.modelValue));
       ref="imageInputRef"
       class="rich-editor__file"
       type="file"
-      accept="image/jpeg,image/png,image/webp"
+      accept="image/jpeg,image/png,image/webp,image/gif"
       @change="handleImageChange"
     />
   </div>

@@ -1,9 +1,11 @@
 <script setup>
+import { normalizeId } from "@/utils/id.util";
 import { computed, nextTick, onMounted, reactive, ref, watch } from "vue";
-import { useForm } from "vee-validate";
+import { useSchemaForm } from "@/composables/useSchemaForm";
 import { toTypedSchema } from "@vee-validate/zod";
 import categoryService from "@/services/category.service";
 import productService from "@/services/product.service";
+import adminProductService from "@/services/admin-product.service";
 import AdminPagination from "@/components/common/AdminPagination.vue";
 import {
   imageFileSchema,
@@ -41,6 +43,7 @@ const editForm = reactive({
   stock: "",
   unit: "",
   inventoryItemId: "",
+  status: "draft",
   thumbnail: null,
   images: [],
 });
@@ -54,10 +57,13 @@ const productEditSchema = toTypedSchema(
     stock: optionalNonNegativeNumberSchema,
     unit: optionalString,
     inventoryItemId: optionalObjectIdSchema,
+    status: z.enum(["draft", "active", "inactive", "in_stock", "out_stock", "out_of_stock"]),
     thumbnail: imageFileSchema.optional(),
     images: z.array(imageFileSchema).max(4, "Anh chi tiet toi da 4 file"),
   }),
 );
+
+const isEditingInventoryProduct = computed(() => Boolean(editForm.inventoryItemId));
 
 const {
   errors: editErrors,
@@ -65,8 +71,13 @@ const {
   setErrors: setEditErrors,
   setValues: setEditValues,
   validate: validateEditVee,
-} = useForm({
+} = useSchemaForm({
   validationSchema: productEditSchema,
+  values: () => ({
+    ...editForm,
+    stock: isEditingInventoryProduct.value ? "" : editForm.stock,
+    images: [...editForm.images],
+  }),
 });
 
 const filteredProducts = computed(() => {
@@ -99,12 +110,11 @@ const inStockProducts = computed(
 const outOfStockProducts = computed(
   () => products.value.filter((item) => Number(item.stock) <= 0).length,
 );
-const isEditingInventoryProduct = computed(() => Boolean(editForm.inventoryItemId));
 
 async function fetchData() {
   try {
     const [productRes, categoryRes] = await Promise.all([
-      productService.getAll(),
+      adminProductService.getAll(),
       categoryService.getAll(),
     ]);
 
@@ -116,13 +126,6 @@ async function fetchData() {
   }
 }
 
-function normalizeId(value) {
-  if (!value) return "";
-  if (typeof value === "string") return value;
-  if (value.$oid) return value.$oid;
-  return String(value);
-}
-
 function hasInventoryLink(item) {
   return Boolean(normalizeId(item?.inventoryItemId));
 }
@@ -131,12 +134,13 @@ function openEditModal(item) {
   resetEditValidation();
   editForm._id = item._id || item.id;
   editForm.name = item.name || "";
-  editForm.category_id = item.category_id || "";
+  editForm.category_id = normalizeId(item.category_id || item.category);
   editForm.description = item.description || "";
   editForm.price = item.price ?? "";
   editForm.stock = item.stock ?? "";
   editForm.unit = item.unit || "";
   editForm.inventoryItemId = normalizeId(item.inventoryItemId);
+  editForm.status = item.status || "active";
   editForm.thumbnail = null;
   editForm.images = [];
 
@@ -212,6 +216,7 @@ async function validateEditForm() {
     stock: isEditingInventoryProduct.value ? "" : editForm.stock,
     unit: editForm.unit,
     inventoryItemId: editForm.inventoryItemId,
+    status: editForm.status,
     thumbnail: editForm.thumbnail,
     images: [...editForm.images],
   });
@@ -219,9 +224,11 @@ async function validateEditForm() {
   return result.valid;
 }
 
-async function submitEdit() {
+async function submitEdit(nextStatus = editForm.status) {
+  if (saving.value) return;
+  saving.value = true;
   const valid = await validateEditForm();
-  if (!valid) return;
+  if (!valid) { saving.value = false; return; }
 
   saving.value = true;
   try {
@@ -234,6 +241,7 @@ async function submitEdit() {
       data.append("stock", String(editForm.stock));
     }
     data.append("unit", editForm.unit);
+    data.append("status", nextStatus);
 
     if (editForm.thumbnail) {
       data.append("thumbnail", editForm.thumbnail);
@@ -259,7 +267,7 @@ async function submitEdit() {
 }
 
 async function removeProduct(id) {
-  if (!window.confirm("Bạn có chắc muốn xóa sản phẩm này?")) return;
+  if (!window.confirm("Bạn có chắc muốn xóa sản phẩm này?\n\nDữ liệu sau khi xóa sẽ không thể khôi phục.")) return;
 
   try {
     await productService.delete(id);
@@ -271,7 +279,7 @@ async function removeProduct(id) {
     await fetchData();
     alert("Xóa sản phẩm thành công");
   } catch (error) {
-    console.error("Lỗi xóa sản phẩm:", error);
+    if (!error?.response || error.response.status >= 500) console.error("Lỗi xóa sản phẩm:", error);
     alert(error?.response?.data?.message || "Xóa sản phẩm thất bại");
   }
 }
@@ -437,7 +445,7 @@ onMounted(fetchData);
                         : 'admin-badge--danger'
                     "
                   >
-                    {{ resolveStatus(item.stock) }}
+                    {{ item.status === "draft" ? "Bản nháp" : item.status === "inactive" ? "Đã ẩn" : resolveStatus(item.stock) }}
                   </span>
                 </td>
 
@@ -729,9 +737,17 @@ onMounted(fetchData);
             type="button"
             class="admin-btn admin-btn--primary"
             :disabled="saving"
-            @click="submitEdit"
+            @click="submitEdit()"
           >
-            {{ saving ? "Đang lưu..." : "Chỉnh sửa" }}
+            {{ saving ? "Đang lưu..." : editForm.status === "draft" ? "Lưu bản nháp" : "Cập nhật" }}
+          </button>
+          <button v-if="['draft', 'inactive'].includes(editForm.status)" type="button"
+            class="admin-btn admin-btn--success" :disabled="saving" @click="submitEdit('active')">
+            Xuất bản
+          </button>
+          <button v-else type="button" class="admin-btn admin-btn--secondary"
+            :disabled="saving" @click="submitEdit('inactive')">
+            Ẩn sản phẩm
           </button>
         </div>
       </div>

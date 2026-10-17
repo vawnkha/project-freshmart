@@ -1,4 +1,5 @@
 <script setup>
+import { normalizeId } from "@/utils/id.util";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import inventoryTransactionService from "@/services/inventory-transaction.service";
@@ -76,13 +77,6 @@ function normalizeList(res) {
 
 function getId(item) {
   return item?._id || item?.id || "";
-}
-
-function normalizeId(value) {
-  if (!value) return "";
-  if (typeof value === "string") return value;
-  if (value.$oid) return value.$oid;
-  return String(value);
 }
 
 function formatDate(value) {
@@ -213,9 +207,6 @@ onMounted(() => {
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
           <div class="admin-panel__header-title">Lịch sử giao dịch</div>
-          <!-- <div class="admin-panel__header-subtitle">
-            Transaction type gồm import/export/cancel, không dùng variant.
-          </div> -->
         </div>
         <button class="admin-btn admin-btn--secondary" @click="fetchTransactions">
           Làm mới
@@ -276,7 +267,7 @@ onMounted(() => {
                 <th>Số lượng</th>
                 <th>Tồn trước/sau</th>
                 <th>Batch</th>
-                <th>Reference</th>
+                
                 <th>Ghi chú</th>
                 <th>Ngày tạo</th>
               </tr>
@@ -299,7 +290,7 @@ onMounted(() => {
                   <strong>{{ item.batchNumber || "---" }}</strong>
                   <div class="inventory-sub">{{ normalizeId(item.batchId) || "---" }}</div>
                 </td>
-                <td>{{ formatReference(item.reference) }}</td>
+                
                 <td>{{ item.note || "---" }}</td>
                 <td>{{ formatDate(item.createdAt) }}</td>
               </tr>

@@ -1,66 +1,34 @@
 <script setup>
 import { computed } from "vue";
-
+import ResponsiveImage from "@/components/user/common/ResponsiveImage.vue";
 const props = defineProps({
-  post: {
-    type: Object,
-    required: true,
-  },
+  post: { type: Object, required: true },
+  // Listing reuses Home styles; editorial/compact retain the reading-page cards.
+  variant: { type: String, default: "home" },
 });
-
-const postLink = computed(() => `/blog/${props.post.slug}`);
+const link = computed(() => `/blog/${props.post.slug || props.post.id}`);
+const listing = computed(() => props.variant === "listing");
+const editorial = computed(() => props.variant !== "home" && !listing.value);
 </script>
-
 <template>
-  <div class="post-item">
-    <div class="row">
-      <div class="col-lg-4 col-md-4 col-sm-4 col-xs-12 post-left">
-        <div class="post-image">
-          <router-link :to="postLink">
-            <img
-              v-if="post.image"
-              class="img-responsive"
-              :src="post.image"
-              :alt="post.title"
-            />
-            <div v-else class="blog-image-placeholder">Không có ảnh</div>
-          </router-link>
-        </div>
+  <article :class="editorial ? ['knowledge-card', { 'knowledge-card-compact': variant === 'compact', 'home-knowledge-card': variant === 'approved-home' }] : 'news-card'">
+    <router-link :to="link" :class="editorial ? 'knowledge-card-image' : 'news-image'" :tabindex="editorial ? -1 : undefined" :aria-hidden="editorial ? true : undefined"
+      ><ResponsiveImage :src="post.image" :alt="post.title"
+    /></router-link>
+    <div :class="editorial ? 'knowledge-card-content' : 'news-card-content'">
+      <div :class="editorial ? 'knowledge-meta' : 'news-meta'">
+        <span v-if="!listing && post.category">{{ post.category }}</span
+        ><time v-if="post.date" :datetime="post.datetime">{{ post.date }}</time>
       </div>
-
-      <div class="col-lg-8 col-md-8 col-sm-8 col-xs-12 post-right">
-        <router-link :to="postLink" class="post-title">
-          {{ post.title }}
-        </router-link>
-
-        <div class="post-info">
-          <span v-if="post.category" class="item">
-            <i class="zmdi zmdi-folder"></i>{{ post.category }}
-          </span>
-          <span v-if="post.date" class="date item">
-            <i class="zmdi zmdi-calendar-note"></i>{{ post.date }}
-          </span>
-        </div>
-
-        <div class="post-description">
-          {{ post.excerpt || post.summary || "Bài viết chưa có mô tả ngắn." }}
-          <span class="post-readmore">
-            <router-link :to="postLink">Xem thêm</router-link>
-          </span>
-        </div>
-      </div>
+      <h3>
+        <router-link :to="link">{{ post.title }}</router-link>
+      </h3>
+      <p v-if="!listing && (post.excerpt || post.summary)">
+        {{ post.excerpt || post.summary }}
+      </p>
+      <router-link :to="link" :class="editorial ? 'text-link knowledge-card-more' : 'text-link'" :aria-label="editorial || listing ? `Đọc bài viết: ${post.title}` : undefined"
+        >{{ editorial ? 'Đọc tiếp' : 'Đọc bài viết' }} <i class="fa-solid fa-arrow-right" aria-hidden="true"></i
+      ></router-link>
     </div>
-  </div>
+  </article>
 </template>
-
-<style scoped>
-.blog-image-placeholder {
-  align-items: center;
-  background: #f5f5f5;
-  color: #777;
-  display: flex;
-  min-height: 150px;
-  justify-content: center;
-  text-align: center;
-}
-</style>

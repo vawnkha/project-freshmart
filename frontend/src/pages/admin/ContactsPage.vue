@@ -8,6 +8,7 @@ const authStore = useAuthStore();
 const contacts = ref([]);
 const loading = ref(false);
 const sending = ref(false);
+const deleting = ref(false);
 const selectedContact = ref(null);
 const showReplyBox = ref(false);
 
@@ -22,6 +23,15 @@ const reply = reactive({
 const canReplyContacts = computed(() =>
   hasPermission(authStore, "contact:reply"),
 );
+const canDeleteContacts = computed(() => hasPermission(authStore, "contact:delete"));
+async function deleteSelectedContact() {
+  if (!canDeleteContacts.value || deleting.value || !selectedContact.value) return;
+  if (!window.confirm("Xóa liên hệ này? Liên hệ có thông báo tham chiếu sẽ được hệ thống bảo vệ.")) return;
+  deleting.value = true;
+  try { await contactService.delete(selectedContact.value._id); await fetchContacts(); }
+  catch (error) { alert(error?.response?.data?.message || "Không thể xóa liên hệ"); }
+  finally { deleting.value = false; }
+}
 
 function formatDateTime(value) {
   if (!value) return "---";
@@ -331,6 +341,7 @@ onMounted(fetchContacts);
                   <i class="fa-solid fa-reply me-1"></i>
                   {{ selectedContact.admin_reply ? "Sửa phản hồi" : "Trả lời" }}
                 </button>
+                <button v-if="canDeleteContacts" class="admin-btn admin-btn--danger" :disabled="deleting" @click="deleteSelectedContact">Xóa liên hệ</button>
               </div>
 
               <transition name="contact-reply">

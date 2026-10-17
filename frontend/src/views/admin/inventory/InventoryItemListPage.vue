@@ -1,11 +1,11 @@
 <script setup>
+import { normalizeId } from "@/utils/id.util";
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import { useForm } from "vee-validate";
+import { useSchemaForm } from "@/composables/useSchemaForm";
 import { toTypedSchema } from "@vee-validate/zod";
 import { useRouter } from "vue-router";
 import inventoryItemService from "@/services/inventory-item.service";
 import adminProductService from "@/services/admin-product.service";
-import productService from "@/services/product.service";
 import uploadService from "@/services/upload.service";
 import categoryService from "@/services/category.service";
 import brandService from "@/services/brand.service";
@@ -13,8 +13,8 @@ import manufacturerService from "@/services/manufacturer.service";
 import AdminPagination from "@/components/common/AdminPagination.vue";
 import { useAuthStore } from "@/stores/user/auth";
 import { hasPermission } from "@/utils/permission.util";
+import { loadWhenAllowed } from "@/utils/authorized-load.util";
 import {
-  nonNegativeNumberSchema,
   optionalNonNegativeNumberSchema,
   optionalObjectIdSchema,
   optionalSlugSchema,
@@ -88,7 +88,7 @@ const inventoryItemSchema = toTypedSchema(
     packageSize: optionalString,
     unit: requiredString("Don vi tinh la bat buoc"),
     storageInstruction: optionalString,
-    expiryMonths: nonNegativeNumberSchema.optional(),
+    expiryMonths: optionalNonNegativeNumberSchema,
     note: optionalString,
     status: z.enum(["active", "inactive", "discontinued"], {
       message: "Trang thai hang kho khong hop le",
@@ -102,8 +102,9 @@ const {
   setErrors: setItemErrors,
   setValues: setItemValues,
   validate: validateItemVee,
-} = useForm({
+} = useSchemaForm({
   validationSchema: inventoryItemSchema,
+  values: () => ({ ...itemForm }),
 });
 
 const productForm = reactive({
@@ -134,8 +135,9 @@ const {
   setErrors: setProductErrors,
   setValues: setProductValues,
   validate: validateProductVee,
-} = useForm({
+} = useSchemaForm({
   validationSchema: productFromInventorySchema,
+  values: () => ({ ...productForm }),
 });
 
 const totalItems = computed(() => inventoryItems.value.length);
@@ -202,18 +204,11 @@ const paginatedItems = computed(() => {
 });
 
 function getItemId(item) {
-  return item?._id || item?.id || "";
+  return normalizeId(item);
 }
 
 function getEntityId(item) {
-  return String(item?._id || item?.id || "");
-}
-
-function normalizeId(value) {
-  if (!value) return "";
-  if (typeof value === "string") return value;
-  if (value.$oid) return value.$oid;
-  return String(value);
+  return normalizeId(item);
 }
 
 function normalizeList(res) {
@@ -309,6 +304,16 @@ function buildItemPayload() {
 
   if (trimValue(itemForm.expiryMonths)) {
     payload.expiryMonths = Number(itemForm.expiryMonths);
+  }
+
+  if (itemModalMode.value === "edit") {
+    for (const key of ["categoryId", "brandId", "manufacturerId"]) {
+      payload[key] = normalizeId(itemForm[key]) || null;
+    }
+    for (const key of ["itemType", "barcode", "packageSize", "storageInstruction", "note"]) {
+      payload[key] = trimValue(itemForm[key]);
+    }
+    if (!trimValue(itemForm.expiryMonths)) payload.expiryMonths = null;
   }
 
   return payload;
@@ -520,7 +525,7 @@ async function fetchItems() {
 
 async function fetchProducts() {
   try {
-    const res = await productService.getAll();
+    const res = await adminProductService.getAll();
     products.value = normalizeList(res);
   } catch (error) {
     console.error("Lỗi tải danh sách sản phẩm:", error);
@@ -533,8 +538,8 @@ async function fetchCatalogOptions() {
   try {
     const [categoryRes, brandRes, manufacturerRes] = await Promise.all([
       categoryService.getAll(),
-      brandService.getAll(),
-      manufacturerService.getAll(),
+      loadWhenAllowed(authStore, ["brand:manage"], () => brandService.getAll()),
+      loadWhenAllowed(authStore, ["manufacturer:manage"], () => manufacturerService.getAll()),
     ]);
 
     categories.value = normalizeList(categoryRes);
@@ -560,6 +565,7 @@ function openCreateModal() {
 }
 
 function openEditModal(item) {
+  resetItemValidation();
   itemModalMode.value = "edit";
   currentItemId.value = getItemId(item);
   Object.assign(itemForm, {
@@ -612,9 +618,7 @@ async function submitItemForm() {
 }
 
 async function removeItem(item) {
-  if (item.status === "inactive") return;
-
-  if (!window.confirm("Bạn có chắc muốn xóa hàng kho này?")) {
+  if (!window.confirm("Bạn có chắc muốn xóa hàng kho này?\n\nDữ liệu sau khi xóa sẽ không thể khôi phục.")) {
     return;
   }
 
@@ -623,7 +627,7 @@ async function removeItem(item) {
     await fetchItems();
     alert("Đã xóa hàng kho");
   } catch (error) {
-    console.error("Lỗi xóa hàng kho:", error);
+    if (!error?.response || error.response.status >= 500) console.error("Lỗi xóa hàng kho:", error);
     alert(error?.response?.data?.message || "Không thể xóa hàng kho");
   }
 }
@@ -752,10 +756,6 @@ onMounted(loadPageData);
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
           <div class="admin-panel__header-title">Danh sách kho hàng</div>
-          <!-- <div class="admin-panel__header-subtitle">
-            Dữ liệu lấy từ /api/inventory-items, filter và phân trang được xử lý
-            ở frontend.
-          </div> -->
         </div>
 
         <div class="inventory-header-actions">
@@ -816,7 +816,7 @@ onMounted(loadPageData);
                 <th>Mã hàng</th>
                 <th>Tên hàng</th>
                 <th>Loại</th>
-                <th>Danh mục</th>
+
                 <th>Thương hiệu</th>
                 <th>Nhà sản xuất</th>
                 <th>Đơn vị</th>
@@ -842,7 +842,7 @@ onMounted(loadPageData);
                 </td>
 
                 <td>{{ item.itemType || "---" }}</td>
-                <td>{{ catalogName(categories, item.categoryId) }}</td>
+
                 <td>{{ catalogName(brands, item.brandId) }}</td>
                 <td>{{ catalogName(manufacturers, item.manufacturerId) }}</td>
                 <td>{{ item.unit || "---" }}</td>
@@ -904,7 +904,6 @@ onMounted(loadPageData);
                     </button>
 
                     <button
-                      v-if="item.status !== 'inactive'"
                       type="button"
                       class="admin-btn admin-btn--danger"
                       @click.stop="removeItem(item)"
@@ -912,7 +911,6 @@ onMounted(loadPageData);
                       <i class="fa-solid fa-trash me-1"></i>
                       Xóa
                     </button>
-                    <span v-else class="admin-badge admin-badge--danger">Đã xóa</span>
                   </div>
                 </td>
               </tr>
@@ -1022,7 +1020,7 @@ onMounted(loadPageData);
 
             <div class="admin-form__row">
               <label class="admin-form__label">Thương hiệu</label>
-              <select v-model="itemForm.brandId" class="admin-form__select">
+              <select v-model="itemForm.brandId" class="admin-form__select" :disabled="!hasPermission(authStore, 'brand:manage')">
                 <option value="">-- Chọn thương hiệu --</option>
                 <option
                   v-for="item in activeCatalogOptions(brands)"
@@ -1038,6 +1036,7 @@ onMounted(loadPageData);
               <label class="admin-form__label">Nhà sản xuất</label>
               <select
                 v-model="itemForm.manufacturerId"
+                :disabled="!hasPermission(authStore, 'manufacturer:manage')"
                 class="admin-form__select"
               >
                 <option value="">-- Chọn nhà sản xuất --</option>

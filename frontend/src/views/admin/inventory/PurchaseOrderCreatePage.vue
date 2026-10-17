@@ -1,8 +1,8 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from "vue";
-import { useForm } from "vee-validate";
+import { useSchemaForm } from "@/composables/useSchemaForm";
 import { toTypedSchema } from "@vee-validate/zod";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import purchaseOrderService from "@/services/purchase-order.service";
 import supplierService from "@/services/supplier.service";
 import inventoryItemService from "@/services/inventory-item.service";
@@ -16,8 +16,16 @@ import {
   z,
 } from "@/validators/common.validator";
 import { mapBackendValidationErrors } from "@/utils/validation-error.util";
+import { normalizeId } from "@/utils/id.util";
+import { useAuthStore } from "@/stores/user/auth";
+import { hasPermission } from "@/utils/permission.util";
+import { loadWhenAllowed } from "@/utils/authorized-load.util";
 
 const router = useRouter();
+const route = useRoute();
+const authStore = useAuthStore();
+const editingId = computed(() => route.params.id || "");
+const missingOptionPermissions = computed(() => ["supplier:manage", "inventory:manage"].filter((permission) => !hasPermission(authStore, permission)));
 const suppliers = ref([]);
 const inventoryItems = ref([]);
 const loading = ref(false);
@@ -73,8 +81,12 @@ const {
   setErrors,
   setValues,
   validate: validateVee,
-} = useForm({
+} = useSchemaForm({
   validationSchema: purchaseOrderSchema,
+  values: () => ({
+    ...form,
+    items: form.items.map((item) => ({ ...item })),
+  }),
 });
 
 const totalAmount = computed(() =>
@@ -89,11 +101,11 @@ function normalizeList(res) {
 }
 
 function getId(item) {
-  return item?._id || item?.id || "";
+  return normalizeId(item);
 }
 
 function activeItems(list) {
-  return list.filter((item) => item.status !== "inactive");
+  return list.filter((item) => !item.status || item.status === "active");
 }
 
 function getInventoryItem(id) {
@@ -180,8 +192,8 @@ async function fetchOptions() {
   loading.value = true;
   try {
     const [supplierRes, itemRes] = await Promise.all([
-      supplierService.getAll(),
-      inventoryItemService.getAll(),
+      loadWhenAllowed(authStore, ["supplier:manage"], () => supplierService.getAll()),
+      loadWhenAllowed(authStore, ["inventory:manage"], () => inventoryItemService.getAll()),
     ]);
 
     suppliers.value = normalizeList(supplierRes);
@@ -195,14 +207,16 @@ async function fetchOptions() {
 }
 
 async function submitForm() {
+  if (saving.value || missingOptionPermissions.value.length) return;
   const valid = await validateForm();
   if (!valid) return;
 
   saving.value = true;
   try {
-    const res = await purchaseOrderService.create(buildPayload());
-    const id = res?.data?._id || res?.data?.insertedId;
-    alert(res?.message || "Tạo phiếu nhập thành công");
+    const res = editingId.value ? await purchaseOrderService.update(editingId.value, buildPayload())
+      : await purchaseOrderService.create(buildPayload());
+    const id = editingId.value || res?.data?._id || res?.data?.insertedId;
+    alert(res?.message || "Đã lưu phiếu nhập nháp");
     router.push({
       name: "admin-purchase-order-detail",
       params: { id },
@@ -217,15 +231,27 @@ async function submitForm() {
 }
 
 onMounted(async () => {
-  addItemRow();
   await fetchOptions();
+  if (editingId.value) {
+    try {
+      const current = await purchaseOrderService.getById(editingId.value);
+      if (current.status !== "draft") throw new Error("Chỉ được sửa phiếu nhập nháp");
+      form.supplierId = normalizeId(current.supplierId);
+      form.purchaseCode = current.purchaseCode || "";
+      form.note = current.note || "";
+      form.items = (current.items || []).map((item) => ({ ...item, inventoryItemId: normalizeId(item.inventoryItemId),
+        manufacturingDate: item.manufacturingDate ? new Date(item.manufacturingDate).toISOString().slice(0, 10) : "",
+        expiryDate: item.expiryDate ? new Date(item.expiryDate).toISOString().slice(0, 10) : "", }));
+    } catch (error) { alert(error?.response?.data?.message || error.message); router.replace({ name: "admin-purchase-orders" }); }
+  } else addItemRow();
 });
 </script>
 
 <template>
   <div class="admin-page">
     <div class="admin-page-title admin-page-title--stack">
-      <h1>Tạo phiếu nhập kho</h1>
+      <h1>{{ editingId ? 'Sửa phiếu nhập nháp' : 'Tạo phiếu nhập kho' }}</h1>
+      <p v-if="missingOptionPermissions.length" role="alert">Cần quyền đọc nhà cung cấp và hàng kho để chọn dữ liệu phiếu nhập. Vui lòng liên hệ quản trị viên.</p>
       <p>Chọn nhà cung cấp và hàng kho bằng dropdown, không nhập ObjectId thủ công.</p>
     </div>
 

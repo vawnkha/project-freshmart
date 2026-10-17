@@ -1,0 +1,14 @@
+/* Client motion library: every keyframe name is storefront-sage-*.
+ * Recipes are activated only by selectors in .user-app.sage-storefront. */
+@keyframes storefront-sage-hero-line { from { transform: translateY(104%); } to { transform: none; } }
+@keyframes storefront-sage-fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes storefront-sage-hero-settle { from { transform: scale(1.03); } to { transform: scale(1); } }
+@keyframes storefront-sage-route-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes storefront-sage-panel-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes storefront-sage-pop-in { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes storefront-sage-bump { 0%,100% { transform: scale(1); } 35% { transform: scale(1.28); } }
+@keyframes storefront-sage-shake { 0%,100% { transform: none; } 20% { transform: translateX(-6px); } 45% { transform: translateX(5px); } 70% { transform: translateX(-3px); } }
+@keyframes storefront-sage-price-flash { from { color: var(--accent); transform: translateY(-3px); } to { color: var(--text-primary); transform: none; } }
+@keyframes storefront-sage-toast-in { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes storefront-sage-toast-out { to { opacity: 0; transform: translateY(8px); } }
+@keyframes storefront-sage-dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }

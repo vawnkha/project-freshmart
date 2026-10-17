@@ -1,195 +1,178 @@
 <script setup>
-import { reactive, ref } from "vue";
+import { getCurrentInstance, reactive, ref, watch, onBeforeUnmount } from "vue";
+import { emailSchema } from "@/validators/common.validator";
 import contactService from "@/services/contact.service";
-
-const contactForm = reactive({
-  name: "",
-  email: "",
-  subject: "",
-  content: "",
-});
-
+import PageHeading from "@/components/user/common/PageHeading.vue";
+import { userError, userFieldErrors } from "@/utils/user-error.util";
+import { useAuthStore, captureAuthRequestContext } from "@/stores/user/auth";
+import SageButton from "@/components/user/sage/SageButton.vue";
+// Contact is public and can also render independently (e.g. SSR). In the real
+// Client app, use the existing Pinia authority for owner/session fences.
+const pinia = getCurrentInstance()?.appContext.config.globalProperties.$pinia;
+const auth = pinia ? useAuthStore(pinia) : null;
+const contactForm = reactive({ name: "", email: "", subject: "", content: "" });
 const submitting = ref(false);
-
-async function handleSubmit() {
+const submitted = ref(false);
+const errors = ref({});
+const message = ref("");
+const success = ref(false);
+const uncertain = ref(false);
+let activeRequest = null;
+let disposed = false;
+function resetSession() {
+  activeRequest = null;
+  submitting.value = false;
+  submitted.value = false;
+  success.value = false;
+  uncertain.value = false;
+  errors.value = {};
+  message.value = "";
+  for (const key in contactForm) contactForm[key] = "";
+}
+const stopActions = auth?.$onAction(({ name }) => {
+  if (["login", "logout", "$reset"].includes(name)) resetSession();
+});
+watch(() => [auth?.userId, auth?.accessToken, auth?.isLoggedIn], resetSession, { flush: "sync" });
+onBeforeUnmount(() => { disposed = true; activeRequest = null; stopActions?.(); });
+function validate() {
+  errors.value = {};
+  for (const key of Object.keys(contactForm))
+    if (!contactForm[key].trim())
+      errors.value[key] = "Vui lòng nhập thông tin này.";
   if (
-    !contactForm.name.trim() ||
-    !contactForm.email.trim() ||
-    !contactForm.subject.trim() ||
-    !contactForm.content.trim()
-  ) {
-    alert("Vui lòng nhập đầy đủ thông tin");
-    return;
-  }
-
+    contactForm.email.trim() &&
+    !emailSchema.safeParse(contactForm.email).success
+  )
+    errors.value.email = "Email không hợp lệ.";
+  return !Object.keys(errors.value).length;
+}
+async function handleSubmit() {
+  if (disposed || submitting.value) return;
+  submitted.value = true;
+  message.value = "";
+  if (!validate()) return;
+  const context = auth ? captureAuthRequestContext() : null;
+  const request = {};
+  activeRequest = request;
+  const isCurrent = () => !disposed && activeRequest === request && (!context || context.isCurrent());
+  submitting.value = true;
+  uncertain.value = false;
   try {
-    submitting.value = true;
-
-    await contactService.create({
-      name: contactForm.name,
-      email: contactForm.email,
-      subject: contactForm.subject,
-      content: contactForm.content,
-    });
-
-    alert("Gửi liên hệ thành công");
-
-    contactForm.name = "";
-    contactForm.email = "";
-    contactForm.subject = "";
-    contactForm.content = "";
+    const response = await contactService.create({ ...contactForm });
+    if (!isCurrent()) return;
+    if (!response?.data?._id) throw new Error("Chưa thể xác nhận yêu cầu đã được tiếp nhận.");
+    success.value = true;
+    message.value = "Đã tiếp nhận yêu cầu liên hệ của bạn.";
+    for (const key in contactForm) contactForm[key] = "";
+    submitted.value = false;
   } catch (error) {
-    alert(error?.response?.data?.message || "Không thể gửi liên hệ");
+    if (!isCurrent()) return;
+    success.value = false;
+    const status = error?.response?.status;
+    uncertain.value = !status || status === 408 || status >= 500;
+    errors.value = userFieldErrors(error);
+    message.value = uncertain.value
+      ? "Chưa thể xác nhận yêu cầu đã được tiếp nhận. Không tự động gửi lại; gửi một yêu cầu mới có thể tạo bản trùng."
+      : userError(error, "Không thể gửi liên hệ. Vui lòng kiểm tra thông tin.");
   } finally {
-    submitting.value = false;
+    if (isCurrent()) { submitting.value = false; activeRequest = null; }
   }
 }
 </script>
-
 <template>
-  <div id="content" class="site-content">
-    <div id="breadcrumb">
-      <div class="container">
-        <h2 class="title">Liên Hệ</h2>
-
-        <ul class="breadcrumb">
-          <li><router-link to="/">Trang Chủ</router-link></li>
-          <li><span>Liên Hệ</span></li>
-        </ul>
+  <div class="site-content sage-contact">
+    <PageHeading
+      title="Cùng trao đổi."
+      description="Chia sẻ nhu cầu sản phẩm hoặc gửi yêu cầu hỗ trợ của bạn."
+    />
+    <div class="container contact-page">
+      <div class="contact-info">
+        <span class="eyebrow">Liên hệ FreshMart</span>
+        <h2>Một câu hỏi rõ ràng là điểm bắt đầu.</h2>
+        <p>Gửi câu hỏi về sản phẩm hoặc yêu cầu hỗ trợ. Bạn có thể tìm tên, giá và tình trạng sản phẩm qua trợ lý ở góc màn hình.</p>
+        <div class="row">
+          <div class="col-md-6">
+            <div class="item">
+              <div class="icon">
+                <i class="fa-regular fa-envelope" aria-hidden="true"></i>
+              </div>
+              <div class="item-right">
+                <div class="title">Email</div>
+                <a href="mailto:nvkha@gmail.com">nvkha@gmail.com</a>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="item">
+              <div class="icon">
+                <i class="fa-solid fa-location-dot" aria-hidden="true"></i>
+              </div>
+              <div class="item-right">
+                <div class="title">Địa chỉ</div>
+                <p>Khu 2, Đ. 3/2, P. Ninh Kiều, TP. Cần Thơ</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
-
-    <div class="container">
-      <div class="contact-page">
-        <div class="contact-info">
-          <div class="row">
-            <div class="col-lg-4 col-md-4 col-sm-4 col-xs-12">
-              <div class="item d-flex">
-                <div class="item-left">
-                  <div class="icon"><i class="zmdi zmdi-email"></i></div>
-                </div>
-                <div class="item-right d-flex">
-                  <div class="title">Email:</div>
-                  <div class="content">
-                    <a href="mailto:nvkha@gmail.com">nvkha@gmail.com</a><br />
-                    <a href="mailto:nvkha@gmail.com">nvkha@gmail.com</a>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="col-lg-4 col-md-4 col-sm-4 col-xs-12">
-              <div class="item d-flex justify-content-center">
-                <div class="item-left">
-                  <div class="icon"><i class="zmdi zmdi-home"></i></div>
-                </div>
-                <div class="item-right d-flex">
-                  <div class="title">Địa Chỉ:</div>
-                  <div class="content">
-                    Khu 2, Đ. 3/2, P. Ninh Kiều, TP. Cần Thơ
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="col-lg-4 col-md-4 col-sm-4 col-xs-12">
-              <div class="item d-flex justify-content-end">
-                <div class="item-left">
-                  <div class="icon"><i class="zmdi zmdi-phone"></i></div>
-                </div>
-                <div class="item-right d-flex">
-                  <div class="title">Holine:</div>
-                  <div class="content">
-                    0123456789<br />
-                    0987654321
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- <div class="contact-map">
+      <div class="contact-form">
+        <h2>Gửi lời nhắn</h2>
+        <form @submit.prevent="handleSubmit" novalidate :aria-busy="submitting">
           <div
-            id="map"
-            style="
-              width: 100%;
-              min-height: 420px;
-              background: #f5f5f5;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            "
+            v-for="field in [
+              { key: 'name', label: 'Họ và tên', type: 'text' },
+              { key: 'email', label: 'Email', type: 'email' },
+              { key: 'subject', label: 'Chủ đề', type: 'text' },
+              { key: 'content', label: 'Nội dung' },
+            ]"
+            :key="field.key"
+            class="form-group"
           >
-            <span>Map placeholder</span>
+            <label :for="'contact-' + field.key">{{ field.label }}</label
+            ><textarea
+              v-if="field.key === 'content'"
+              :id="'contact-' + field.key"
+              v-model="contactForm[field.key]"
+              rows="5"
+              required
+              :disabled="submitting"
+              :aria-invalid="!!errors[field.key]"
+              :aria-describedby="'contact-error-' + field.key"
+              @input="submitted && validate()"
+            ></textarea
+            ><input
+              v-else
+              :id="'contact-' + field.key"
+              v-model="contactForm[field.key]"
+              :type="field.type"
+              required
+              :disabled="submitting"
+              :autocomplete="
+                field.key === 'name'
+                  ? 'name'
+                  : field.key === 'email'
+                    ? 'email'
+                    : undefined
+              "
+              :aria-invalid="!!errors[field.key]"
+              :aria-describedby="'contact-error-' + field.key"
+              @input="submitted && validate()"
+            />
+            <p :id="'contact-error-' + field.key" class="form-error form-error--field" aria-live="polite">
+              {{ errors[field.key] }}
+            </p>
           </div>
-
-          <div class="hidden-lg hidden-md hidden-sm hidden-xs contact-address">
-            Khu 2, Đ. 3/2, P. Ninh Kiều, TP. Cần Thơ
+          <div
+            v-if="message"
+            class="alert"
+            :class="success ? 'alert-success' : 'alert-danger'"
+            role="status"
+          >
+            {{ message }}
           </div>
-        </div> -->
-
-        <div class="contact-intro">
-          <p>
-            "Sức khỏe của khách hàng là ưu tiên hàng đầu của chúng tôi.
-            FreshMart luôn nỗ lực không ngừng để cải thiện chất lượng dịch vụ,
-            từ khâu sản xuất đến tận tay người tiêu dùng, đảm bảo giữ trọn vẹn
-            hương vị tự nhiên và giá trị dinh dưỡng cao nhất trong từng sản phẩm
-            cung cấp."
-          </p>
-          <img src="/img/contact-icon.png" alt="Contact Comment" />
-        </div>
-
-        <div class="contact-form form">
-          <form @submit.prevent="handleSubmit">
-            <div class="form-group row">
-              <div class="col-md-6">
-                <input
-                  v-model="contactForm.name"
-                  type="text"
-                  name="name"
-                  placeholder="HỌ TÊN"
-                />
-              </div>
-
-              <div class="col-md-6">
-                <input
-                  v-model="contactForm.email"
-                  type="email"
-                  name="email"
-                  placeholder="EMAIL"
-                />
-              </div>
-            </div>
-
-            <div class="form-group">
-              <input
-                v-model="contactForm.subject"
-                type="text"
-                name="subject"
-                placeholder="CHỦ ĐỀ"
-              />
-            </div>
-
-            <div class="form-group">
-              <textarea
-                v-model="contactForm.content"
-                rows="10"
-                name="content"
-                placeholder="NỘI DUNG"
-              ></textarea>
-            </div>
-
-            <div class="form-group text-center">
-              <input
-                type="submit"
-                class="btn btn-primary"
-                :value="submitting ? 'Đang gửi...' : 'Gửi'"
-                :disabled="submitting"
-              />
-            </div>
-          </form>
-        </div>
+          <SageButton type="submit" :loading="submitting" :disabled="submitting">{{ uncertain ? "Gửi yêu cầu mới" : "Gửi liên hệ" }}</SageButton>
+          <p class="contact-acceptance-note">Thông báo tiếp nhận xác nhận yêu cầu đã được lưu, không xác nhận email đã được gửi.</p>
+        </form>
       </div>
     </div>
   </div>

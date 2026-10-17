@@ -1,11 +1,14 @@
 <script setup>
-import { reactive, ref, onMounted } from "vue";
-import { useForm } from "vee-validate";
+import { userError, userFieldErrors, userMessage } from "@/utils/user-error.util";
+import PasswordField from "@/components/user/auth/PasswordField.vue";
+import { useAuthRequestContext } from "@/components/user/auth/useAuthRequestContext";
+import AuthPanel from "@/components/user/common/AuthPanel.vue";
+import { reactive, ref, onMounted, onBeforeUnmount } from "vue";
+import { useSchemaForm } from "@/composables/useSchemaForm";
 import { toTypedSchema } from "@vee-validate/zod";
 import { useRouter, useRoute } from "vue-router";
-import { useAuthStore } from "@/stores/user/auth";
+import { useAuthStore, captureLoginRequestContext, isAuthRequestInvalidated } from "@/stores/user/auth";
 import { emailSchema, passwordSchema, z } from "@/validators/common.validator";
-import { mapBackendValidationErrors } from "@/utils/validation-error.util";
 
 const router = useRouter();
 const route = useRoute();
@@ -23,118 +26,114 @@ const loginSchema = toTypedSchema(
   }),
 );
 
-const { errors, setErrors, setValues, validate } = useForm({
+const { errors, setErrors, setValues, validate } = useSchemaForm({
   validationSchema: loginSchema,
+  values: () => ({ ...loginForm }),
 });
 
+let disposed=false;
+onBeforeUnmount(()=>{disposed=true;loginForm.password="";});
+const requestContext=useAuthRequestContext();
 const loading = ref(false);
 const errorMessage = ref("");
 const successMessage = ref("");
 
 onMounted(() => {
   if (route.query.status === "success") {
-    successMessage.value = route.query.message || "Thao tác thành công";
+    successMessage.value = userMessage(route.query.message, { fallback: "Thao tác thành công" });
   }
 
   if (route.query.status === "error") {
-    errorMessage.value = route.query.message || "Có lỗi xảy ra";
+    errorMessage.value = userMessage(route.query.message, { fallback: "Có lỗi xảy ra" });
   }
 });
 
 async function handleLogin() {
+  if (disposed || loading.value) return;
   errorMessage.value = "";
   successMessage.value = "";
-  setValues({ ...loginForm });
-  const result = await validate();
-  if (!result.valid) return;
-
+  loading.value = true;
+  const credentials={...loginForm};
+  const context=requestContext.capture();
+  let loginRequest;
   try {
-    loading.value = true;
+    setValues(credentials);
+    const result=await validate();
+    if (!result.valid || disposed || !requestContext.current(context)) return;
 
-    await authStore.login({
-      email: loginForm.email,
-      password: loginForm.password,
-    });
+    const pending = authStore.login(credentials);
+    loginRequest = captureLoginRequestContext(authStore);
+    await pending;
+    if (disposed || !loginRequest.isCurrent()) return;
 
     router.push("/");
   } catch (error) {
-    setErrors(mapBackendValidationErrors(error));
-    errorMessage.value = error?.response?.data?.message || "Đăng nhập thất bại";
+    if (disposed || isAuthRequestInvalidated(error) || (loginRequest && !loginRequest.isCurrent(false))) return;
+    setErrors(userFieldErrors(error));
+    errorMessage.value = userError(error, "Đăng nhập thất bại");
   } finally {
-    loading.value = false;
+    if (!disposed) loading.value = false;
   }
 }
 </script>
 
 <template>
-  <div id="content" class="site-content">
-    <div id="breadcrumb">
-      <div class="container">
-        <h2 class="title">Đăng Nhập</h2>
-
-        <ul class="breadcrumb">
-          <li><router-link to="/">Trang Chủ</router-link></li>
-          <li><span>Đăng Nhập</span></li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="container">
-      <div class="login-page">
-        <div class="login-form form">
-          <div class="block-title">
-            <h2 class="title"><span>Đăng Nhập</span></h2>
-          </div>
-
-          <form @submit.prevent="handleLogin">
-            <div class="form-group">
-              <label>Email</label>
-              <input
-                v-model="loginForm.email"
-                type="email"
-                name="email"
-                :class="{ 'is-invalid': errors.email }"
-              />
-              <div v-if="errors.email" class="form-error">{{ errors.email }}</div>
-            </div>
-
-            <div class="form-group">
-              <label>Mật Khẩu</label>
-              <input
-                v-model="loginForm.password"
-                type="password"
-                name="password"
-                :class="{ 'is-invalid': errors.password }"
-              />
-              <div v-if="errors.password" class="form-error">{{ errors.password }}</div>
-            </div>
-
-            <div v-if="successMessage" class="alert alert-success">
-              {{ successMessage }}
-            </div>
-
-            <div v-if="errorMessage" class="alert alert-danger">
-              {{ errorMessage }}
-            </div>
-
-            <div class="form-group text-center">
-              <div class="link">
-                <router-link to="/forgot-password">Quên mật khẩu?</router-link>
-                <router-link to="/register">Đăng Ký?</router-link>
-              </div>
-            </div>
-
-            <div class="form-group text-center">
-              <input
-                type="submit"
-                class="btn btn-primary"
-                :value="loading ? 'Đang Đăng Nhập...' : 'Đăng Nhập'"
-                :disabled="loading"
-              />
-            </div>
-          </form>
+  <AuthPanel
+    title="Đăng nhập"
+    description="Đăng nhập để quản lý đơn hàng và sản phẩm yêu thích."
+    ><form @submit.prevent="handleLogin" novalidate>
+      <div class="form-group">
+        <label for="login-email">Email</label
+        ><input
+          id="login-email"
+          v-model="loginForm.email" :disabled="loading"
+          type="email" aria-required="true"
+          autocomplete="email"
+          :class="{ 'is-invalid': errors.email }"
+          :aria-invalid="!!errors.email"
+          aria-describedby="login-email-error"
+        />
+        <div id="login-email-error" class="form-error form-error--field" aria-live="polite">
+          {{ errors.email }}
         </div>
       </div>
-    </div>
-  </div>
+      <div class="form-group">
+        <label for="login-password">Mật khẩu</label
+        ><PasswordField
+          id="login-password"
+          v-model="loginForm.password" :disabled="loading"
+          
+          autocomplete="current-password" aria-required="true"
+          :class="{ 'is-invalid': errors.password }"
+          :aria-invalid="!!errors.password"
+          aria-describedby="login-password-error"
+        />
+        <div
+          id="login-password-error"
+          class="form-error form-error--field"
+          aria-live="polite"
+        >
+          {{ errors.password }}
+        </div>
+      </div>
+      <div v-if="successMessage" class="alert alert-success" role="status">
+        {{ successMessage }}
+      </div>
+      <div v-if="errorMessage" class="alert alert-danger" role="alert">
+        {{ errorMessage }}
+      </div>
+      <button
+        type="submit"
+        class="btn btn-primary btn-block"
+        :disabled="loading"
+        :aria-busy="loading"
+      >
+        {{ loading ? "Đang đăng nhập..." : "Đăng nhập" }}
+      </button>
+      <div class="link">
+        <router-link to="/forgot-password">Quên mật khẩu?</router-link
+        ><router-link to="/register">Tạo tài khoản mới</router-link>
+      </div>
+    </form></AuthPanel
+  >
 </template>

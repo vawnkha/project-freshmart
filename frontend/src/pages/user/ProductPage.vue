@@ -1,261 +1,159 @@
 <script setup>
-import { computed, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
-import ProductCard from "@/components/user/product/ProductCard.vue";
-import ProductListItem from "@/components/user/product/ProductListItem.vue";
-import productService from "@/services/product.service";
+import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import PageHeading from '@/components/user/common/PageHeading.vue';
+import SageButton from '@/components/user/sage/SageButton.vue';
+import SageSelect from '@/components/user/sage/SageSelect.vue';
+import SageDrawer from '@/components/user/sage/SageDrawer.vue';
+import SageSkeleton from '@/components/user/sage/SageSkeleton.vue';
+import SageEmptyState from '@/components/user/sage/SageEmptyState.vue';
+import SageErrorState from '@/components/user/sage/SageErrorState.vue';
+import CatalogFilters from '@/components/user/catalog/CatalogFilters.vue';
+import CatalogProductCard from '@/components/user/catalog/CatalogProductCard.vue';
+import SageIcon from '@/components/user/sage/SageIcon.vue';
+import { useCatalog } from '@/composables/useCatalog';
+import { useCatalogProducts } from '@/composables/useCatalogProducts';
+import { useCatalogActions } from '@/composables/useCatalogActions';
+import { normalizeId } from '@/utils/id.util';
+import { CATALOG_SORTS, readCatalogQuery, catalogQuery, catalogResults, validateCatalogFilters } from '@/utils/catalog-query.util';
 
-const route = useRoute();
-const router = useRouter();
-
-const viewMode = ref("grid");
-const sortBy = ref(route.query.sort || "");
-const currentPage = ref(Number(route.query.page || 1));
-const perPage = 12;
-
-const products = ref([]);
-const loading = ref(false);
-
-const sortedProducts = computed(() => {
-  const items = [...products.value];
-
-  switch (sortBy.value) {
-    case "price-asc":
-      return items.sort((a, b) => Number(a.price || 0) - Number(b.price || 0));
-    case "price-desc":
-      return items.sort((a, b) => Number(b.price || 0) - Number(a.price || 0));
-    case "name-asc":
-      return items.sort((a, b) => a.name.localeCompare(b.name));
-    case "name-desc":
-      return items.sort((a, b) => b.name.localeCompare(a.name));
-    default:
-      return items;
-  }
-});
-
-const totalProducts = computed(() => sortedProducts.value.length);
-const totalPages = computed(() =>
-  Math.max(1, Math.ceil(totalProducts.value / perPage)),
-);
-const paginatedProducts = computed(() => {
-  const start = (currentPage.value - 1) * perPage;
-  return sortedProducts.value.slice(start, start + perPage);
-});
-
-const startItem = computed(() => {
-  if (!totalProducts.value) return 0;
-  return (currentPage.value - 1) * perPage + 1;
-});
-
-const endItem = computed(() => {
-  return Math.min(currentPage.value * perPage, totalProducts.value);
-});
-
-async function fetchProducts() {
-  loading.value = true;
-  try {
-    const params = {
-      q: route.query.q || "",
-      category_id: route.query.category_id || "",
-    };
-
-    const result = await productService.getAll(params);
-    products.value = result.data || [];
-    if (currentPage.value > totalPages.value) currentPage.value = totalPages.value;
-  } catch (error) {
-    alert(error.message);
-  } finally {
-    loading.value = false;
-  }
+const route = useRoute(), router = useRouter(), root = ref(), resultHeading = ref(), filterTrigger = ref();
+const state = computed(() => readCatalogQuery(route.query));
+const { categories, loading: categoryLoading, error: categoryError, loadCategories } = useCatalog();
+const { products, loading, error, load } = useCatalogProducts(state);
+const actions = useCatalogActions();
+const results = computed(() => catalogResults(products.value, state.value));
+const invalid = computed(() => Object.keys(state.value.errors).length > 0);
+const category = computed(() => categories.value.find(item => normalizeId(item._id || item.id) === state.value.category_id));
+const title = computed(() => category.value?.name || 'Sản phẩm');
+const search = ref(state.value.q), filtersOpen = ref(false);
+const filterValues = () => Object.fromEntries(['category_id', 'min_price', 'max_price', 'availability'].map(key => [key, state.value[key]]));
+const draft = ref(filterValues()), formErrors = ref({ ...state.value.errors });
+const gridKey = computed(() => JSON.stringify([state.value.q, state.value.category_id, state.value.min_price, state.value.max_price, state.value.availability, state.value.sort, results.value.page, state.value.view]));
+const pageNumbers = computed(() => Array.from({ length: Math.min(5, results.value.pages) }, (_, index) => Math.min(Math.max(1, results.value.page - 2), Math.max(1, results.value.pages - 4)) + index));
+const chips = computed(() => [
+  state.value.q && { key: 'q', label: 'Từ khóa: ' + state.value.q },
+  state.value.category_id && { key: 'category_id', label: 'Danh mục: ' + (state.value.errors.category_id ? 'chưa hợp lệ' : category.value?.name || 'Đã chọn') },
+  state.value.min_price !== '' && { key: 'min_price', label: state.value.errors.min_price ? 'Giá từ: chưa hợp lệ' : 'Từ ' + Number(state.value.min_price).toLocaleString('vi-VN') + ' đ' },
+  state.value.max_price !== '' && { key: 'max_price', label: state.value.errors.max_price ? 'Giá đến: chưa hợp lệ' : 'Đến ' + Number(state.value.max_price).toLocaleString('vi-VN') + ' đ' },
+  state.value.availability && { key: 'availability', label: state.value.availability === 'available' ? 'Còn hàng' : 'Hết hàng' },
+].filter(Boolean));
+function update(patch, replace = false) { return router[replace ? 'replace' : 'push']({ path: '/products', query: catalogQuery(route.query, patch) }); }
+function submitSearch() { update({ q: search.value.trim(), page: 1 }); }
+function openFilters() { draft.value = filterValues(); formErrors.value = { ...state.value.errors }; filtersOpen.value = true; }
+async function restoreFilterFocus() {
+  await nextTick();
+  if (!filtersOpen.value && !document.querySelector('dialog[open]')) filterTrigger.value?.$el?.focus({ preventScroll: true });
 }
-
-function goToPage(page) {
-  if (page < 1 || page > totalPages.value) return;
-  router.push({
-    query: {
-      ...route.query,
-      page,
-      sort: sortBy.value || undefined,
-    },
+async function applyFilters() {
+  formErrors.value = validateCatalogFilters(draft.value);
+  if (Object.keys(formErrors.value).length) {
+    await nextTick();
+    (filtersOpen.value ? root.value?.querySelector('dialog[open]') : root.value?.querySelector('.catalog-rail'))?.querySelector('[aria-invalid="true"]')?.focus();
+    return;
+  }
+  filtersOpen.value = false;
+  await update({ ...draft.value, page: 1 });
+}
+function resetFilters(all = false) {
+  filtersOpen.value = false;
+  update({ category_id: '', min_price: '', max_price: '', availability: '', ...(all ? { q: '' } : {}), page: 1 });
+}
+let focusFrame;
+async function goToPage(page) {
+  if (page < 1 || page > results.value.pages) return;
+  await update({ page }); await nextTick();
+  // The existing ClientLayout also focuses main after a route change. Wait for
+  // that render pass before focusing the new results, without changing shell.
+  const destination = route.fullPath;
+  cancelAnimationFrame(focusFrame);
+  focusFrame = requestAnimationFrame(() => {
+    if (!root.value?.isConnected || route.fullPath !== destination) return;
+    resultHeading.value?.focus({ preventScroll: true });
+    resultHeading.value?.scrollIntoView?.({ behavior: 'auto', block: 'start' });
   });
 }
-
-watch(
-  () => route.query,
-  () => {
-    currentPage.value = Number(route.query.page || 1);
-    sortBy.value = route.query.sort || "";
-    fetchProducts();
-  },
-  { immediate: true },
-);
-
-watch(sortBy, (value) => {
-  const query = {
-    ...route.query,
-    sort: value || undefined,
-  };
-  delete query.page;
-  currentPage.value = 1;
-  router.push({
-    query,
-  });
+watch(() => route.fullPath, () => { search.value = state.value.q; draft.value = filterValues(); formErrors.value = { ...state.value.errors }; filtersOpen.value = false; });
+watch([loading, () => results.value.page, () => state.value.page], () => {
+  if (!loading.value && !error.value && !invalid.value && state.value.page !== results.value.page) update({ page: results.value.page }, true);
 });
-
-watch(totalPages, (value) => {
-  if (currentPage.value > value) currentPage.value = value;
-});
+let wide;
+const desktopSearch = ref(false);
+function onWide(event) { desktopSearch.value = event.matches; if (event.matches) filtersOpen.value = false; }
+onMounted(() => { loadCategories(); wide = window.matchMedia('(min-width: 1025px)'); desktopSearch.value = wide.matches; wide.addEventListener?.('change', onWide); });
+onBeforeUnmount(() => { wide?.removeEventListener?.('change', onWide); cancelAnimationFrame(focusFrame); });
 </script>
-
 <template>
-  <div id="content" class="site-content">
-    <div id="breadcrumb">
-      <div class="container">
-        <h2 class="title">Sản phẩm</h2>
-
-        <ul class="breadcrumb">
-          <li><router-link to="/">Trang Chủ</router-link></li>
-          <li><router-link to="/products">Sản Phẩm</router-link></li>
-        </ul>
+  <div ref="root" class="site-content sage-catalog">
+    <PageHeading title="Chọn cho ao nuôi." :breadcrumb-title="title" split :parent="category ? 'Sản phẩm' : undefined" :parent-to="category ? { path: '/products', query: catalogQuery(route.query, { category_id: '', page: 1 }) } : undefined" description="Tra cứu, so sánh và xem kỹ thông tin sản phẩm." />
+    <div class="container catalog-container">
+      <div id="catalog-mobile-search-host" class="catalog-mobile-search-host"></div>
+      <Teleport defer :to="desktopSearch ? '#catalog-desktop-search-host' : '#catalog-mobile-search-host'">
+      <form class="catalog-search" role="search" @submit.prevent="submitSearch">
+        <label class="sage-visually-hidden" for="catalog-search-input">Tìm kiếm sản phẩm</label>
+        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+        <input id="catalog-search-input" v-model="search" type="search" placeholder="Tìm tên sản phẩm…" autocomplete="off" />
+        <SageButton type="submit" aria-label="Tìm kiếm"><SageIcon name="search" /></SageButton>
+      </form>
+      </Teleport>
+      <div class="catalog-bar">
+          <nav class="catalog-category-nav" aria-label="Danh mục sản phẩm">
+            <h2>Danh mục sản phẩm</h2>
+            <RouterLink :to="{ path: '/products', query: catalogQuery(route.query, { category_id: '', page: 1 }) }" :class="{ selected: !state.category_id }" :aria-current="!state.category_id ? 'page' : undefined">Tất cả sản phẩm</RouterLink>
+            <RouterLink v-for="item in categories" :key="normalizeId(item._id || item.id)" :to="{ path: '/products', query: catalogQuery(route.query, { category_id: normalizeId(item._id || item.id), page: 1 }) }" :class="{ selected: state.category_id === normalizeId(item._id || item.id) }" :aria-current="state.category_id === normalizeId(item._id || item.id) ? 'page' : undefined">{{ item.name }}</RouterLink>
+          </nav>
+<div class="catalog-sort-tools">
+              <SageButton ref="filterTrigger" class="catalog-mobile-filter" variant="secondary" aria-haspopup="dialog" aria-controls="catalog-filter-sheet" :aria-expanded="filtersOpen" @click="openFilters"><i class="fa-solid fa-sliders" aria-hidden="true"></i>Bộ lọc<span v-if="chips.length"> ({{ chips.length }})</span></SageButton>
+              <SageSelect id="catalog-sort" label="Sắp xếp" :model-value="state.sort" :options="CATALOG_SORTS" @update:model-value="update({ sort: $event, page: 1 })" />
+              <div class="catalog-view-tools" role="group" aria-label="Cách hiển thị sản phẩm">
+                <SageButton variant="ghost" class="sage-icon-button" :aria-pressed="state.view === 'grid'" aria-label="Xem dạng lưới" @click="update({ view: 'grid' })"><i class="fa-solid fa-table-cells-large" aria-hidden="true"></i></SageButton>
+                <SageButton variant="ghost" class="sage-icon-button" :aria-pressed="state.view === 'list'" aria-label="Xem dạng danh sách" @click="update({ view: 'list' })"><i class="fa-solid fa-list" aria-hidden="true"></i></SageButton>
+              </div>
+            </div>
       </div>
-    </div>
-
-    <div class="container">
-      <div class="row">
-        <div id="center-column" class="col-lg-12 col-md-12">
-          <div class="product-category-page">
-            <div class="products-bar">
-              <div class="row">
-                <div class="col-md-6 col-xs-6">
-                  <div class="gridlist-toggle" role="tablist">
-                    <ul class="nav nav-tabs">
-                      <li :class="{ active: viewMode === 'grid' }">
-                        <a href="#" @click.prevent="viewMode = 'grid'">
-                          <i class="fa fa-th-large"></i>
-                        </a>
-                      </li>
-                      <li :class="{ active: viewMode === 'list' }">
-                        <a href="#" @click.prevent="viewMode = 'list'">
-                          <i class="fa fa-bars"></i>
-                        </a>
-                      </li>
-                    </ul>
-                  </div>
-
-                  <div class="total-products">
-                    Hiện có {{ totalProducts }} sản phẩm
-                  </div>
-                </div>
-
-                <div class="col-md-6 col-xs-6">
-                  <div class="filter-bar">
-                    <form action="#" class="pull-right" @submit.prevent>
-                      <div class="select">
-                        <select v-model="sortBy" class="form-control">
-                          <option value="">Sắp xếp</option>
-                          <option value="price-asc">Giá: Thấp đến cao</option>
-                          <option value="price-desc">Giá: Cao đến thấp</option>
-                          <option value="name-asc">Tên sản phẩm: A-Z</option>
-                          <option value="name-desc">Tên sản phẩm: Z-A</option>
-                        </select>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-              </div>
+      <div class="catalog-workspace">
+        <aside class="catalog-rail" aria-label="Bộ lọc sản phẩm">
+          <div id="catalog-desktop-search-host"></div>
+          <CatalogFilters v-model="draft" prefix="catalog-desktop" :categories="categories" :errors="formErrors" :category-loading="categoryLoading" :category-error="categoryError" @apply="applyFilters" @reset="resetFilters()" @retry="loadCategories(true)" />
+        </aside>
+        <section class="catalog-results" aria-label="Kết quả sản phẩm" :aria-busy="loading">
+          <div class="catalog-results-toolbar">
+            <div ref="resultHeading" class="catalog-result-count" tabindex="-1" role="status" aria-live="polite">
+              <strong>{{ loading ? 'Đang tải sản phẩm…' : error || invalid ? 'Chưa có kết quả' : results.total ? results.start + '–' + results.end + ' / ' + results.total + ' sản phẩm' : '0 sản phẩm' }}</strong>
+              <span v-if="state.q">Kết quả cho “{{ state.q }}”</span>
             </div>
-
-            <div v-if="route.query.q" class="mb-20">
-              <h5>
-                Kết quả tìm kiếm cho: "<strong>{{ route.query.q }}</strong
-                >"
-              </h5>
-            </div>
-
-            <div v-if="loading">Đang tải sản phẩm...</div>
-            <div v-else-if="!paginatedProducts.length">
-              Không tìm thấy sản phẩm phù hợp.
-            </div>
-
-            <div v-else class="tab-content">
-              <div
-                v-if="viewMode === 'grid'"
-                class="tab-pane active"
-                id="products-grid"
-              >
-                <div class="products-block">
-                  <div class="row">
-                    <div
-                      v-for="product in paginatedProducts"
-                      :key="product._id"
-                      class="col-md-3 col-sm-4 col-xs-12"
-                    >
-                      <ProductCard :product="product" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div v-else class="tab-pane active" id="products-list">
-                <div class="products-block layout-5">
-                  <ProductListItem
-                    v-for="product in paginatedProducts"
-                    :key="product._id"
-                    :product="product"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div v-if="totalProducts" class="pagination-bar">
-              <div class="row">
-                <div class="col-md-4 col-sm-4 col-xs-12">
-                  <div class="text">
-                    Hiển thị {{ startItem }}-{{ endItem }} trên tổng số
-                    {{ totalProducts }} sản phẩm
-                  </div>
-                </div>
-
-                <div class="col-md-8 col-sm-8 col-xs-12">
-                  <div class="pagination">
-                    <ul class="page-list">
-                      <li>
-                        <a
-                          href="#"
-                          class="prev"
-                          @click.prevent="goToPage(currentPage - 1)"
-                        >
-                          Previous
-                        </a>
-                      </li>
-
-                      <li v-for="page in totalPages" :key="page">
-                        <a
-                          href="#"
-                          :class="{ current: page === currentPage }"
-                          @click.prevent="goToPage(page)"
-                        >
-                          {{ page }}
-                        </a>
-                      </li>
-
-                      <li>
-                        <a
-                          href="#"
-                          class="next"
-                          @click.prevent="goToPage(currentPage + 1)"
-                        >
-                          Next
-                        </a>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            </div>
+            
           </div>
-        </div>
+          <div v-if="chips.length" class="catalog-active-filters" aria-label="Bộ lọc đang áp dụng">
+            <button v-for="chip in chips" :key="chip.key" type="button" :aria-label="'Bỏ bộ lọc ' + chip.label" @click="update({ [chip.key]: '', page: 1 })">{{ chip.label }}<span aria-hidden="true">×</span></button>
+            <SageButton variant="ghost" @click="resetFilters(true)">Xóa tất cả</SageButton>
+          </div>
+          <div v-if="actions.state.error || actions.state.success" class="catalog-action-feedback" :class="{ 'has-error': actions.state.error }" :role="actions.state.error ? 'alert' : 'status'">
+            <p>{{ actions.state.error || actions.state.success }}</p>
+            <template v-if="actions.state.uncertain">
+              <RouterLink :to="actions.state.uncertain === 'cart' ? '/cart' : '/wishlist'">Xem dữ liệu mới nhất</RouterLink>
+              <SageButton v-if="!actions.state.fresh" variant="secondary" :loading="!!actions.state.busy" @click="actions.refresh">Tải lại dữ liệu</SageButton>
+              <SageButton v-else variant="secondary" :disabled="!!actions.state.busy" @click="actions.acknowledge">Đã kiểm tra, tiếp tục</SageButton>
+            </template>
+          </div>
+          <SageErrorState v-if="invalid" title="Bộ lọc chưa hợp lệ" description="Kiểm tra danh mục và khoảng giá trong bộ lọc." retry-label="Xóa bộ lọc" @retry="resetFilters()" />
+          <div v-else-if="loading" class="catalog-product-grid catalog-loading"><SageSkeleton v-for="n in 12" :key="n" aria-hidden="true" media :lines="3" label="Đang tải sản phẩm" /></div>
+          <SageErrorState v-else-if="error" :title="error" @retry="load" />
+          <SageEmptyState v-else-if="!results.total" title="Chưa tìm thấy sản phẩm phù hợp" description="Hãy thử từ khóa khác hoặc điều chỉnh bộ lọc." action-label="Xóa tất cả bộ lọc" @action="resetFilters(true)" />
+          <div v-else :key="gridKey" class="catalog-product-grid" :class="{ 'is-list': state.view === 'list' }">
+            <CatalogProductCard v-for="product in results.items" :key="normalizeId(product._id || product.id)" :product="product" :actions="actions" />
+          </div>
+          <nav v-if="results.pages > 1 && !loading && !error && !invalid" class="catalog-pagination" aria-label="Phân trang sản phẩm">
+            <SageButton variant="secondary" :disabled="results.page <= 1" @click="goToPage(results.page - 1)">Trước</SageButton>
+            <SageButton v-for="n in pageNumbers" :key="n" :variant="results.page === n ? 'primary' : 'ghost'" :aria-label="'Trang ' + n" :aria-current="results.page === n ? 'page' : undefined" @click="goToPage(n)">{{ n }}</SageButton>
+            <SageButton variant="secondary" :disabled="results.page >= results.pages" @click="goToPage(results.page + 1)">Sau</SageButton>
+          </nav>
+        </section>
       </div>
     </div>
+    <SageDrawer id="catalog-filter-sheet" v-model="filtersOpen" class="catalog-filter-sheet" edge="bottom" title="Bộ lọc sản phẩm" @closed="restoreFilterFocus">
+      <CatalogFilters v-model="draft" prefix="catalog-mobile" :categories="categories" :errors="formErrors" :category-loading="categoryLoading" :category-error="categoryError" :show-actions="false" @apply="applyFilters" @reset="resetFilters()" @retry="loadCategories(true)" />
+      <template #footer><SageButton variant="ghost" @click="resetFilters()">Xóa bộ lọc</SageButton><SageButton type="submit" form="catalog-mobile-form">Áp dụng bộ lọc</SageButton></template>
+    </SageDrawer>
   </div>
 </template>

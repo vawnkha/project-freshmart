@@ -18,7 +18,7 @@ onMounted(async () => {
       wishlistStore.fetchWishlist(authStore.userId),
     ]);
   } catch (error) {
-    console.log(error.message);
+    console.warn("Không thể khởi tạo dữ liệu tài khoản:", error.message);
   }
 });
 </script>

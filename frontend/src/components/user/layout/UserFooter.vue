@@ -1,110 +1,18 @@
+<script setup>
+import { useCatalog } from '@/composables/useCatalog';
+const { categories } = useCatalog();
+</script>
 <template>
-  <footer id="footer">
-    <div class="footer">
-      <div class="footer-top">
-        <div class="container">
-          <div class="row">
-            <div class="col-lg-4 col-md-4 col-sm-4 col-xs-12">
-              <div class="block text">
-                <div class="block-content">
-                  <router-link to="/" class="logo-footer">
-                    <img src="/img/logo-2.png" alt="Logo" />
-                  </router-link>
-
-                  <div class="contact">
-                    <div class="item d-flex">
-                      <div class="item-left">
-                        <i class="zmdi zmdi-home"></i>
-                      </div>
-                      <div class="item-right">
-                        <span>Khu 2, Đ. 3/2, P. Ninh Kiều, TP. Cần Thơ</span>
-                      </div>
-                    </div>
-
-                    <div class="item d-flex">
-                      <div class="item-left">
-                        <i class="zmdi zmdi-phone-in-talk"></i>
-                      </div>
-                      <div class="item-right">
-                        <span>0123456789<br />0987654321</span>
-                      </div>
-                    </div>
-
-                    <div class="item d-flex">
-                      <div class="item-left">
-                        <i class="zmdi zmdi-email"></i>
-                      </div>
-                      <div class="item-right">
-                        <span>
-                          <a href="mailto:nvkha@gmail.com">nvkha@gmail.com</a
-                          ><br />
-                          <a href="mailto:nvkha@gmail.com">nvkha@gmail.com</a>
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="col-lg-4 col-md-4 col-sm-4 col-xs-12">
-              <div class="block instagram">
-                <h2 class="block-title">Hình Ảnh Instagram</h2>
-
-                <div class="block-content">
-                  <div class="row margin-0">
-                    <div
-                      v-for="n in 8"
-                      :key="n"
-                      class="col-xs-3 col-sm-3 col-md-3 col-lg-3 padding-0"
-                    >
-                      <a href="#">
-                        <img
-                          :src="`/img/instagram-${n}.png`"
-                          alt="Instagram Image"
-                        />
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="col-lg-4 col-md-4 col-sm-4 col-xs-12">
-              <div class="block newsletter">
-                <h2 class="block-title">Đăng Ký Nhận Tin</h2>
-
-                <div class="block-content">
-                  <p>
-                    Nhập email của bạn để nhận tin tức mỗi ngày và nhận ngay mã
-                    giảm giá 20% cho tất cả sản phẩm.
-                  </p>
-
-                  <form @submit.prevent>
-                    <input type="email" placeholder="Nhập email của bạn" />
-                    <button type="submit">Đăng Ký</button>
-                  </form>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+  <footer class="store-footer shell-footer">
+    <div class="container">
+      <div class="shell-footer-grid">
+        <div class="shell-footer-intro"><router-link to="/" class="shell-footer-brand">FreshMart</router-link><p>Chế phẩm sinh học, thông tin sản phẩm và kiến thức cho ao nuôi.</p></div>
+        <nav aria-label="Sản phẩm ở chân trang"><h3>Khám phá sản phẩm</h3><router-link v-for="category in categories.slice(0, 5)" :key="category._id" :to="{ path: '/products', query: { category_id: category._id } }">{{ category.name }}</router-link><router-link to="/products">Tất cả sản phẩm</router-link></nav>
+        <nav aria-label="Tài khoản ở chân trang"><h3>Dành cho bạn</h3><router-link to="/profile">Tài khoản & đơn hàng</router-link><router-link to="/wishlist">Sản phẩm yêu thích</router-link><router-link to="/cart">Giỏ hàng</router-link><router-link to="/login">Đăng nhập</router-link><router-link to="/register">Đăng ký</router-link></nav>
+        <nav aria-label="Thông tin ở chân trang"><h3>Thông tin & hỗ trợ</h3><router-link to="/blog">Kiến thức & tin tức</router-link><router-link to="/about">Giới thiệu</router-link><router-link to="/contact">Liên hệ</router-link><p class="shell-footer-note">Trao đổi nhu cầu sản phẩm qua trang liên hệ.</p></nav>
       </div>
-
-      <div class="footer-bottom">
-        <div class="container">
-          <div class="footer-bottom-inner">
-            <div class="row">
-              <div class="col-md-6">
-                <div class="copyright">© 2026 FreshMart</div>
-              </div>
-              <div class="col-md-6 text-right">
-                <img src="/img/payment.png" alt="Payment" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <div class="shell-wordmark" aria-hidden="true">FRESHMART</div>
+      <div class="shell-footer-bottom"><span>© {{ new Date().getFullYear() }} FreshMart</span><span>Sinh học · Môi trường · Thủy sản</span></div>
     </div>
   </footer>
 </template>

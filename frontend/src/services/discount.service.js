@@ -10,6 +10,11 @@ class DiscountService {
     return res.data;
   }
 
+  async getPublic() {
+    const res = await this.api.get("/public");
+    return res.data;
+  }
+
   async getById(id) {
     const res = await this.api.get(`/${id}`);
     return res.data;

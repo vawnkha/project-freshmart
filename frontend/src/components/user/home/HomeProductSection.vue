@@ -27,7 +27,7 @@ const visibleProducts = computed(() => {
 <template>
   <section class="home-sage-section home-products" :aria-busy="loading" aria-label="Sản phẩm mới">
     <div class="container">
-      <SectionHeading eyebrow="Sản phẩm" title="Dễ xem. Dễ lựa chọn." to="/products" link-text="Duyệt catalog" />
+      <SectionHeading eyebrow="Sản phẩm" title="Dễ xem. Dễ lựa chọn." to="/products" link-text="Xem tất cả" />
       <div v-if="loading" class="home-sage-product-grid"><SageSkeleton v-for="n in 4" :key="n" media :lines="3" label="Đang tải sản phẩm" /></div>
       <SageErrorState v-else-if="error" heading-tag="h3" :title="error" @retry="load" />
       <SageEmptyState v-else-if="!products.length" heading-tag="h3" title="Sản phẩm đang được cập nhật" description="Hãy quay lại để khám phá sản phẩm mới." />

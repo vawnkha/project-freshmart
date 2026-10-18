@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useSchemaForm } from "@/composables/useSchemaForm";
 import { toTypedSchema } from "@vee-validate/zod";
-import AdminPagination from "@/components/common/AdminPagination.vue";
+import AdminPagination from "@/components/admin/common/AdminPagination.vue";
 import bannerService from "@/services/banner.service";
 import uploadService from "@/services/upload.service";
 import {

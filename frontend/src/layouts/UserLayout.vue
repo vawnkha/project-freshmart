@@ -4,7 +4,7 @@ import { useRoute } from "vue-router";
 import "@/assets/css/user/storefront.css";
 import UserHeader from "@/components/user/layout/UserHeader.vue";
 import UserFooter from "@/components/user/layout/UserFooter.vue";
-import AiChatBox from "@/components/common/AiChatBox.vue";
+import AiChatBox from "@/components/user/chat/AiChatBox.vue";
 import { storefrontNotice } from "@/composables/useStorefrontNotice";
 import { useFormAccessibility } from "@/composables/useFormAccessibility";
 import { useStorefrontMotion } from "@/composables/useStorefrontMotion";

@@ -10,7 +10,7 @@ import uploadService from "@/services/upload.service";
 import categoryService from "@/services/category.service";
 import brandService from "@/services/brand.service";
 import manufacturerService from "@/services/manufacturer.service";
-import AdminPagination from "@/components/common/AdminPagination.vue";
+import AdminPagination from "@/components/admin/common/AdminPagination.vue";
 import { useAuthStore } from "@/stores/user/auth";
 import { hasPermission } from "@/utils/permission.util";
 import { loadWhenAllowed } from "@/utils/authorized-load.util";

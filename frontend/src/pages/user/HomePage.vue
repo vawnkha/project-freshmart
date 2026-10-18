@@ -9,21 +9,20 @@ import HomeKnowledgeSection from '@/components/user/home/HomeKnowledgeSection.vu
 import HomeBanners from '@/components/user/home/HomeBanners.vue';
 import HomeFinalCta from '@/components/user/home/HomeFinalCta.vue';
 import HomeBenefitsSection from '@/components/user/home/HomeBenefitsSection.vue';
-import HomeSupportSection from '@/components/user/home/HomeSupportSection.vue';
 </script>
 <template>
   <div class="site-content home-page sage-home">
     <HomeSageHero />
+    <HomeHeroSlider />
     <HomeCategorySection />
     <HomeVoucherSection />
-    <HomeHeroSlider />
+    
     <HomeProductSection />
     <HomeBenefitsSection />
     <HomeBanners position="home_middle" />
     <HomeGuidanceSection />
     <HomeKnowledgeSection />
     <HomeBanners position="home_bottom" />
-    <HomeSupportSection />
     <HomeFinalCta />
   </div>
 </template>

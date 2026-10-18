@@ -6,7 +6,7 @@ import { toTypedSchema } from "@vee-validate/zod";
 import categoryService from "@/services/category.service";
 import productService from "@/services/product.service";
 import adminProductService from "@/services/admin-product.service";
-import AdminPagination from "@/components/common/AdminPagination.vue";
+import AdminPagination from "@/components/admin/common/AdminPagination.vue";
 import {
   imageFileSchema,
   optionalNonNegativeNumberSchema,

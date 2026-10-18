@@ -1,7 +1,7 @@
 <script setup>
 import { normalizeId } from "@/utils/id.util";
 import { computed, onMounted, ref, watch } from "vue";
-import AdminPagination from "@/components/common/AdminPagination.vue";
+import AdminPagination from "@/components/admin/common/AdminPagination.vue";
 import newsService from "@/services/news.service";
 import newsCategoryService from "@/services/news-category.service";
 

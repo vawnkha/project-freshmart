@@ -11,13 +11,40 @@ const order = ref(null);
 const sendingInvoice = ref(false);
 const invoiceRef = ref(null);
 const canUpdateOrders = computed(() => hasPermission(authStore, "order:update"));
+const failedImages = ref(new Set());
+
+function amount(value) {
+  if ((typeof value !== "number" && typeof value !== "string") ||
+      (typeof value === "string" && !value.trim())) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+const invoiceAmounts = computed(() => {
+  const saved = order.value || {};
+  const pricing = saved.pricing || {};
+  const total = amount(saved.total_price);
+  const shipping = amount(pricing.shipping_fee ?? saved.shipping_fee);
+  const discount = amount(saved.discount_amount ?? pricing.discount_amount);
+  let subtotal = amount(pricing.subtotal ?? saved.subtotal_price);
+  // Legacy API normalization can alias subtotal to total. Do not print that
+  // alias as merchandise value when the saved breakdown contradicts it.
+  if (subtotal !== null && shipping !== null && discount !== null && total !== null &&
+      subtotal - discount + shipping !== total) subtotal = null;
+  return { subtotal, shipping, discount, total };
+});
+
+function imageFailed(url) {
+  failedImages.value = new Set([...failedImages.value, url]);
+}
 
 async function fetchOrder() {
   order.value = await ordersService.getById(route.params.id);
 }
 
 function formatPrice(value) {
-  return Number(value || 0).toLocaleString("vi-VN") + " VND";
+  const parsed = amount(value);
+  return parsed === null ? "Chưa có dữ liệu" : parsed.toLocaleString("vi-VN") + " VND";
 }
 
 function formatDate(value) {
@@ -141,10 +168,14 @@ onMounted(fetchOrder);
               <tr v-for="item in order.items || []" :key="item.product_id">
                 <td class="invoice-thumb-cell">
                   <img
-                    :src="item.thumbnail || '/img/no-image.png'"
+                    v-if="item.thumbnail && !failedImages.has(item.thumbnail)"
+                    :src="item.thumbnail"
                     class="admin-thumb invoice-thumb"
-                    alt="product"
+                    :alt="item.name || 'Ảnh sản phẩm'"
+                    @error="imageFailed(item.thumbnail)"
                   />
+                  <div v-else class="admin-thumb-placeholder" role="img"
+                    :aria-label="`Không có ảnh: ${item.name || 'Sản phẩm'}`">Không ảnh</div>
                 </td>
                 <td>
                   <div class="invoice-product-name">{{ item.name }}</div>
@@ -221,17 +252,21 @@ onMounted(fetchOrder);
                 <tr>
                   <th>Tiền hàng</th>
                   <td>
-                    {{ formatPrice(order.total_price) }}
+                    {{ formatPrice(invoiceAmounts.subtotal) }}
                   </td>
+                </tr>
+                <tr v-if="invoiceAmounts.discount !== 0">
+                  <th>Giảm giá</th>
+                  <td>{{ invoiceAmounts.discount === null ? 'Chưa có dữ liệu' : '−' + formatPrice(invoiceAmounts.discount) }}</td>
                 </tr>
                 <tr>
                   <th>Phí vận chuyển</th>
-                  <td>{{ formatPrice(order.shipping_fee || 0) }}</td>
+                  <td>{{ formatPrice(invoiceAmounts.shipping) }}</td>
                 </tr>
                 <tr>
                   <th>Tổng tiền</th>
                   <td class="invoice-total-final">
-                    {{ formatPrice(order.total_price || 0) }}
+                    {{ formatPrice(invoiceAmounts.total) }}
                   </td>
                 </tr>
               </tbody>

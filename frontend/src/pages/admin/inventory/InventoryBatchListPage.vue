@@ -4,7 +4,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import inventoryBatchService from "@/services/inventory-batch.service";
 import inventoryItemService from "@/services/inventory-item.service";
-import AdminPagination from "@/components/common/AdminPagination.vue";
+import AdminPagination from "@/components/admin/common/AdminPagination.vue";
 import { effectiveBatchStatus } from "@/utils/batch-availability.util";
 
 const route = useRoute();

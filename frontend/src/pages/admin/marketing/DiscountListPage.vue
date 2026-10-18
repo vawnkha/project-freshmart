@@ -3,7 +3,7 @@ import { normalizeId } from "@/utils/id.util";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useSchemaForm } from "@/composables/useSchemaForm";
 import { toTypedSchema } from "@vee-validate/zod";
-import AdminPagination from "@/components/common/AdminPagination.vue";
+import AdminPagination from "@/components/admin/common/AdminPagination.vue";
 import MultiSelectSearch from "@/components/admin/common/MultiSelectSearch.vue";
 import discountService from "@/services/discount.service";
 import productService from "@/services/admin-product.service";

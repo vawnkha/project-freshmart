@@ -4,7 +4,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import inventorySummaryService from "@/services/inventory-summary.service";
 import inventoryItemService from "@/services/inventory-item.service";
-import AdminPagination from "@/components/common/AdminPagination.vue";
+import AdminPagination from "@/components/admin/common/AdminPagination.vue";
 
 const route = useRoute();
 const router = useRouter();

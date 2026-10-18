@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useAdminNotificationStore } from "@/stores/admin/notification";
-import AdminPagination from "@/components/common/AdminPagination.vue";
+import AdminPagination from "@/components/admin/common/AdminPagination.vue";
 
 const router = useRouter();
 const notificationStore = useAdminNotificationStore();

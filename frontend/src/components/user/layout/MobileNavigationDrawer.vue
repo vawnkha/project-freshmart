@@ -14,7 +14,7 @@ const { categories, loading, error, loadCategories } = useCatalog();
   <SageDrawer :id="id" :model-value="modelValue" edge="left" title="Khám phá FreshMart" class="shell-mobile-drawer" @update:model-value="emit('update:modelValue', $event)" @closed="emit('closed')">
     <SageButton variant="secondary" class="shell-mobile-search" @click="emit('search')"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> Tìm sản phẩm</SageButton>
     <nav aria-label="Điều hướng mobile" class="shell-mobile-nav">
-      <router-link v-for="link in CLIENT_NAVIGATION" :key="link.to" :to="link.to" :aria-current="isClientRouteActive(route.path, link.to) ? 'page' : undefined" @click="emit('navigate')">{{ link.label }}<i class="fa-solid fa-arrow-right" aria-hidden="true"></i></router-link>
+      <router-link v-for="link in CLIENT_NAVIGATION" :key="link.to" :to="link.to" :class="{ 'shell-diagnosis-link': link.to === '/chan-doan' }" :aria-current="isClientRouteActive(route.path, link.to) ? 'page' : undefined" @click="emit('navigate')"><span><i v-if="link.to === '/chan-doan'" class="fa-solid fa-camera" aria-hidden="true"></i>{{ link.label }}</span><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></router-link>
     </nav>
     <SageAccordion title="Danh mục sản phẩm">
       <p v-if="loading" role="status">Đang tải danh mục…</p>

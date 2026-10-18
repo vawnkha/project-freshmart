@@ -36,62 +36,62 @@ const adminRoutes = [
         path: "inventory-items",
         name: "admin-inventory-items",
         component: () =>
-          import("@/views/admin/inventory/InventoryItemListPage.vue"),
+          import("@/pages/admin/inventory/InventoryItemListPage.vue"),
         meta: { requiredPermission: "inventory:manage" },
       },
       {
         path: "inventory-batches",
         name: "admin-inventory-batches",
         component: () =>
-          import("@/views/admin/inventory/InventoryBatchListPage.vue"),
+          import("@/pages/admin/inventory/InventoryBatchListPage.vue"),
         meta: { requiredPermission: "inventory:manage" },
       },
       {
         path: "inventory-summaries",
         name: "admin-inventory-summaries",
         component: () =>
-          import("@/views/admin/inventory/InventorySummaryListPage.vue"),
+          import("@/pages/admin/inventory/InventorySummaryListPage.vue"),
         meta: { requiredPermission: "inventory:manage" },
       },
       {
         path: "inventory-transactions",
         name: "admin-inventory-transactions",
         component: () =>
-          import("@/views/admin/inventory/InventoryTransactionListPage.vue"),
+          import("@/pages/admin/inventory/InventoryTransactionListPage.vue"),
         meta: { requiredPermission: "inventory:manage" },
       },
       {
         path: "purchase-orders",
         name: "admin-purchase-orders",
         component: () =>
-          import("@/views/admin/inventory/PurchaseOrderListPage.vue"),
+          import("@/pages/admin/inventory/PurchaseOrderListPage.vue"),
         meta: { requiredPermission: "purchase-order:manage" },
       },
       {
         path: "purchase-orders/create",
         name: "admin-purchase-order-create",
         component: () =>
-          import("@/views/admin/inventory/PurchaseOrderCreatePage.vue"),
+          import("@/pages/admin/inventory/PurchaseOrderCreatePage.vue"),
         meta: { requiredPermission: "purchase-order:manage" },
       },
       {
         path: "purchase-orders/:id/edit",
         name: "admin-purchase-order-edit",
-        component: () => import("@/views/admin/inventory/PurchaseOrderCreatePage.vue"),
+        component: () => import("@/pages/admin/inventory/PurchaseOrderCreatePage.vue"),
         meta: { requiredPermission: "purchase-order:manage" },
       },
       {
         path: "purchase-orders/:id",
         name: "admin-purchase-order-detail",
         component: () =>
-          import("@/views/admin/inventory/PurchaseOrderDetailPage.vue"),
+          import("@/pages/admin/inventory/PurchaseOrderDetailPage.vue"),
         meta: { requiredPermission: "purchase-order:manage" },
       },
 
       {
         path: "categories",
         name: "admin-categories",
-        component: () => import("@/views/admin/catalog/CategoryListPage.vue"),
+        component: () => import("@/pages/admin/catalog/CategoryListPage.vue"),
         meta: { requiredPermission: "category:manage" },
       },
       {
@@ -103,64 +103,64 @@ const adminRoutes = [
       {
         path: "brands",
         name: "admin-brands",
-        component: () => import("@/views/admin/catalog/BrandListPage.vue"),
+        component: () => import("@/pages/admin/catalog/BrandListPage.vue"),
         meta: { requiredPermission: "brand:manage" },
       },
       {
         path: "manufacturers",
         name: "admin-manufacturers",
         component: () =>
-          import("@/views/admin/catalog/ManufacturerListPage.vue"),
+          import("@/pages/admin/catalog/ManufacturerListPage.vue"),
         meta: { requiredPermission: "manufacturer:manage" },
       },
       {
         path: "suppliers",
         name: "admin-suppliers",
-        component: () => import("@/views/admin/catalog/SupplierListPage.vue"),
+        component: () => import("@/pages/admin/catalog/SupplierListPage.vue"),
         meta: { requiredPermission: "supplier:manage" },
       },
       {
         path: "shipping-methods",
         name: "admin-shipping-methods",
         component: () =>
-          import("@/views/admin/shipping/ShippingMethodListPage.vue"),
+          import("@/pages/admin/shipping/ShippingMethodListPage.vue"),
         meta: { requiredPermission: "shipping-method:manage" },
       },
       {
         path: "discounts",
         name: "admin-discounts",
-        component: () => import("@/views/admin/marketing/DiscountListPage.vue"),
+        component: () => import("@/pages/admin/marketing/DiscountListPage.vue"),
         meta: { requiredPermission: "discount:manage" },
       },
       {
         path: "news-categories",
         name: "admin-news-categories",
         component: () =>
-          import("@/views/admin/content/NewsCategoryListPage.vue"),
+          import("@/pages/admin/content/NewsCategoryListPage.vue"),
         meta: { requiredPermission: "news:manage" },
       },
       {
         path: "news",
         name: "admin-news",
-        component: () => import("@/views/admin/content/NewsListPage.vue"),
+        component: () => import("@/pages/admin/content/NewsListPage.vue"),
         meta: { requiredPermission: "news:manage" },
       },
       {
         path: "news/create",
         name: "admin-news-create",
-        component: () => import("@/views/admin/content/NewsCreatePage.vue"),
+        component: () => import("@/pages/admin/content/NewsCreatePage.vue"),
         meta: { requiredPermission: "news:manage" },
       },
       {
         path: "news/:id/edit",
         name: "admin-news-edit",
-        component: () => import("@/views/admin/content/NewsEditPage.vue"),
+        component: () => import("@/pages/admin/content/NewsEditPage.vue"),
         meta: { requiredPermission: "news:manage" },
       },
       {
         path: "banners",
         name: "admin-banners",
-        component: () => import("@/views/admin/content/BannerListPage.vue"),
+        component: () => import("@/pages/admin/content/BannerListPage.vue"),
         meta: { requiredPermission: "banner:manage" },
       },
 

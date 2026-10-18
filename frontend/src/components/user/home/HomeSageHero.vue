@@ -41,7 +41,7 @@ function search() {
       <figure class="aquaculture-hero-media home-sage-hero-media">
         <img v-if="!photoFailed" :src="photo" width="1280" height="853" alt="Ao nuôi cạnh rừng ngập mặn tại Bangladesh — ảnh bối cảnh, không phải cơ sở FreshMart" fetchpriority="high" decoding="async" @error="photoFailed = true">
         <img v-else :src="pond" width="600" height="730" alt="Minh họa ao nuôi, không phải cơ sở FreshMart">
-        <figcaption v-if="!photoFailed"><a href="https://commons.wikimedia.org/wiki/File:Shrimp_Farm_by_the_Mangroves.jpg" target="_blank" rel="noopener noreferrer" title="Amdadphoto · CC BY-SA 4.0">Ảnh thật · Nguồn và giấy phép</a></figcaption>
+        
       </figure>
       <SageCard as="aside" class="storefront-proof home-sage-proof">
         <p class="home-sage-proof-label">Tìm hiểu trước khi mua</p>

@@ -4,7 +4,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import inventoryTransactionService from "@/services/inventory-transaction.service";
 import inventoryItemService from "@/services/inventory-item.service";
-import AdminPagination from "@/components/common/AdminPagination.vue";
+import AdminPagination from "@/components/admin/common/AdminPagination.vue";
 
 const route = useRoute();
 const transactions = ref([]);

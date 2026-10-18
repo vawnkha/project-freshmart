@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import ordersService from "@/services/orders.service";
-import AdminPagination from "@/components/common/AdminPagination.vue";
+import AdminPagination from "@/components/admin/common/AdminPagination.vue";
 import { useAuthStore } from "@/stores/user/auth";
 import { hasPermission } from "@/utils/permission.util";
 

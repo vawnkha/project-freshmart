@@ -4,7 +4,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import purchaseOrderService from "@/services/purchase-order.service";
 import supplierService from "@/services/supplier.service";
-import AdminPagination from "@/components/common/AdminPagination.vue";
+import AdminPagination from "@/components/admin/common/AdminPagination.vue";
 
 const router = useRouter();
 const purchaseOrders = ref([]);

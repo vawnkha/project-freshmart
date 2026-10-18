@@ -19,6 +19,12 @@ const userRoutes = [
         component: () => import("@/pages/user/ContactPage.vue"),
       },
       {
+        path: "chan-doan",
+        name: "shrimp-diagnosis",
+        component: () => import("@/pages/user/ShrimpDiagnosisPage.vue"),
+        meta: { title: "Chẩn đoán" },
+      },
+      {
         path: "products",
         name: "products",
         component: () => import("@/pages/user/ProductPage.vue"),

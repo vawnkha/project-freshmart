@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import userService from "@/services/user.service";
 import roleService from "@/services/role.service";
-import AdminPagination from "@/components/common/AdminPagination.vue";
+import AdminPagination from "@/components/admin/common/AdminPagination.vue";
 import { useAuthStore } from "@/stores/user/auth";
 import { hasPermission } from "@/utils/permission.util";
 import { normalizeId } from "@/utils/id.util";

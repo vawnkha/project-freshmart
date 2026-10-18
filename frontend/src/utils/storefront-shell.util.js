@@ -7,6 +7,7 @@ export const CLIENT_NAVIGATION = Object.freeze([
   { to: '/', label: 'Trang chủ' }, { to: '/products', label: 'Sản phẩm' },
   { to: '/blog', label: 'Kiến thức & tin tức' }, { to: '/about', label: 'Giới thiệu' },
   { to: '/contact', label: 'Liên hệ' },
+  { to: '/chan-doan', label: 'Chẩn đoán' },
 ]);
 export function isClientRouteActive(path, target) {
   return target === '/' ? path === '/' : path === target || path.startsWith(target + '/');

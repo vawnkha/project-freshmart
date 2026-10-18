@@ -2,19 +2,19 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useSchemaForm } from "@/composables/useSchemaForm";
 import { toTypedSchema } from "@vee-validate/zod";
-import AdminPagination from "@/components/common/AdminPagination.vue";
-import shippingMethodService from "@/services/shipping-method.service";
+import AdminPagination from "@/components/admin/common/AdminPagination.vue";
+import newsCategoryService from "@/services/news-category.service";
 import {
-  nonNegativeNumberSchema,
   optionalString,
   requiredString,
+  slugSchema,
   statusSchema,
   z,
 } from "@/validators/common.validator";
 import { mapBackendValidationErrors } from "@/utils/validation-error.util";
 import { normalizeId } from "@/utils/id.util";
 
-const methods = ref([]);
+const categories = ref([]);
 const loading = ref(false);
 const saving = ref(false);
 const keyword = ref("");
@@ -24,23 +24,20 @@ const modalMode = ref("create");
 const currentId = ref("");
 const currentPage = ref(1);
 const pageSize = ref(12);
+const slugTouched = ref(false);
 
 const form = reactive({
   name: "",
-  code: "",
+  slug: "",
   description: "",
-  fee: 0,
-  estimatedDays: 1,
   status: "active",
 });
 
-const shippingSchema = toTypedSchema(
+const newsCategorySchema = toTypedSchema(
   z.object({
-    name: requiredString("Ten phuong thuc van chuyen la bat buoc"),
-    code: optionalString,
+    name: requiredString("Ten danh muc tin tuc la bat buoc"),
+    slug: slugSchema,
     description: optionalString,
-    fee: nonNegativeNumberSchema,
-    estimatedDays: nonNegativeNumberSchema,
     status: statusSchema,
   }),
 );
@@ -52,17 +49,17 @@ const {
   setValues,
   validate: validateVee,
 } = useSchemaForm({
-  validationSchema: shippingSchema,
+  validationSchema: newsCategorySchema,
   values: () => ({ ...form }),
 });
 
-const filteredMethods = computed(() => {
+const filteredCategories = computed(() => {
   const q = keyword.value.trim().toLowerCase();
 
-  return methods.value.filter((item) => {
+  return categories.value.filter((item) => {
     const matchKeyword =
       !q ||
-      [item.name, item.code, item.description]
+      [item.name, item.slug, item.description]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(q));
     const matchStatus = !statusFilter.value || item.status === statusFilter.value;
@@ -70,17 +67,17 @@ const filteredMethods = computed(() => {
   });
 });
 
-const paginatedMethods = computed(() => {
+const paginatedCategories = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value;
-  return filteredMethods.value.slice(start, start + pageSize.value);
+  return filteredCategories.value.slice(start, start + pageSize.value);
 });
 
 const activeCount = computed(
-  () => methods.value.filter((item) => item.status === "active").length,
+  () => categories.value.filter((item) => item.status === "active").length,
 );
 
 const inactiveCount = computed(
-  () => methods.value.filter((item) => item.status === "inactive").length,
+  () => categories.value.filter((item) => item.status === "inactive").length,
 );
 
 function normalizeList(res) {
@@ -91,13 +88,21 @@ function getId(item) {
   return normalizeId(item);
 }
 
-function formatCurrency(value) {
-  return Number(value || 0).toLocaleString("vi-VN") + " VND";
+function slugify(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function statusText(status) {
   if (status === "active") return "Đang hoạt động";
-  if (status === "inactive") return "Ngừng hoạt động";
+  if (status === "inactive") return "Ngưng hoạt động";
   return status || "---";
 }
 
@@ -110,38 +115,34 @@ function statusClass(status) {
 function resetForm() {
   Object.assign(form, {
     name: "",
-    code: "",
+    slug: "",
     description: "",
-    fee: 0,
-    estimatedDays: 1,
     status: "active",
   });
+  slugTouched.value = false;
   resetValidation();
 }
 
 function fillForm(item) {
   Object.assign(form, {
     name: item.name || "",
-    code: item.code || "",
+    slug: item.slug || "",
     description: item.description || "",
-    fee: item.fee ?? 0,
-    estimatedDays: item.estimatedDays ?? 1,
     status: item.status || "active",
   });
+  slugTouched.value = true;
 }
 
 function buildPayload() {
   const payload = {
     name: form.name.trim(),
-    code: form.code.trim(),
+    slug: form.slug.trim(),
     description: form.description.trim(),
-    fee: Number(form.fee || 0),
-    estimatedDays: Number(form.estimatedDays || 0),
     status: form.status || "active",
   };
 
   Object.keys(payload).forEach((key) => {
-    if (payload[key] === "" && !["code", "description"].includes(key)) delete payload[key];
+    if (payload[key] === "" && key !== "description") delete payload[key];
   });
 
   return payload;
@@ -153,14 +154,14 @@ async function validateForm() {
   return result.valid;
 }
 
-async function fetchMethods() {
+async function fetchCategories() {
   loading.value = true;
   try {
-    const res = await shippingMethodService.getAll();
-    methods.value = normalizeList(res);
+    const res = await newsCategoryService.getAll();
+    categories.value = normalizeList(res);
   } catch (error) {
     console.error(error);
-    alert(error?.response?.data?.message || "Không thể tải phương thức vận chuyển");
+    alert(error?.response?.data?.message || "Không thể tải danh mục tin tức");
   } finally {
     loading.value = false;
   }
@@ -194,73 +195,81 @@ async function submitForm() {
   saving.value = true;
   try {
     if (modalMode.value === "create") {
-      await shippingMethodService.create(buildPayload());
-      alert("Tạo phương thức vận chuyển thành công");
+      await newsCategoryService.create(buildPayload());
+      alert("Tạo danh mục tin tức thành công");
     } else {
-      await shippingMethodService.update(currentId.value, buildPayload());
-      alert("Cập nhật phương thức vận chuyển thành công");
+      await newsCategoryService.update(currentId.value, buildPayload());
+      alert("Cập nhật danh mục tin tức thành công");
     }
 
     closeModal();
-    await fetchMethods();
+    await fetchCategories();
   } catch (error) {
     console.error(error);
     setErrors(mapBackendValidationErrors(error));
-    alert(error?.response?.data?.message || "Không thể lưu phương thức vận chuyển");
+    alert(error?.response?.data?.message || "Không thể lưu danh mục tin tức");
   } finally {
     saving.value = false;
   }
 }
 
-async function removeMethod(item) {
-  if (!window.confirm("Bạn có chắc muốn xóa phương thức vận chuyển này?\n\nDữ liệu sau khi xóa sẽ không thể khôi phục.")) {
-    return;
-  }
+async function removeCategory(item) {
+  if (!window.confirm("Bạn có chắc muốn xóa danh mục tin tức này?\n\nDữ liệu sau khi xóa sẽ không thể khôi phục.")) return;
 
   try {
-    await shippingMethodService.remove(getId(item));
-    await fetchMethods();
-    alert("Đã xóa phương thức vận chuyển");
+    await newsCategoryService.remove(getId(item));
+    await fetchCategories();
+    alert("Đã xóa danh mục tin tức");
   } catch (error) {
     console.error(error);
-    alert(error?.response?.data?.message || "Không thể xóa phương thức vận chuyển");
+    alert(error?.response?.data?.message || "Không thể xóa danh mục tin tức");
   }
 }
+
+function handleSlugInput() {
+  slugTouched.value = true;
+  form.slug = slugify(form.slug);
+}
+
+watch(
+  () => form.name,
+  (value) => {
+    if (modalMode.value === "create" && !slugTouched.value) {
+      form.slug = slugify(value);
+    }
+  },
+);
 
 watch([keyword, statusFilter], () => {
   currentPage.value = 1;
 });
 
-watch(filteredMethods, (list) => {
+watch(filteredCategories, (list) => {
   const maxPage = Math.max(1, Math.ceil(list.length / pageSize.value));
   if (currentPage.value > maxPage) currentPage.value = maxPage;
 });
 
-onMounted(fetchMethods);
+onMounted(fetchCategories);
 </script>
 
 <template>
   <div class="admin-page">
     <div class="admin-page-title admin-page-title--stack">
-      <h1>Phương thức vận chuyển</h1>
-      <p>Quản lý phí giao hàng và thời gian giao dự kiến cho đơn hàng.</p>
+      <h1>Danh mục tin tức</h1>
+      <p>Quản lý nhóm nội dung blog hiển thị trên website.</p>
     </div>
 
     <div class="admin-stat-row admin-stat-row--orders">
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Tổng phương thức</div>
-        <div class="admin-stat-card__value">{{ methods.length }}</div>
-      </div>
-      <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Đang lọc</div>
-        <div class="admin-stat-card__value">{{ filteredMethods.length }}</div>
+        <div class="admin-stat-card__label">Tổng danh mục</div>
+        <div class="admin-stat-card__value">{{ categories.length }}</div>
       </div>
       <div class="admin-stat-card">
         <div class="admin-stat-card__label">Đang hoạt động</div>
         <div class="admin-stat-card__value">{{ activeCount }}</div>
       </div>
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Ngừng hoạt động</div>
+        <div class="admin-stat-card__label">Ngưng hoạt động</div>
         <div class="admin-stat-card__value">{{ inactiveCount }}</div>
       </div>
     </div>
@@ -268,15 +277,10 @@ onMounted(fetchMethods);
     <section class="admin-panel">
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
-          <div class="admin-panel__header-title">Danh sách vận chuyển</div>
-          <div class="admin-panel__header-subtitle">
-            Dữ liệu lấy từ /api/shipping-methods, filter và phân trang xử lý ở frontend.
-          </div>
+          <div class="admin-panel__header-title">Danh sách danh mục bài viết</div>
         </div>
-
-        <button class="admin-btn admin-btn--primary" @click="openCreateModal">
-          <i class="fa-solid fa-plus me-1"></i>
-          Thêm phương thức
+        <button type="button" class="admin-btn admin-btn--primary" @click="openCreateModal">
+          Thêm danh mục
         </button>
       </div>
 
@@ -285,47 +289,40 @@ onMounted(fetchMethods);
           <div class="col-md-8">
             <input
               v-model="keyword"
-              type="text"
               class="admin-toolbar__input"
-              placeholder="Tìm theo tên, mã, mô tả"
+              type="search"
+              placeholder="Tìm theo tên, slug, mô tả..."
             />
           </div>
           <div class="col-md-4">
             <select v-model="statusFilter" class="admin-toolbar__select">
               <option value="">Tất cả trạng thái</option>
               <option value="active">Đang hoạt động</option>
-              <option value="inactive">Ngừng hoạt động</option>
+              <option value="inactive">Ngưng hoạt động</option>
             </select>
           </div>
         </div>
 
-        <div v-if="loading" class="admin-empty-state">
-          Đang tải phương thức vận chuyển...
-        </div>
-        <div v-else-if="!filteredMethods.length" class="admin-empty-state">
-          Không có phương thức vận chuyển phù hợp
+        <div v-if="loading" class="admin-empty-state">Đang tải danh mục tin tức...</div>
+        <div v-else-if="!filteredCategories.length" class="admin-empty-state">
+          Chưa có danh mục phù hợp.
         </div>
         <div v-else class="table-responsive">
           <table class="admin-table admin-table--orders">
             <thead>
               <tr>
-                <th>Mã</th>
-                <th>Tên phương thức</th>
-                <th>Phí</th>
-                <th>Ngày dự kiến</th>
+                <th>Tên danh mục</th>
+                <th>Slug</th>
+                <th>Mô tả</th>
                 <th>Trạng thái</th>
                 <th>Thao tác</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="item in paginatedMethods" :key="getId(item)">
-                <td>{{ item.code || "---" }}</td>
-                <td>
-                  <strong>{{ item.name }}</strong>
-                  <div class="inventory-sub">{{ item.description || "---" }}</div>
-                </td>
-                <td>{{ formatCurrency(item.fee) }}</td>
-                <td>{{ Number(item.estimatedDays || 0) }} ngày</td>
+              <tr v-for="item in paginatedCategories" :key="getId(item)">
+                <td>{{ item.name }}</td>
+                <td>{{ item.slug }}</td>
+                <td>{{ item.description || "---" }}</td>
                 <td>
                   <span class="admin-badge" :class="statusClass(item.status)">
                     {{ statusText(item.status) }}
@@ -339,7 +336,7 @@ onMounted(fetchMethods);
                     <button
                       type="button"
                       class="admin-btn admin-btn--danger"
-                      @click.stop="removeMethod(item)"
+                      @click.stop="removeCategory(item)"
                     >
                       Xóa
                     </button>
@@ -348,13 +345,13 @@ onMounted(fetchMethods);
               </tr>
             </tbody>
           </table>
-
-          <AdminPagination
-            v-model="currentPage"
-            :total-items="filteredMethods.length"
-            :page-size="pageSize"
-          />
         </div>
+
+        <AdminPagination
+          v-model="currentPage"
+          :total-items="filteredCategories.length"
+          :page-size="pageSize"
+        />
       </div>
     </section>
 
@@ -362,7 +359,7 @@ onMounted(fetchMethods);
       <div class="admin-modal">
         <div class="admin-modal__header">
           <div class="admin-modal__title">
-            {{ modalMode === "create" ? "Thêm phương thức vận chuyển" : "Sửa phương thức vận chuyển" }}
+            {{ modalMode === "create" ? "Thêm danh mục tin tức" : "Sửa danh mục tin tức" }}
           </div>
           <button type="button" class="admin-btn admin-btn--secondary" @click="closeModal">
             Đóng
@@ -372,75 +369,46 @@ onMounted(fetchMethods);
         <div class="admin-modal__body">
           <form class="admin-form" @submit.prevent="submitForm">
             <div class="admin-form__row">
-              <label class="admin-form__label">Tên phương thức *</label>
+              <label class="admin-form__label">Tên danh mục *</label>
               <div>
                 <input
                   v-model="form.name"
                   class="admin-form__control"
+                  type="text"
                   :class="{ 'is-invalid': errors.name }"
                 />
                 <div v-if="errors.name" class="admin-form__error">{{ errors.name }}</div>
               </div>
             </div>
-
             <div class="admin-form__row">
-              <label class="admin-form__label">Mã</label>
-              <input
-                v-model="form.code"
-                class="admin-form__control"
-                placeholder="VD: STANDARD, EXPRESS"
-              />
-            </div>
-
-            <div class="admin-form__row">
-              <label class="admin-form__label">Mô tả</label>
-              <textarea v-model="form.description" class="admin-form__textarea" rows="3" />
-            </div>
-
-            <div class="admin-form__row">
-              <label class="admin-form__label">Phí vận chuyển</label>
+              <label class="admin-form__label">Slug *</label>
               <div>
                 <input
-                  v-model="form.fee"
-                  type="number"
-                  min="0"
+                  v-model="form.slug"
                   class="admin-form__control"
-                  :class="{ 'is-invalid': errors.fee }"
+                  type="text"
+                  :class="{ 'is-invalid': errors.slug }"
+                  @input="handleSlugInput"
                 />
-                <div v-if="errors.fee" class="admin-form__error">{{ errors.fee }}</div>
+                <div v-if="errors.slug" class="admin-form__error">{{ errors.slug }}</div>
               </div>
             </div>
-
-            <div class="admin-form__row">
-              <label class="admin-form__label">Số ngày dự kiến</label>
-              <div>
-                <input
-                  v-model="form.estimatedDays"
-                  type="number"
-                  min="0"
-                  class="admin-form__control"
-                  :class="{ 'is-invalid': errors.estimatedDays }"
-                />
-                <div v-if="errors.estimatedDays" class="admin-form__error">
-                  {{ errors.estimatedDays }}
-                </div>
-              </div>
-            </div>
-
             <div class="admin-form__row">
               <label class="admin-form__label">Trạng thái</label>
               <select v-model="form.status" class="admin-form__select">
                 <option value="active">Đang hoạt động</option>
-                <option value="inactive">Ngừng hoạt động</option>
+                <option value="inactive">Ngưng hoạt động</option>
               </select>
+            </div>
+            <div class="admin-form__row">
+              <label class="admin-form__label">Mô tả</label>
+              <textarea v-model="form.description" class="admin-form__textarea" rows="4" />
             </div>
           </form>
         </div>
 
         <div class="admin-modal__footer">
-          <button type="button" class="admin-btn admin-btn--secondary" @click="closeModal">
-            Quay lại
-          </button>
+          <button type="button" class="admin-btn admin-btn--secondary" @click="closeModal">Hủy</button>
           <button
             type="button"
             class="admin-btn admin-btn--primary"

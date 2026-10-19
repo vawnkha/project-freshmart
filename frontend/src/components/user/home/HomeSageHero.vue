@@ -11,7 +11,7 @@ const router = useRouter();
 const keyword = ref('');
 const photoFailed = ref(false);
 const photo = new URL('../../../assets/images/user/approved-home/mangroves-photo.jpg', import.meta.url).href;
-const { categories, error } = useCatalog();
+const { categories, loading, error } = useCatalog();
 const links = computed(() => error.value ? [] : categories.value.slice(0, 3));
 function search() {
   const q = keyword.value.trim();
@@ -34,7 +34,7 @@ function search() {
           <input id="home-sage-search" v-model="keyword" name="q" type="search" placeholder="Bạn đang tìm sản phẩm gì?">
           <SageButton type="submit" class="sage-icon-button" aria-label="Tìm sản phẩm"><SageIcon name="search" /></SageButton>
         </form>
-        <nav v-if="links.length" class="home-sage-pills hero-fade" style="--i:3" aria-label="Nhóm sản phẩm">
+        <nav v-if="loading || links.length" class="home-sage-pills hero-fade" style="--i:3" aria-label="Nhóm sản phẩm" :aria-busy="loading">
           <RouterLink v-for="category in links" :key="normalizeId(category._id || category.id)" :to="{ path: '/products', query: { category_id: normalizeId(category._id || category.id) } }">{{ category.name }}</RouterLink>
         </nav>
       </div>

@@ -82,6 +82,7 @@ async function findAll(req, res, next, publicOnly) {
 
     return res.send({
       data: result.data || [],
+      ...(publicOnly && result.units ? { units: result.units } : {}),
     });
   } catch (error) {
     return next(

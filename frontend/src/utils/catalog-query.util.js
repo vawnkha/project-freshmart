@@ -15,6 +15,13 @@ export const CATALOG_SORTS = Object.freeze([
   { value: 'price-desc', label: 'Giá: cao đến thấp' }, { value: 'name-asc', label: 'Tên: A–Z' }, { value: 'name-desc', label: 'Tên: Z–A' },
 ]);
 const scalar = value => String((Array.isArray(value) ? value[0] : value) ?? '').trim();
+export function catalogUnits(value) {
+  return [...new Set((Array.isArray(value) ? value : [value]).filter(item => typeof item === 'string').map(item => item.trim().normalize('NFC')).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'));
+}
+export function catalogUnitOptions(response, rows) {
+  if (response?.units !== undefined && (!Array.isArray(response.units) || response.units.some(unit => typeof unit !== 'string'))) throw new TypeError('Unexpected catalog unit options');
+  return catalogUnits(response?.units ?? rows.map(product => product.unit));
+}
 export function validateCatalogFilters(value) {
   const errors = {};
   if (value.category_id && !/^[a-f\d]{24}$/i.test(scalar(value.category_id))) errors.category_id = 'Danh mục không hợp lệ. Hãy chọn lại danh mục.';
@@ -27,7 +34,7 @@ export function validateCatalogFilters(value) {
 }
 export function readCatalogQuery(query = {}) {
   const state = { q: scalar(query.q), category_id: scalar(query.category_id).toLowerCase(), min_price: scalar(query.min_price), max_price: scalar(query.max_price),
-    availability: ['available', 'unavailable'].includes(scalar(query.availability)) ? scalar(query.availability) : '',
+    unit: catalogUnits(query.unit),
     sort: CATALOG_SORTS.some(item => item.value === scalar(query.sort)) ? scalar(query.sort) : 'newest',
     page: /^\d+$/.test(scalar(query.page)) && Number.isSafeInteger(Number(query.page)) && Number(query.page) > 0 ? Number(query.page) : 1,
     view: scalar(query.view) === 'list' ? 'list' : 'grid' };
@@ -35,8 +42,10 @@ export function readCatalogQuery(query = {}) {
 }
 export function catalogQuery(query, patch = {}) {
   const state = { ...readCatalogQuery(query), ...patch }, next = { ...query };
-  for (const key of ['q', 'category_id', 'min_price', 'max_price', 'availability', 'sort', 'page', 'view']) delete next[key];
-  for (const key of ['q', 'category_id', 'min_price', 'max_price', 'availability']) { const value = scalar(state[key]); if (value) next[key] = value; }
+  for (const key of ['q', 'category_id', 'min_price', 'max_price', 'availability', 'unit', 'sort', 'page', 'view']) delete next[key];
+  for (const key of ['q', 'category_id', 'min_price', 'max_price']) { const value = scalar(state[key]); if (value) next[key] = value; }
+  const units = catalogUnits(state.unit);
+  if (units.length) next.unit = units;
   if (state.sort !== 'newest') next.sort = state.sort;
   if (state.page > 1) next.page = String(state.page);
   if (state.view === 'list') next.view = 'list';
@@ -53,10 +62,10 @@ export function catalogResponse(response) {
 }
 export function catalogResults(products, state) {
   const filtered = products.filter(product => {
-    const price = productPrice(product), stock = catalogStock(product);
+    const price = productPrice(product);
     if ((state.min_price !== '' || state.max_price !== '') && price === null) return false;
     return (state.min_price === '' || price >= Number(state.min_price)) && (state.max_price === '' || price <= Number(state.max_price)) &&
-      (!state.availability || (stock !== null && (state.availability === 'available' ? stock >= 1 : stock < 1)));
+      (!state.unit.length || state.unit.includes(catalogUnits(product.unit)[0]));
   });
   const sorted = sortProducts(filtered, state.sort), pages = Math.max(1, Math.ceil(sorted.length / CATALOG_PAGE_SIZE)), page = Math.min(state.page, pages);
   return { total: sorted.length, pages, page, items: sorted.slice((page - 1) * CATALOG_PAGE_SIZE, page * CATALOG_PAGE_SIZE),

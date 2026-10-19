@@ -30,6 +30,11 @@ const productQuerySchema = z.object({
   keyword: optionalString,
   category_id: optionalObjectIdSchema,
   category_slug: optionalString,
+  unit: z.preprocess(
+    (value) => value === undefined || value === "" ? undefined : Array.isArray(value) ? value : [value],
+    z.array(z.string().trim().min(1)).optional(),
+  ),
+  include_units: z.literal("1").optional(),
   status: z.preprocess(
     (value) => (value === "" ? undefined : value),
     productStatusSchema.optional(),

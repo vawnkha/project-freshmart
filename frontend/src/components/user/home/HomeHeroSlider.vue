@@ -42,7 +42,7 @@ onBeforeUnmount(() => { swiper.value?.autoplay?.stop(); swiper.value = null; });
       </div>
       <SageSkeleton v-if="loading" :lines="2" label="Đang tải banner" />
       <SageErrorState v-else-if="error" heading-tag="h3" :title="error" @retry="load" />
-      <Swiper v-else :modules="modules" :slides-per-view="1" :loop="slides.length > 1" :speed="reduced ? 0 : 300" :autoplay="{ delay: 3000, disableOnInteraction: false }" :pagination="{ clickable: true }" :a11y="{ paginationBulletMessage: 'Chuyển đến banner {{index}}', slideLabelMessage: 'Banner {{index}} trên {{slidesLength}}' }" class="home-sage-campaign-swiper" @swiper="ready" @slide-change="active = $event.realIndex">
+      <Swiper v-else :modules="modules" :slides-per-view="1" :auto-height="false" :loop="slides.length > 1" :speed="reduced ? 0 : 300" :autoplay="{ delay: 3000, disableOnInteraction: false }" :pagination="{ clickable: true }" :a11y="{ paginationBulletMessage: 'Chuyển đến banner {{index}}', slideLabelMessage: 'Banner {{index}} trên {{slidesLength}}' }" class="home-sage-campaign-swiper" @swiper="ready" @slide-change="active = $event.realIndex">
         <SwiperSlide v-for="(slide, index) in slides" :key="slide.id" :inert="index !== active || undefined" :aria-hidden="index !== active || undefined"><HomeBannerCard :banner="slide" :eager="index === 0" /></SwiperSlide>
       </Swiper>
     </div>

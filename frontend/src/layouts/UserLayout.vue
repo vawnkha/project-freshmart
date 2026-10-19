@@ -22,7 +22,9 @@ watch(() => route.fullPath, async (path, previous) => {
   const current = ++focusVersion;
   await header.value?.closeShell();
   await nextTick();
-  if (current === focusVersion && main.value?.isConnected) {
+  // Live catalog query changes must preserve the checkbox/input or open drawer focus.
+  const liveCatalogQuery = path.split(/[?#]/)[0] === previous?.split(/[?#]/)[0] && main.value?.querySelector('.sage-catalog');
+  if (current === focusVersion && main.value?.isConnected && !liveCatalogQuery) {
     main.value.focus({ preventScroll: true });
     // Animate only a new page, never a filter/query update. The existing
     // motion runtime owns reduced-motion and animation cleanup.

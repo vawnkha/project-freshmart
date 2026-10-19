@@ -14,6 +14,10 @@ function hasValue(value) {
   return value !== undefined && value !== null && String(value).trim() !== "";
 }
 
+function normalizeUnit(value) {
+  return typeof value === "string" ? value.trim().normalize("NFC") : "";
+}
+
 function toObjectId(id) {
   if (id instanceof ObjectId) return id;
   return ObjectId.isValid(id) ? new ObjectId(id) : null;
@@ -576,13 +580,25 @@ class ProductsService {
       ? { $and: [filter, PUBLIC_PRODUCT_FILTER] }
       : filter;
 
-    const data = await this.Product.aggregate(
-      this.buildPopulatePipeline({
-        match,
-      }),
-    ).toArray();
-
-    return { data };
+    const requests = [this.Product.aggregate(this.buildPopulatePipeline({ match })).toArray()];
+    if (publicOnly && query.include_units === "1") {
+      // Options span the public catalog, independently of the selected units.
+      // Resolve linked inventory units with the same precedence as product rows.
+      requests.push(this.Product.aggregate([
+        { $match: PUBLIC_PRODUCT_FILTER },
+        { $lookup: { from: "inventory_items", localField: "inventoryItemId", foreignField: "_id", as: "unitInventory" } },
+        { $unwind: { path: "$unitInventory", preserveNullAndEmptyArrays: true } },
+        { $group: { _id: { $cond: [
+          { $ne: [{ $ifNull: ["$inventoryItemId", null] }, null] },
+          { $ifNull: ["$unitInventory.unit", "$unit"] },
+          "$unit",
+        ] } } },
+      ]).toArray());
+    }
+    const [rows, unitRows] = await Promise.all(requests);
+    const selected = publicOnly ? [...new Set((Array.isArray(query.unit) ? query.unit : [query.unit]).map(normalizeUnit).filter(Boolean))] : [];
+    const data = selected.length ? rows.filter(product => selected.includes(normalizeUnit(product.unit))) : rows;
+    return { data, ...(unitRows ? { units: [...new Set(unitRows.map(row => normalizeUnit(row._id)).filter(Boolean))].sort((a, b) => a.localeCompare(b, "vi")) } : {}) };
   }
 
   async getProductsForAI(message, limit = 50) {

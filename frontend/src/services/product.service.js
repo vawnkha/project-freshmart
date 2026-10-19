@@ -5,8 +5,8 @@ class ProductService {
     this.api = api(baseUrl);
   }
 
-  async getAll(params = {}) {
-    const res = await this.api.get("/", { params });
+  async getAll(params = {}, options = {}) {
+    const res = await this.api.get("/", { params, ...(Array.isArray(params.unit) ? { paramsSerializer: { indexes: null } } : {}), ...(options.signal ? { signal: options.signal } : {}) });
     return res.data;
   }
 

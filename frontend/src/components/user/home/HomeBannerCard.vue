@@ -15,14 +15,15 @@ const actionable = computed(() => {
 const linkAttrs = computed(() => !actionable.value ? {} : external.value
   ? { href: props.banner.link, target: '_blank', rel: 'noopener noreferrer' }
   : { to: props.banner.link });
+const hasCopy = computed(() => Boolean(props.banner.title || props.banner.subtitle || props.banner.description || (props.banner.buttonText && actionable.value)));
 </script>
 <template>
-  <component :is="actionable ? (external ? 'a' : RouterLink) : 'article'" v-bind="linkAttrs" class="home-sage-banner-card">
+  <component :is="actionable ? (external ? 'a' : RouterLink) : 'article'" v-bind="linkAttrs" class="home-sage-banner-card" :class="{ 'home-sage-banner-card--image-only': !hasCopy }">
     <div class="home-sage-banner-image">
       <picture v-if="banner.imageUrl && !failed"><source media="(max-width: 767px)" :srcset="banner.mobileImageUrl"><img :src="banner.imageUrl" :alt="banner.title || 'Thông tin từ cửa hàng'" :loading="eager ? 'eager' : 'lazy'" :fetchpriority="eager ? 'high' : 'auto'" decoding="async" @error="failed = true"></picture>
       <div v-else class="image-placeholder" role="img" aria-label="Banner — chưa tải được ảnh"><span>Chưa tải được hình ảnh</span></div>
     </div>
-    <div v-if="banner.title || banner.subtitle || banner.description || (banner.buttonText && actionable)" class="home-sage-banner-copy">
+    <div v-if="hasCopy" class="home-sage-banner-copy">
       <p v-if="banner.subtitle" class="home-sage-banner-subtitle">{{ banner.subtitle }}</p>
       <h3 v-if="banner.title">{{ banner.title }}</h3>
       <p v-if="banner.description">{{ banner.description }}</p>

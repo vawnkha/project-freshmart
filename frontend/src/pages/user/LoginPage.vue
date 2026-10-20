@@ -1,5 +1,6 @@
 <script setup>
 import { userError, userFieldErrors, userMessage } from "@/utils/user-error.util";
+import { articleLoginReturn } from "@/utils/article-comment.util";
 import PasswordField from "@/components/user/auth/PasswordField.vue";
 import { useAuthRequestContext } from "@/components/user/auth/useAuthRequestContext";
 import AuthPanel from "@/components/user/common/AuthPanel.vue";
@@ -66,7 +67,7 @@ async function handleLogin() {
     await pending;
     if (disposed || !loginRequest.isCurrent()) return;
 
-    router.push("/");
+    router.push(articleLoginReturn(route.query.redirect));
   } catch (error) {
     if (disposed || isAuthRequestInvalidated(error) || (loginRequest && !loginRequest.isCurrent(false))) return;
     setErrors(userFieldErrors(error));

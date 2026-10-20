@@ -39,3 +39,7 @@ __screenshots__/
 # Vite
 *.timestamp-*-*.mjs
 test
+!test/
+test/*
+!test/sage-catalog.test.mjs
+test-support

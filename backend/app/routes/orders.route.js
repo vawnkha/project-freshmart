@@ -53,6 +53,9 @@ router.patch(
   validate({ params: orderIdParamSchema }),
   order.complete,
 );
+router.post("/:id/return-received", authMiddleware.authorizePermissions("order:update"),
+  validate({ params: orderIdParamSchema, body: require("zod").z.object({ reason: require("zod").z.string().trim().min(1).max(2000), received: require("zod").z.literal(true) }).strict() }),
+  order.returnReceived);
 router.patch(
   "/:id/status",
   validate({ params: orderIdParamSchema, body: updateOrderStatusSchema }),

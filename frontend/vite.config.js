@@ -6,6 +6,8 @@ import vueDevTools from "vite-plugin-vue-devtools";
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Keep the running web app separate from middleware/SSR test optimizers.
+  cacheDir: "node_modules/.vite-dev",
   plugins: [vue(), vueDevTools()],
   resolve: {
     alias: {

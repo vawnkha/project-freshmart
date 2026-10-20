@@ -10,7 +10,7 @@ const {
   statusEnum,
 } = require("./common.validator");
 
-const SCOPES = ["order", "product", "category"];
+const SCOPES = ["order", "product", "category", "batch"];
 const TYPES = ["percent", "fixed"];
 const STATUSES = ["active", "inactive"];
 const scopeSchema = z.enum(SCOPES, { message: "scope khong hop le" });

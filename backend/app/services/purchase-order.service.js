@@ -6,6 +6,7 @@ const InventoryItemRepository = require("../repositories/inventory-item.reposito
 const InventoryService = require("./inventory.service");
 const validator = require("../validators/purchase-order.validator");
 const { isInventoryItemActive } = require("../utils/inventory-query.util");
+const { normalizeExpiryDate } = require("../utils/expiry.util");
 
 function toObjectId(id) {
   if (id instanceof ObjectId) return id;
@@ -77,7 +78,7 @@ class PurchaseOrderService {
         manufacturingDate: item.manufacturingDate
           ? new Date(item.manufacturingDate)
           : null,
-        expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
+        expiryDate: normalizeExpiryDate(item.expiryDate),
         warehouseLocation: String(item.warehouseLocation || "").trim(),
       });
     }

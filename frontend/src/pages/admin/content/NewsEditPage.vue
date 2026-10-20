@@ -1,8 +1,11 @@
 <script setup>
+import "@/assets/css/admin/news-editor.css";
 import { normalizeId } from "@/utils/id.util";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import RichTextEditor from "@/components/admin/common/RichTextEditor.vue";
+import TagInput from "@/components/admin/common/TagInput.vue";
+import { normalizeNewsTags } from "@/utils/news-tags.util";
 import newsService from "@/services/news.service";
 import newsCategoryService from "@/services/news-category.service";
 import uploadService from "@/services/upload.service";
@@ -13,7 +16,8 @@ const categories = ref([]);
 const loading = ref(false);
 const saving = ref(false);
 const uploadingThumbnail = ref(false);
-const tagText = ref("");
+const tags = ref([]);
+const tagInputRef = ref(null);
 const thumbnailInputRef = ref(null);
 const thumbnailFile = ref(null);
 const thumbnailPreview = ref("");
@@ -52,13 +56,6 @@ function slugify(value) {
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-}
-
-function parseTags(value) {
-  return String(value || "")
-    .split(",")
-    .map((tag) => tag.trim())
-    .filter(Boolean);
 }
 
 function toDateTimeLocal(value) {
@@ -128,7 +125,7 @@ function fillForm(article = {}) {
   form.publishedAt = toDateTimeLocal(article.publishedAt);
   form.seoTitle = article.seoTitle || "";
   form.seoDescription = article.seoDescription || "";
-  tagText.value = (article.tags || []).join(", ");
+  tags.value = normalizeNewsTags(article.tags);
   thumbnailPreview.value = form.thumbnail;
 }
 
@@ -144,7 +141,7 @@ function buildPayload() {
     summary: form.summary.trim(),
     content: form.content,
     thumbnail: form.thumbnail.trim(),
-    tags: parseTags(tagText.value),
+    tags: normalizeNewsTags(tags.value),
     status: form.status,
     publishedAt: form.publishedAt,
     seoTitle: form.seoTitle.trim(),
@@ -184,6 +181,8 @@ async function fetchData() {
 }
 
 async function submitForm() {
+  if (saving.value) return;
+  tags.value = tagInputRef.value?.commit() || tags.value;
   const message = validateForm();
   if (message) {
     alert(message);
@@ -208,7 +207,7 @@ onMounted(fetchData);
 </script>
 
 <template>
-  <div class="admin-page">
+  <div class="admin-page news-editor-page">
     <div class="admin-page-title admin-page-title--stack">
       <h1>Sửa bài viết</h1>
       <p>Cập nhật nội dung tin tức/blog với thumbnail upload và rich text.</p>
@@ -282,12 +281,8 @@ onMounted(fetchData);
           </div>
 
           <div class="admin-form__row">
-            <label class="admin-form__label">Tags</label>
-            <input
-              v-model="tagText"
-              class="admin-form__control"
-              placeholder="Nhập tag, cách nhau bằng dấu phẩy"
-            />
+            <label class="admin-form__label" for="news-tags">Tags</label>
+            <TagInput id="news-tags" ref="tagInputRef" v-model="tags" :disabled="saving" />
           </div>
 
           <div class="admin-form__row">

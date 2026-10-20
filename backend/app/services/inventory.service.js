@@ -1,6 +1,7 @@
 const { ObjectId } = require("mongodb");
 const ApiError = require("../api-error");
 const InventoryStockService = require("./inventory-stock.service");
+const { classifyExpiry, normalizeExpiryDate } = require("../utils/expiry.util");
 const {
   FEFO_SORT,
   buildAvailableBatchFefoFilter,
@@ -114,7 +115,7 @@ class InventoryService {
         manufacturingDate: item.manufacturingDate
           ? new Date(item.manufacturingDate)
           : null,
-        expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
+        expiryDate: normalizeExpiryDate(item.expiryDate),
         warehouseLocation: item.warehouseLocation || "",
         status: "available",
         createdAt: new Date(),
@@ -124,6 +125,8 @@ class InventoryService {
       const batchResult = await this.InventoryBatch.insertOne(batch, {
         session: options.session,
       });
+      await new (require("./expiry-monitoring.service"))(this.deletion.client || this.stockService.client)
+        .checkBatch({ _id: batchResult.insertedId, ...batch }, options);
       const summaryResult = await this.increaseSummary(
         {
           _id: inventoryItemId,
@@ -192,7 +195,8 @@ class InventoryService {
             },
           },
         },
-        { $sort: FEFO_SORT },
+        { $addFields: { promotionPriority: { $cond: [{ $eq: ["$_id", toObjectId(options.preferredBatchId)] }, 0, 1] } } },
+        { $sort: { promotionPriority: 1, ...FEFO_SORT } },
       ],
       { session: options.session },
     ).toArray();
@@ -360,8 +364,7 @@ class InventoryService {
       );
       if (!batch) throw new ApiError(409, "Lo hang hoan kho khong ton tai");
       // Returning an order never unlocks a quarantined/disabled batch.
-      const expired =
-        batch.expiryDate && new Date(batch.expiryDate) < new Date();
+      const expired = classifyExpiry(batch.expiryDate).expiryStatus === "expired";
       const restoredStatus = ["available", "sold_out"].includes(batch.status)
         ? expired
           ? "expired"

@@ -31,6 +31,9 @@ class OrdersService {
     const res = await this.api.patch(`/${id}/cancel`);
     return res.data;
   }
+  async returnReceived(id, reason) {
+    return (await this.api.post(`/${id}/return-received`, { reason, received: true })).data;
+  }
 
   async complete(id) {
     const res = await this.api.patch(`/${id}/complete`);

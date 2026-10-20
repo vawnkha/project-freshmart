@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useAdminStore } from "@/stores/admin/admin";
 import { buildDashboardLists, getOrderRevenue } from "@/utils/dashboard.util";
+import ExpiryDashboardNotice from "@/components/admin/inventory/ExpiryDashboardNotice.vue";
 
 const adminStore = useAdminStore();
 
@@ -187,6 +188,7 @@ onMounted(async () => {
 
 <template>
   <div class="admin-page dashboard-page">
+    <ExpiryDashboardNotice />
     <div class="admin-page-title admin-page-title--stack">
       <h1>Tổng quan hệ thống</h1>
       <p>Thống kê nhanh hoạt động bán hàng, doanh thu và dữ liệu mới nhất</p>

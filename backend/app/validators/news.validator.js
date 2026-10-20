@@ -1,4 +1,5 @@
 const { z } = require("zod");
+const { normalizeNewsTags } = require("../utils/news-tags.util");
 const {
   idParamSchema,
   nonEmptyString,
@@ -15,6 +16,7 @@ const optionalDateSchema = z.preprocess(
   z.string().refine((value) => !Number.isNaN(new Date(value).getTime()), "publishedAt khong hop le").optional(),
 );
 const stringListSchema = z.array(z.string());
+const newsTagsSchema = z.union([z.string(), z.array(z.string())]).transform(normalizeNewsTags);
 
 const newsFields = {
   categoryId: objectIdSchema,
@@ -24,7 +26,7 @@ const newsFields = {
   content: optionalString,
   thumbnail: optionalString,
   images: stringListSchema.optional(),
-  tags: stringListSchema.optional(),
+  tags: newsTagsSchema.optional(),
   status: statusSchema.optional(),
   publishedAt: optionalDateSchema,
   seoTitle: optionalString,
@@ -50,8 +52,8 @@ function validatePayload(payload = {}, options = {}) {
     return "images phai la mang";
   }
 
-  if (payload.tags !== undefined && !Array.isArray(payload.tags)) {
-    return "tags phai la mang";
+  if (payload.tags !== undefined && !newsTagsSchema.safeParse(payload.tags).success) {
+    return "Tags phải là chuỗi hoặc mảng các chuỗi";
   }
 
   return null;

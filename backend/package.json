@@ -9,6 +9,8 @@
   "scripts": {
     "start": "nodemon server.js",
     "test": "node --test",
+    "lint": "eslint app app.js server.js scripts test",
+    "migrate:inventory-expiry": "node scripts/migrate-inventory-expiry.js",
     "migrate:security-indexes": "node scripts/migrate-security-indexes.js"
   },
   "dependencies": {

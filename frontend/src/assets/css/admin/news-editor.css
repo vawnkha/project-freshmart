@@ -1,0 +1,24 @@
+/* Limit these layout corrections to the two article forms that host TagInput. */
+@media (max-width: 992px) {
+  .news-editor-page .news-form .admin-form__row > :not(.admin-form__label) {
+    grid-column: 1;
+  }
+}
+
+@media (max-width: 768px) {
+  .admin-shell:has(.news-editor-page) {
+    flex-direction: column;
+  }
+
+  .admin-shell:has(.news-editor-page) > .admin-sidebar {
+    position: static;
+    width: 100%;
+    height: auto;
+    max-height: 240px;
+  }
+
+  .admin-content:has(.news-editor-page) {
+    width: 100%;
+    margin-left: 0;
+  }
+}

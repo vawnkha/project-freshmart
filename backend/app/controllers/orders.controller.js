@@ -152,6 +152,14 @@ exports.cancel = async (req, res, next) => {
   }
 };
 
+exports.returnReceived = async (req, res, next) => {
+  try {
+    const result = await new OrdersService(MongoDB.client).returnReceivedOrder(req.params.id, req.user, req.body.reason);
+    if (!result) throw new ApiError(404, "Đơn hàng không tồn tại");
+    return res.send(result);
+  } catch (error) { return next(error); }
+};
+
 exports.complete = async (req, res, next) => {
   try {
     const { id } = req.params;

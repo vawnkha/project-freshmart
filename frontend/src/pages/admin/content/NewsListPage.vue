@@ -1,5 +1,6 @@
 <script setup>
 import { normalizeId } from "@/utils/id.util";
+import { normalizeNewsTags } from "@/utils/news-tags.util";
 import { computed, onMounted, ref, watch } from "vue";
 import AdminPagination from "@/components/admin/common/AdminPagination.vue";
 import newsService from "@/services/news.service";
@@ -87,7 +88,7 @@ async function fetchData() {
       newsService.getAll(),
       newsCategoryService.getAll(),
     ]);
-    articles.value = normalizeList(newsRes);
+    articles.value = normalizeList(newsRes).map((article) => ({ ...article, tags: normalizeNewsTags(article.tags) }));
     categories.value = normalizeList(categoryRes);
   } catch (error) {
     console.error(error);

@@ -140,11 +140,14 @@ function rememberPaypal(payment) {
 
 async function capturePendingPaypal(id = pendingPaypal.value?.id) {
   if (!id || submitting.value) return;
+  const captureOwner = normalizeId(authStore.userId), captureEpoch = cartStore.ownerVersion;
+  const ownsCapture = () => !disposed && captureOwner === normalizeId(authStore.userId) && captureEpoch === cartStore.ownerVersion;
   submitting.value = true;
   paypalError.value = "";
   try {
     rememberPaypal({ id, phase: "capture" });
     const result = await paymentService.capturePaypalOrder({ paypalOrderId: id });
+    if (!ownsCapture()) return;
     if (!result?.data?._id) throw new Error("Chưa thể xác nhận đơn hàng sau thanh toán. Vui lòng thử lại.");
     rememberPaypal(null);
     // The payment API has confirmed the order. A later cart refresh failure
@@ -153,7 +156,13 @@ async function capturePendingPaypal(id = pendingPaypal.value?.id) {
     cartStore.subtotal = 0;
     openSuccessModal("Thanh toán PayPal thành công");
   } catch (error) {
+    if (!ownsCapture()) return;
     if (error?.response?.data?.code === "PAYPAL_NOT_APPROVED") rememberPaypal({ id, phase: "created" });
+    if (["PAYPAL_PAYMENT_TERMINAL", "PAYPAL_INTENT_EXPIRED"].includes(error?.response?.data?.code)) {
+      rememberPaypal(null);
+      await loadCheckout();
+      if (!ownsCapture()) return;
+    }
     mapCheckoutErrors(error);
     paypalError.value = userError(error, "Chưa thể xác nhận kết quả PayPal. Vui lòng thử lại giao dịch này.");
   } finally { submitting.value = false; }
@@ -221,16 +230,20 @@ const selectedShippingMethod = computed(() => {
 const shippingFee = computed(() =>
   items.value.length ? Number(selectedShippingMethod.value?.fee || 0) : 0,
 );
+const pricingSubtotal = computed(() => {
+  const authoritative = appliedDiscount.value?.orderTotal;
+  return typeof authoritative === "number" && Number.isFinite(authoritative) && authoritative >= 0 ? authoritative : Number(cartTotal.value || 0);
+});
 const discountAmount = computed(() =>
   Math.min(
-    Number(cartTotal.value || 0),
+    pricingSubtotal.value,
     Number(appliedDiscount.value?.discountAmount || 0),
   ),
 );
 const grandTotal = computed(() =>
   Math.max(
     0,
-    Number(cartTotal.value || 0) +
+    pricingSubtotal.value +
       Number(shippingFee.value || 0) -
       Number(discountAmount.value || 0),
   ),
@@ -1007,6 +1020,7 @@ function checkoutMoney(value) {
                       </small>
                     </span>
                     <strong>-{{ checkoutMoney(discountAmount) }}</strong>
+                    <p v-if="appliedDiscount.batchOffer">Lô {{ appliedDiscount.batchOffer.batchNumber }} · HSD {{ new Date(appliedDiscount.batchOffer.expiryDate).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) }}. Giảm {{ appliedDiscount.discount.value }}% trên {{ appliedDiscount.discount.eligibleQuantity }} sản phẩm thuộc lô này; phần hàng khác giữ giá thường.</p>
                   </div>
 
                   <div
@@ -1093,7 +1107,7 @@ function checkoutMoney(value) {
 
                 <div class="summary-row">
                   <span>Tạm tính</span>
-                  <strong>{{ checkoutMoney(cartTotal) }}</strong>
+                  <strong>{{ checkoutMoney(pricingSubtotal) }}</strong>
                 </div>
 
                 <div class="summary-row">

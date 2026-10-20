@@ -46,6 +46,9 @@ const adminRoutes = [
           import("@/pages/admin/inventory/InventoryBatchListPage.vue"),
         meta: { requiredPermission: "inventory:manage" },
       },
+      { path: "inventory-expiry", name: "admin-inventory-expiry", component: () => import("@/pages/admin/inventory/InventoryExpiryPage.vue"), meta: { requiredPermission: "inventory:manage" } },
+      { path: "inventory-expiry/:id", name: "admin-inventory-expiry-detail", component: () => import("@/pages/admin/inventory/InventoryExpiryDetailPage.vue"), meta: { requiredPermission: "inventory:manage" } },
+      { path: "discounts/proposals", name: "admin-promotion-proposals", component: () => import("@/pages/admin/marketing/PromotionProposalListPage.vue"), meta: { requiredPermission: "discount:manage" } },
       {
         path: "inventory-summaries",
         name: "admin-inventory-summaries",
@@ -137,6 +140,12 @@ const adminRoutes = [
         name: "admin-news-categories",
         component: () =>
           import("@/pages/admin/content/NewsCategoryListPage.vue"),
+        meta: { requiredPermission: "news:manage" },
+      },
+      {
+        path: "news-comments",
+        name: "admin-news-comments",
+        component: () => import("@/pages/admin/content/ArticleCommentListPage.vue"),
         meta: { requiredPermission: "news:manage" },
       },
       {

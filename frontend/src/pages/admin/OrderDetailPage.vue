@@ -12,6 +12,14 @@ const sendingInvoice = ref(false);
 const invoiceRef = ref(null);
 const canUpdateOrders = computed(() => hasPermission(authStore, "order:update"));
 const failedImages = ref(new Set());
+const returnReason = ref(""), returning = ref(false), returnError = ref("");
+async function returnReceived() {
+  if (returning.value || !returnReason.value.trim()) return;
+  returning.value = true; returnError.value = "";
+  try { await ordersService.returnReceived(order.value._id, returnReason.value); await fetchOrder(); }
+  catch (cause) { returnError.value = cause.response?.data?.message || "Không thể ghi nhận hàng hoàn."; }
+  finally { returning.value = false; }
+}
 
 function amount(value) {
   if ((typeof value !== "number" && typeof value !== "string") ||
@@ -49,7 +57,7 @@ function formatPrice(value) {
 
 function formatDate(value) {
   if (!value) return "";
-  return new Date(value).toLocaleString("vi-VN");
+  return new Date(value).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
 }
 
 async function handleSendInvoice() {
@@ -83,6 +91,7 @@ onMounted(fetchOrder);
 <template>
   <div v-if="order" class="admin-page">
     <div class="admin-page-title">Hóa đơn</div>
+    <details v-if="canUpdateOrders && ['shipping','completed','cancel_pending'].includes(order.status)" class="admin-panel mb-3"><summary>Xác nhận đã nhận hàng hoàn</summary><form class="admin-panel__body" @submit.prevent="returnReceived"><p>Chỉ xác nhận sau khi đã nhận lại toàn bộ hàng. Hệ thống hoàn về đúng lô; lô khóa hoặc hết hạn không được mở bán. Thanh toán PayPal hoàn tất sẽ được hoàn tiền trước khi hoàn kho.</p><label>Lý do / biên bản nhận hàng<textarea v-model="returnReason" maxlength="2000" required class="form-control" /></label><p v-if="returnError" role="alert">{{ returnError }}</p><button class="admin-btn admin-btn--primary mt-2" :disabled="returning || !returnReason.trim()">{{ returning ? 'Đang xử lý…' : 'Xác nhận đã nhận đủ hàng hoàn' }}</button></form></details>
 
     <section ref="invoiceRef" class="admin-panel admin-invoice-panel">
       <div class="admin-panel__header">Hóa đơn</div>
@@ -179,6 +188,7 @@ onMounted(fetchOrder);
                 </td>
                 <td>
                   <div class="invoice-product-name">{{ item.name }}</div>
+                  <div v-for="allocation in item.batchAllocations || []" :key="allocation.batchId">Lô {{ allocation.batchNumber }} · HSD {{ formatDate(allocation.expiryDate) }} · {{ allocation.quantity }} {{ item.unit }}<span v-if="allocation.discountAmount"> · Giảm {{ formatPrice(allocation.discountAmount) }} cho {{ allocation.discountQuantity }} sản phẩm</span></div>
                 </td>
                 <td>{{ formatPrice(item.price) }}</td>
                 <td>{{ item.quantity }}</td>

@@ -29,6 +29,7 @@ const POLICIES = {
     ),
   ],
   products: [
+    reference("promotion_proposals", ["productId"], "đề xuất khuyến mãi theo lô"),
     reference(
       "orders",
       ["items.product_id", "items.productId"],
@@ -80,6 +81,7 @@ const POLICIES = {
     ),
   ],
   inventory_items: [
+    reference("promotion_proposals", ["inventoryItemId"], "đề xuất khuyến mãi theo lô"),
     reference(
       "inventory_batches",
       ["inventoryItemId", "inventory_item_id"],
@@ -150,6 +152,7 @@ const POLICIES = {
     ),
   ],
   discounts: [
+    reference("promotion_proposals", ["discountId"], "đề xuất khuyến mãi theo lô"),
     reference(
       "orders",
       ["discount.discount_id", "discount._id", "discountId", "discount_id"],
@@ -176,7 +179,7 @@ const POLICIES = {
   news_categories: [
     reference("news", ["categoryId", "category_id"], "bài viết liên quan"),
   ],
-  news: [],
+  news: [reference("article_comments", ["article_id"], "bình luận bài viết liên quan")],
   addresses: [
     reference("orders", ["address_id", "addressId"], "đơn hàng liên quan"),
     reference(
@@ -186,6 +189,7 @@ const POLICIES = {
     ),
   ],
   users: [
+    reference("promotion_proposals", ["createdBy", "approvedBy", "rejectedBy", "updatedBy", "history.actorId"], "lịch sử đề xuất giảm giá"),
     reference("orders", ["user_id", "userId"], "đơn hàng liên quan"),
     reference("payments", ["user_id", "userId"], "thanh toán liên quan"),
     reference(
@@ -206,6 +210,7 @@ const POLICIES = {
       "danh sách yêu thích liên quan",
     ),
     reference("reviews", ["user_id", "userId"], "đánh giá liên quan"),
+    reference("article_comments", ["user_id"], "bình luận bài viết liên quan"),
     reference("news", ["createdBy", "updatedBy"], "bài viết đã biên tập"),
     reference("banners", ["createdBy", "updatedBy"], "banner đã biên tập"),
     reference(
@@ -313,6 +318,10 @@ class ResourceDeletionService {
       add("users", data.createdBy);
     }
     if (collection === "news") add("news_categories", data.categoryId);
+    if (collection === "article_comments") {
+      add("news", data.article_id);
+      add("users", data.user_id);
+    }
     if (["news", "banners"].includes(collection))
       add("users", data.createdBy, data.updatedBy);
     if (collection === "discounts") {

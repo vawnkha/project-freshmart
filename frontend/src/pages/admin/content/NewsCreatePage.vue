@@ -1,8 +1,11 @@
 <script setup>
+import "@/assets/css/admin/news-editor.css";
 import { normalizeId } from "@/utils/id.util";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import RichTextEditor from "@/components/admin/common/RichTextEditor.vue";
+import TagInput from "@/components/admin/common/TagInput.vue";
+import { normalizeNewsTags } from "@/utils/news-tags.util";
 import newsService from "@/services/news.service";
 import newsCategoryService from "@/services/news-category.service";
 import uploadService from "@/services/upload.service";
@@ -13,7 +16,8 @@ const loading = ref(false);
 const saving = ref(false);
 const uploadingThumbnail = ref(false);
 const slugTouched = ref(false);
-const tagText = ref("");
+const tags = ref([]);
+const tagInputRef = ref(null);
 const thumbnailInputRef = ref(null);
 const thumbnailFile = ref(null);
 const thumbnailPreview = ref("");
@@ -52,13 +56,6 @@ function slugify(value) {
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-}
-
-function parseTags(value) {
-  return String(value || "")
-    .split(",")
-    .map((tag) => tag.trim())
-    .filter(Boolean);
 }
 
 function validateImage(file) {
@@ -123,7 +120,7 @@ function buildPayload() {
     content: form.content,
     thumbnail: form.thumbnail.trim(),
     images: [],
-    tags: parseTags(tagText.value),
+    tags: normalizeNewsTags(tags.value),
     status: form.status,
     publishedAt: form.publishedAt || undefined,
     seoTitle: form.seoTitle.trim(),
@@ -158,6 +155,8 @@ async function fetchCategories() {
 }
 
 async function submitForm() {
+  if (saving.value) return;
+  tags.value = tagInputRef.value?.commit() || tags.value;
   const message = validateForm();
   if (message) {
     alert(message);
@@ -189,7 +188,7 @@ onMounted(fetchCategories);
 </script>
 
 <template>
-  <div class="admin-page">
+  <div class="admin-page news-editor-page">
     <div class="admin-page-title admin-page-title--stack">
       <h1>Thêm bài viết</h1>
       <p>Tạo bài viết tin tức/blog mới với thumbnail upload và nội dung rich text.</p>
@@ -263,12 +262,8 @@ onMounted(fetchCategories);
           </div>
 
           <div class="admin-form__row">
-            <label class="admin-form__label">Tags</label>
-            <input
-              v-model="tagText"
-              class="admin-form__control"
-              placeholder="Nhập tag, cách nhau bằng dấu phẩy"
-            />
+            <label class="admin-form__label" for="news-tags">Tags</label>
+            <TagInput id="news-tags" ref="tagInputRef" v-model="tags" :disabled="saving" />
           </div>
 
           <div class="admin-form__row">

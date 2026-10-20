@@ -4,6 +4,15 @@ const ApiError = require("../api-error");
 const NewsRepository = require("../repositories/news.repository");
 const validator = require("../validators/news.validator");
 const { sanitizeNewsHtml } = require("../utils/content-security.util");
+const { normalizeNewsTags, escapeRegex, newsTagPattern } = require("../utils/news-tags.util");
+
+function presentNews(document) {
+  return document ? {
+    ...document,
+    tags: normalizeNewsTags(document.tags),
+    content: sanitizeNewsHtml(document.content),
+  } : null;
+}
 
 function hasValue(value) {
   return value !== undefined && value !== null && String(value).trim() !== "";
@@ -85,8 +94,8 @@ class NewsService {
             : undefined,
         tags:
           payload.tags !== undefined
-            ? normalizeStringList(payload.tags)
-            : undefined,
+            ? normalizeNewsTags(payload.tags)
+            : includeCreatedAt ? [] : undefined,
         status:
           payload.status !== undefined
             ? String(payload.status).trim()
@@ -146,10 +155,10 @@ class NewsService {
       if (categoryId) filter.categoryId = categoryId;
     }
 
-    if (query.tag) filter.tags = String(query.tag);
+    if (query.tag) filter.tags = { $regex: newsTagPattern(query.tag), $options: "i" };
 
     if (query.keyword) {
-      const keyword = String(query.keyword).trim();
+      const keyword = escapeRegex(String(query.keyword).trim());
       filter.$or = [
         { title: { $regex: keyword, $options: "i" } },
         { slug: { $regex: keyword, $options: "i" } },
@@ -185,17 +194,12 @@ class NewsService {
           : { createdAt: -1 },
       },
     );
-    return documents.map((document) => ({
-      ...document,
-      content: sanitizeNewsHtml(document.content),
-    }));
+    return documents.map(presentNews);
   }
 
   async findById(id) {
     const document = await this.repository.findById(id);
-    return document
-      ? { ...document, content: sanitizeNewsHtml(document.content) }
-      : null;
+    return presentNews(document);
   }
 
   async findPublicBySlug(slug) {
@@ -204,9 +208,7 @@ class NewsService {
       ...filter,
       slug: normalizeSlug(slug),
     });
-    return document
-      ? { ...document, content: sanitizeNewsHtml(document.content) }
-      : null;
+    return presentNews(document);
   }
 
   async buildPublicFilter(query = {}) {
@@ -229,8 +231,9 @@ class NewsService {
     });
     await this.ensureCategoryExists(data.categoryId);
     await this.ensureUniqueSlug(data);
-    return this.deletion.withReferences(this.deletion.referencesFor("news", data),
+    const document = await this.deletion.withReferences(this.deletion.referencesFor("news", data),
       (session) => this.repository.create(data, { session }));
+    return presentNews(document);
   }
 
   async update(id, payload = {}, options = {}) {
@@ -257,8 +260,9 @@ class NewsService {
       data.publishedAt = new Date();
     }
 
-    return this.deletion.withReferences(this.deletion.referencesFor("news", data),
+    const document = await this.deletion.withReferences(this.deletion.referencesFor("news", data),
       (session) => this.repository.updateById(id, data, { session }));
+    return presentNews(document);
   }
 
   remove(id, options = {}) {

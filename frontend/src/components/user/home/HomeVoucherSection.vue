@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue';
 import discountService from '@/services/discount.service';
 import { useHomeResource } from '@/composables/useHomeResource';
 import { useVoucherCarousel } from '@/composables/useVoucherCarousel';
@@ -8,6 +8,9 @@ import AppState from '@/components/user/common/AppState.vue';
 const { data: vouchers, loading, error, load: loadVouchers } = useHomeResource(
   () => discountService.getPublic(), 'Ưu đãi tạm thời chưa tải được. Vui lòng thử lại.');
 const notice = ref('');
+let expiryRefresh;
+onMounted(() => { expiryRefresh = setInterval(loadVouchers, 60000); expiryRefresh.unref?.(); });
+onBeforeUnmount(() => clearInterval(expiryRefresh));
 const rail = ref(null), previous = ref(null), next = ref(null);
 const { canPrevious, canNext, move } = useVoucherCarousel(rail, previous, next, computed(() => vouchers.value.length));
 </script>

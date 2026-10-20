@@ -110,6 +110,8 @@ const menus = [
     names: [
       "admin-inventory-items",
       "admin-inventory-batches",
+      "admin-inventory-expiry",
+      "admin-inventory-expiry-detail",
       "admin-inventory-summaries",
       "admin-inventory-transactions",
       "admin-purchase-orders",
@@ -129,6 +131,7 @@ const menus = [
         names: ["admin-inventory-batches"],
         permission: "inventory:manage",
       },
+      { label: "Cảnh báo hạn sử dụng", to: { name: "admin-inventory-expiry" }, names: ["admin-inventory-expiry", "admin-inventory-expiry-detail"], permission: "inventory:manage" },
       {
         label: "Tồn kho tổng",
         to: { name: "admin-inventory-summaries" },
@@ -177,6 +180,7 @@ const menus = [
     names: ["admin-discounts"],
     permission: "discount:manage",
   },
+  { key: "promotion-proposals", label: "Duyệt giảm giá theo lô", icon: "fa-solid fa-clipboard-check", to: { name: "admin-promotion-proposals" }, names: ["admin-promotion-proposals"], permission: "discount:manage" },
   {
     key: "content",
     label: "Tin tức",
@@ -187,6 +191,7 @@ const menus = [
       "admin-news",
       "admin-news-create",
       "admin-news-edit",
+      "admin-news-comments",
       "admin-banners",
     ],
     children: [
@@ -200,6 +205,12 @@ const menus = [
         label: "Bài viết",
         to: { name: "admin-news" },
         names: ["admin-news", "admin-news-create", "admin-news-edit"],
+        permission: "news:manage",
+      },
+      {
+        label: "Bình luận bài viết",
+        to: { name: "admin-news-comments" },
+        names: ["admin-news-comments"],
         permission: "news:manage",
       },
       {

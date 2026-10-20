@@ -8,6 +8,7 @@ import { detailId, detailStock, productSpecifications, quantityMessage } from '@
 import { productPrice } from '@/utils/storefront.util';
 import StorefrontBreadcrumb from '@/components/user/common/StorefrontBreadcrumb.vue';
 import ProductPrice from '@/components/user/product/ProductPrice.vue';
+import BatchPromotionNotice from '@/components/user/product/BatchPromotionNotice.vue';
 import ProductGallery from '@/components/user/product/ProductGallery.vue';
 import ProductInformation from '@/components/user/product/ProductInformation.vue';
 import ProductReviews from '@/components/user/product/ProductReviews.vue';
@@ -67,6 +68,7 @@ watch(() => route.params.id, () => { quantity.value = 1; touched.value = false; 
             <h1>{{ product.name || 'Chi tiết sản phẩm' }}</h1>
             <p v-if="product.productCode" class="pdp-product-code">Mã sản phẩm: {{ product.productCode }}</p>
             <ProductPrice :product="product" />
+            <BatchPromotionNotice :product-id="detailId(product._id || product.id)" :promotions="product.batchPromotions" />
             <p v-if="product.shortDescription" class="pdp-short-description">{{ product.shortDescription }}</p>
             <dl class="pdp-facts">
               <div v-if="packageSize" class="pdp-fact"><dt>Quy cách đóng gói</dt><dd>{{ packageSize }}</dd></div>

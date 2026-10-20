@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test": "node --test",
+    "lint": "node scripts/check-source.mjs",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"

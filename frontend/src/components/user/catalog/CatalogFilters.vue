@@ -31,6 +31,7 @@ const groups = computed(() => {
   if (props.modelValue.category_id && !options.some(option => option.value === props.modelValue.category_id)) options.push({ id: 'current', value: props.modelValue.category_id, label: 'Danh mục theo liên kết hiện tại' });
   return [
     { id: 'category', key: 'category_id', title: 'Danh mục', hint: 'Chọn một danh mục.', options, loading: props.categoryLoading, error: props.errors.category_id },
+    { id: 'price', key: 'price', title: 'Lọc giá' },
     { id: 'unit', key: 'unit', title: 'Đóng gói', hint: 'Có thể chọn nhiều đơn vị.', options: props.units.map((unit, index) => ({ id: String(index), value: unit, label: unit })), loading: props.unitLoading && !props.units.length },
   ];
 });
@@ -53,37 +54,39 @@ function chooseUnit(value, checked) {
 </script>
 <template>
   <form :id="prefix + '-form'" class="catalog-filter-form" novalidate aria-label="Bộ lọc sản phẩm" @submit.prevent="emit('commit', true)">
-    <SageAccordion v-model="expanded.price" title="Lọc giá" class="catalog-filter-panel">
-      <fieldset class="catalog-filter-options">
-        <legend class="sage-visually-hidden">Lọc giá</legend>
-        <p class="catalog-filter-hint">Chọn một khoảng giá.</p>
-        <label v-for="range in priceRanges" :key="range.id" class="catalog-filter-option" :for="prefix + '-price-' + range.id">
-          <input :id="prefix + '-price-' + range.id" type="checkbox" :name="prefix + '-price'" :checked="matchesRange(range)" @change="choosePrice(range, $event.target.checked)" />
-          <span>{{ range.label }}</span>
-        </label>
-      </fieldset>
-      <details class="catalog-custom-price" :open="customOpen" @toggle="customOpen = $event.target.open">
-        <summary>Khoảng giá tùy chọn <i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
-        <div class="catalog-custom-price-inputs">
-          <SageInput :id="prefix + '-min'" label="Giá từ" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Không giới hạn" :model-value="modelValue.min_price" :error="errors.min_price" @update:model-value="update(modelValue, 'min_price', $event)" @blur="emit('commit')" />
-          <SageInput :id="prefix + '-max'" label="Giá đến" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Không giới hạn" :model-value="modelValue.max_price" :error="errors.max_price" @update:model-value="update(modelValue, 'max_price', $event)" @blur="emit('commit')" />
-        </div>
-      </details>
-    </SageAccordion>
     <SageAccordion v-for="group in groups" :key="group.key" v-model="expanded[group.key]" :title="group.title" class="catalog-filter-panel">
-      <fieldset class="catalog-filter-options" :aria-busy="group.loading || undefined" :aria-describedby="group.error ? prefix + '-' + group.id + '-error' : undefined">
-        <legend class="sage-visually-hidden">{{ group.title }}</legend>
-        <p v-if="group.hint" class="catalog-filter-hint">{{ group.hint }}</p>
-        <label v-for="option in group.options" :key="option.id" class="catalog-filter-option" :for="prefix + '-' + group.id + '-' + option.id">
-          <input :id="prefix + '-' + group.id + '-' + option.id" type="checkbox" :name="prefix + '-' + group.id" :value="option.value" :checked="group.key === 'unit' ? modelValue.unit.includes(option.value) : modelValue[group.key] === option.value" :disabled="group.loading" :aria-invalid="group.error && option.id === 'all' ? true : undefined" :aria-describedby="group.error ? prefix + '-' + group.id + '-error' : undefined" @change="group.key === 'unit' ? chooseUnit(option.value, $event.target.checked) : chooseSingle(group.key, option.value, $event)" />
-          <span>{{ option.label }}</span>
-        </label>
-        <p v-if="group.loading" class="catalog-filter-hint" role="status">{{ group.key === 'unit' ? 'Đang tải đóng gói…' : 'Đang tải danh mục…' }}</p>
-        <p v-if="group.key === 'unit' && !units.length && !unitLoading && !unitError" class="catalog-filter-hint">Chưa có dữ liệu đóng gói.</p>
-        <p v-if="group.error" :id="prefix + '-' + group.id + '-error'" class="sage-field-error" role="alert">{{ group.error }}</p>
-      </fieldset>
-      <p v-if="group.key === 'category_id' && categoryError" class="catalog-category-error" role="status">{{ categoryError }} <SageButton variant="ghost" :loading="categoryLoading" @click="emit('retry')">Thử lại danh mục</SageButton></p>
-      <p v-if="group.key === 'unit' && unitError" class="catalog-category-error" role="status">Chưa tải được đóng gói. <SageButton variant="ghost" :loading="unitLoading" @click="emit('retry-units')">Thử lại đóng gói</SageButton></p>
+      <template v-if="group.key === 'price'">
+        <fieldset class="catalog-filter-options">
+          <legend class="sage-visually-hidden">Lọc giá</legend>
+          <p class="catalog-filter-hint">Chọn một khoảng giá.</p>
+          <label v-for="range in priceRanges" :key="range.id" class="catalog-filter-option" :for="prefix + '-price-' + range.id">
+            <input :id="prefix + '-price-' + range.id" type="checkbox" :name="prefix + '-price'" :checked="matchesRange(range)" @change="choosePrice(range, $event.target.checked)" />
+            <span>{{ range.label }}</span>
+          </label>
+        </fieldset>
+        <details class="catalog-custom-price" :open="customOpen" @toggle="customOpen = $event.target.open">
+          <summary>Khoảng giá tùy chọn <i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
+          <div class="catalog-custom-price-inputs">
+            <SageInput :id="prefix + '-min'" label="Giá từ" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Không giới hạn" :model-value="modelValue.min_price" :error="errors.min_price" @update:model-value="update(modelValue, 'min_price', $event)" @blur="emit('commit')" />
+            <SageInput :id="prefix + '-max'" label="Giá đến" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Không giới hạn" :model-value="modelValue.max_price" :error="errors.max_price" @update:model-value="update(modelValue, 'max_price', $event)" @blur="emit('commit')" />
+          </div>
+        </details>
+      </template>
+      <template v-else>
+        <fieldset class="catalog-filter-options" :aria-busy="group.loading || undefined" :aria-describedby="group.error ? prefix + '-' + group.id + '-error' : undefined">
+          <legend class="sage-visually-hidden">{{ group.title }}</legend>
+          <p v-if="group.hint" class="catalog-filter-hint">{{ group.hint }}</p>
+          <label v-for="option in group.options" :key="option.id" class="catalog-filter-option" :for="prefix + '-' + group.id + '-' + option.id">
+            <input :id="prefix + '-' + group.id + '-' + option.id" type="checkbox" :name="prefix + '-' + group.id" :value="option.value" :checked="group.key === 'unit' ? modelValue.unit.includes(option.value) : modelValue[group.key] === option.value" :disabled="group.loading" :aria-invalid="group.error && option.id === 'all' ? true : undefined" :aria-describedby="group.error ? prefix + '-' + group.id + '-error' : undefined" @change="group.key === 'unit' ? chooseUnit(option.value, $event.target.checked) : chooseSingle(group.key, option.value, $event)" />
+            <span>{{ option.label }}</span>
+          </label>
+          <p v-if="group.loading" class="catalog-filter-hint" role="status">{{ group.key === 'unit' ? 'Đang tải đóng gói…' : 'Đang tải danh mục…' }}</p>
+          <p v-if="group.key === 'unit' && !units.length && !unitLoading && !unitError" class="catalog-filter-hint">Chưa có dữ liệu đóng gói.</p>
+          <p v-if="group.error" :id="prefix + '-' + group.id + '-error'" class="sage-field-error" role="alert">{{ group.error }}</p>
+        </fieldset>
+        <p v-if="group.key === 'category_id' && categoryError" class="catalog-category-error" role="status">{{ categoryError }} <SageButton variant="ghost" :loading="categoryLoading" @click="emit('retry')">Thử lại danh mục</SageButton></p>
+        <p v-if="group.key === 'unit' && unitError" class="catalog-category-error" role="status">Chưa tải được đóng gói. <SageButton variant="ghost" :loading="unitLoading" @click="emit('retry-units')">Thử lại đóng gói</SageButton></p>
+      </template>
     </SageAccordion>
     <p class="catalog-filter-hint">Chọn điều kiện để tự động cập nhật sản phẩm.</p>
   </form>

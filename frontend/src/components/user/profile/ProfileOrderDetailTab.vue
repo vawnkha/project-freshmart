@@ -28,7 +28,7 @@ const paymentLabel=status=>({pending:'Chờ thanh toán',completed:'Đã thanh t
     <div v-else class="approved-order-lines">
       <article v-for="item in order.items" :key="item.id" class="approved-order-line">
         <ResponsiveImage :src="item.thumbnail" :alt="item.name" class="order-product-image" />
-        <div><h4>{{ item.name }}</h4><p>{{ item.quantity }} × {{ money(item.price) }}</p></div>
+        <div><h4>{{ item.name }}</h4><p>{{ item.quantity }} × {{ money(item.price) }}</p><p v-for="allocation in item.batchAllocations || []" :key="allocation.batchId">Lô {{ allocation.batchNumber }} · {{ allocation.quantity }} sản phẩm · HSD {{ allocation.expiryDate ? new Date(allocation.expiryDate).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : 'chưa xác định' }}<span v-if="allocation.discountAmount"> · Giảm {{ money(allocation.discountAmount) }} cho {{ allocation.discountQuantity }} sản phẩm</span></p></div>
         <strong class="approved-account-money">{{ money(item.subtotal) }}</strong>
       </article>
     </div>

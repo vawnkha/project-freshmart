@@ -5,6 +5,7 @@ import { productPrice, productComparePrice } from '@/utils/storefront.util';
 import { catalogStock } from '@/utils/catalog-query.util';
 import ResponsiveImage from '@/components/user/common/ResponsiveImage.vue';
 import ProductPrice from '@/components/user/product/ProductPrice.vue';
+import BatchPromotionNotice from '@/components/user/product/BatchPromotionNotice.vue';
 import SageButton from '@/components/user/sage/SageButton.vue';
 import SageIcon from '@/components/user/sage/SageIcon.vue';
 const props = defineProps({ product: { type: Object, required: true }, actions: { type: Object, required: true } });
@@ -30,6 +31,7 @@ const label = computed(() => stock.value === null ? 'Chưa xác định tồn kh
       <span v-if="product.category_name || product.category?.name" class="card-category">{{ product.category_name || product.category.name }}</span>
       <h3 class="card-title"><RouterLink :to="link" :title="product.name">{{ product.name }}</RouterLink></h3>
       <ProductPrice :product="product" />
+      <BatchPromotionNotice :product-id="id" :promotions="product.batchPromotions" compact />
       <span class="stock-label" :class="stock >= 1 ? 'in-stock' : 'out-stock'"><i class="fa-solid fa-circle" aria-hidden="true"></i>{{ stock === null ? 'Chưa xác định tồn kho' : stock >= 1 ? 'Còn hàng' : 'Hết hàng' }}</span>
       
     </div>

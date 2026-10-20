@@ -18,6 +18,12 @@ function amountsMatch(expected, actual) {
   return Number(expected.amountValue) === Number(actual.value);
 }
 
+function isDefinitivelyDeclined(provider) {
+  const captures = (provider?.purchase_units || []).flatMap(unit => unit.payments?.captures || []);
+  return (provider?.status === "VOIDED" && captures.length === 0)
+    || (captures.length > 0 && captures.every(capture => ["DECLINED", "DENIED"].includes(capture.status)));
+}
+
 class PaypalCheckoutService {
   constructor(client) {
     this.orders = new OrdersService(client);
@@ -47,6 +53,11 @@ class PaypalCheckoutService {
     if (String(provider?.id) !== String(paypalOrderId) || !amountsMatch(expected, extractPaypalOrderAmount(provider))) {
       await this.intents.markStatus(paypalOrderId, "manual_review", { reconciliationOutcome: "amount_or_id_mismatch" });
       return { status: "manual_review", providerStatus };
+    }
+    if (isDefinitivelyDeclined(provider)) {
+      await this.orders.finalizeDeclinedPaypal(paypalOrderId);
+      await this.intents.markStatus(paypalOrderId, "failed");
+      return { status: "failed", providerStatus };
     }
     if (providerStatus !== "COMPLETED" || captured?.status !== "COMPLETED" || !captured?.captureId)
       return { status: "pending", providerStatus };
@@ -115,11 +126,11 @@ class PaypalCheckoutService {
     const existingPayment =
       await this.orders.findPaymentByIdempotencyKey(paypalOrderId);
     if (existingPayment && ["refunded", "refund_pending", "failed", "canceled"].includes(existingPayment.status)) {
-      throw new ApiError(409, "Giao dịch đã hủy hoặc đang hoàn tiền, không thể capture lại");
+      throw new ApiError(409, "Giao dịch đã hủy hoặc đang hoàn tiền, không thể capture lại", "PAYPAL_PAYMENT_TERMINAL");
     }
     if (!existingPayment) {
       if (new Date(intent.expiresAt) <= new Date()) {
-        throw new ApiError(409, "Giao dịch PayPal đã hết hạn. Vui lòng tạo thanh toán mới.");
+        throw new ApiError(409, "Giao dịch PayPal đã hết hạn. Vui lòng tạo thanh toán mới.", "PAYPAL_INTENT_EXPIRED");
       }
       const preview = await this.orders.getCheckoutPreview({
         userId: intent.userId,
@@ -177,6 +188,8 @@ class PaypalCheckoutService {
       transactionId: paypalOrderId,
       idempotencyKey: paypalOrderId,
       paymentMetadata: {
+        capture_gate_version: 1,
+        stock_hold_expires_at: new Date(Date.now() + Math.max(1, Number(process.env.PAYPAL_STOCK_HOLD_MINUTES) || 15) * 60000),
         currency: "VND",
         paypal: {
           expected_amount: intent.expectedAmount,
@@ -192,6 +205,10 @@ class PaypalCheckoutService {
       throw new ApiError(409, localOrder?.error || "Không thể tạo đơn hàng");
     }
 
+    if (paypalOrder.status !== "COMPLETED") {
+      const gate = await this.orders.beginPaypalCapture(paypalOrderId);
+      if (gate.error) throw new ApiError(409, gate.error, gate.released ? "PAYPAL_PAYMENT_TERMINAL" : "PAYPAL_RECONCILIATION_REQUIRED");
+    }
     await this.intents
       .markStatus(paypalOrderId, "capturing", {
         orderId: localOrder.order._id,
@@ -216,6 +233,11 @@ class PaypalCheckoutService {
     }
 
     const capturedAmount = extractCapturedPaypalAmount(paypalOrder);
+    if (isDefinitivelyDeclined(paypalOrder)) {
+      await this.orders.finalizeDeclinedPaypal(paypalOrderId);
+      await this.intents.markStatus(paypalOrderId, "failed");
+      throw new ApiError(409, "PayPal đã từ chối thanh toán; tồn kho đã được hoàn về đúng lô", "PAYPAL_PAYMENT_TERMINAL");
+    }
     if (capturedAmount.status !== "COMPLETED" || !capturedAmount.captureId) {
       await this.orders.markPaypalCaptureUnknown(paypalOrderId, "Capture is not completed");
       await this.intents.markStatus(paypalOrderId, "capture_unknown");

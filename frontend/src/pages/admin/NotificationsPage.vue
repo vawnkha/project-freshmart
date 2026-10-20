@@ -66,6 +66,10 @@ function toggleSelectAll() {
 }
 
 async function handleClick(item) {
+  if (item.type === "inventory_expiry" && /^[a-f\d]{24}$/i.test(item.data?.batchId || "")) {
+    await notificationStore.markOneAsRead(item._id || item.id);
+    return router.push(`/admin/inventory-expiry/${item.data.batchId}`);
+  }
   await notificationStore.markOneAsRead(item._id || item.id);
 
   if (item.type === "order" && item.data?.order_id) {
@@ -231,6 +235,7 @@ onMounted(async () => {
                 </div>
 
                 <div class="notification-item__content">{{ item.content }}</div>
+                <p v-if="item.type === 'inventory_expiry' && item.data?.current">Tồn hiện tại: {{ item.data.current.quantity }} {{ item.data.unit }} · Còn {{ item.data.current.daysRemaining ?? 'chưa xác định' }} ngày.</p>
 
                 <div class="notification-item__meta">
                   <span>Loại: {{ item.type }}</span>

@@ -124,6 +124,7 @@ app.use("/api/uploads", uploadsRoute);
 app.use("/api/inventory-items", inventoryItemRoute);
 app.use("/api/purchase-orders", purchaseOrderRoute);
 app.use("/api/inventory-batches", inventoryBatchRoute);
+app.use("/api/admin/inventory/expiry", require("./app/routes/expiry.route"));
 app.use("/api/inventory-summaries", inventorySummaryRoute);
 app.use("/api/inventory-transactions", inventoryTransactionRoute);
 

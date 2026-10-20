@@ -1,5 +1,6 @@
 import DOMPurify from "dompurify";
 import { normalizeId } from "./id.util.js";
+import { normalizeNewsTags } from "./news-tags.util.js";
 
 const articleOptions = {
   USE_PROFILES: { html: true },
@@ -45,7 +46,7 @@ export function normalizeBlogPost(item, categories = new Map(), purifier = DOMPu
     excerpt: articleExcerpt(item, purifier),
     category: item.category?.name || item.categoryName || categories.get(categoryId)?.name || "",
     categoryId,
-    tags: Array.isArray(item.tags) ? [...new Set(item.tags.filter(Boolean))] : [],
+    tags: normalizeNewsTags(item.tags),
   };
 }
 
@@ -53,7 +54,7 @@ export function filterBlogPosts(posts, keyword, categoryId) {
   const q = String(keyword || "").trim().toLocaleLowerCase("vi-VN");
   return posts.filter((post) =>
     (!categoryId || post.categoryId === categoryId) &&
-    (!q || [post.title, post.excerpt, post.category, ...(post.tags || [])]
+    (!q || [post.title, post.excerpt, post.category, ...normalizeNewsTags(post.tags)]
       .some((value) => String(value || "").toLocaleLowerCase("vi-VN").includes(q))),
   );
 }

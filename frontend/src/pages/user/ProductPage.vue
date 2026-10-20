@@ -126,28 +126,13 @@ onBeforeUnmount(() => { wide?.removeEventListener?.('change', onWide); cancelAni
     <div class="container catalog-container">
       <div id="catalog-mobile-search-host" class="catalog-mobile-search-host"></div>
       <Teleport defer :to="desktopSearch ? '#catalog-desktop-search-host' : '#catalog-mobile-search-host'">
-      <form class="catalog-search" role="search" @submit.prevent="submitSearch">
+      <!-- <form class="catalog-search" role="search" @submit.prevent="submitSearch">
         <label class="sage-visually-hidden" for="catalog-search-input">Tìm kiếm sản phẩm</label>
         <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
         <input id="catalog-search-input" v-model="search" type="search" placeholder="Tìm tên sản phẩm…" autocomplete="off" />
         <SageButton type="submit" aria-label="Tìm kiếm"><SageIcon name="search" /></SageButton>
-      </form>
+      </form> -->
       </Teleport>
-      <div class="catalog-bar">
-          <nav class="catalog-category-nav" aria-label="Danh mục sản phẩm">
-            <h2>Danh mục sản phẩm</h2>
-            <RouterLink :to="{ path: '/products', query: catalogQuery(pendingQuery || route.query, { category_id: '', page: 1 }) }" :class="{ selected: !state.category_id }" :aria-current="!state.category_id ? 'page' : undefined">Tất cả sản phẩm</RouterLink>
-            <RouterLink v-for="item in categories" :key="normalizeId(item._id || item.id)" :to="{ path: '/products', query: catalogQuery(pendingQuery || route.query, { category_id: normalizeId(item._id || item.id), page: 1 }) }" :class="{ selected: state.category_id === normalizeId(item._id || item.id) }" :aria-current="state.category_id === normalizeId(item._id || item.id) ? 'page' : undefined">{{ item.name }}</RouterLink>
-          </nav>
-<div class="catalog-sort-tools">
-              <SageButton ref="filterTrigger" class="catalog-mobile-filter" variant="secondary" aria-haspopup="dialog" aria-controls="catalog-filter-sheet" :aria-expanded="filtersOpen" @click="openFilters"><i class="fa-solid fa-sliders" aria-hidden="true"></i>Bộ lọc<span v-if="chips.length"> ({{ chips.length }})</span></SageButton>
-              <SageSelect id="catalog-sort" label="Sắp xếp" :model-value="state.sort" :options="CATALOG_SORTS" @update:model-value="update({ sort: $event, page: 1 })" />
-              <div class="catalog-view-tools" role="group" aria-label="Cách hiển thị sản phẩm">
-                <SageButton variant="ghost" class="sage-icon-button" :aria-pressed="state.view === 'grid'" aria-label="Xem dạng lưới" @click="update({ view: 'grid' })"><i class="fa-solid fa-table-cells-large" aria-hidden="true"></i></SageButton>
-                <SageButton variant="ghost" class="sage-icon-button" :aria-pressed="state.view === 'list'" aria-label="Xem dạng danh sách" @click="update({ view: 'list' })"><i class="fa-solid fa-list" aria-hidden="true"></i></SageButton>
-              </div>
-            </div>
-      </div>
       <div class="catalog-workspace">
         <aside class="catalog-rail" aria-label="Bộ lọc sản phẩm">
           <div id="catalog-desktop-search-host"></div>
@@ -159,7 +144,14 @@ onBeforeUnmount(() => { wide?.removeEventListener?.('change', onWide); cancelAni
               <strong>{{ loading ? 'Đang tải sản phẩm…' : error || invalid ? 'Chưa có kết quả' : results.total ? results.start + '–' + results.end + ' / ' + results.total + ' sản phẩm' : '0 sản phẩm' }}</strong>
               <span v-if="state.q">Kết quả cho “{{ state.q }}”</span>
             </div>
-            
+            <div class="catalog-sort-tools">
+              <SageButton ref="filterTrigger" class="catalog-mobile-filter" variant="secondary" aria-haspopup="dialog" aria-controls="catalog-filter-sheet" :aria-expanded="filtersOpen" @click="openFilters"><i class="fa-solid fa-sliders" aria-hidden="true"></i>Bộ lọc<span v-if="chips.length"> ({{ chips.length }})</span></SageButton>
+              <SageSelect id="catalog-sort" label="Sắp xếp" :model-value="state.sort" :options="CATALOG_SORTS" @update:model-value="update({ sort: $event, page: 1 })" />
+              <div class="catalog-view-tools" role="group" aria-label="Cách hiển thị sản phẩm">
+                <SageButton variant="ghost" class="sage-icon-button" :aria-pressed="state.view === 'grid'" aria-label="Xem dạng lưới" @click="update({ view: 'grid' })"><i class="fa-solid fa-table-cells-large" aria-hidden="true"></i></SageButton>
+                <SageButton variant="ghost" class="sage-icon-button" :aria-pressed="state.view === 'list'" aria-label="Xem dạng danh sách" @click="update({ view: 'list' })"><i class="fa-solid fa-list" aria-hidden="true"></i></SageButton>
+              </div>
+            </div>
           </div>
           <div v-if="chips.length" class="catalog-active-filters" aria-label="Bộ lọc đang áp dụng">
             <button v-for="chip in chips" :key="chip.key" type="button" :aria-label="'Bỏ bộ lọc ' + chip.label" @click="removeChip(chip)">{{ chip.label }}<span aria-hidden="true">×</span></button>

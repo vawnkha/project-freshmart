@@ -46,6 +46,9 @@ function lineTotal(item = {}) {
 
 class DiscountService {
   constructor(client) {
+    this.client = client;
+    this.Batch = client.db().collection("inventory_batches");
+    this.Proposal = client.db().collection("promotion_proposals");
     this.Product = client.db().collection("products");
     this.deletion = new ResourceDeletionService(client);
     this.repository = new DiscountRepository(client);
@@ -57,10 +60,10 @@ class DiscountService {
     return [];
   }
 
-  async normalizeValidatePayload(payload = {}) {
+  async normalizeValidatePayload(payload = {}, { session, discount } = {}) {
     const items = this.getPayloadItems(payload);
     if (!items.length) {
-      return { ...payload, items: [] };
+      return { code: payload.code, items: [], subtotal: 0, orderTotal: 0 };
     }
 
     const productIds = items
@@ -70,45 +73,46 @@ class DiscountService {
     const products = productIds.length
       ? await this.Product.find(
           { _id: { $in: productIds } },
-          {
-            projection: {
-              category_id: 1,
-              categoryId: 1,
-              price: 1,
-              sellingPrice: 1,
-            },
-          },
+          { session },
         ).toArray()
       : [];
     const productMap = new Map(products.map((product) => [String(product._id), product]));
 
-    const normalizedItems = items.map((item) => {
+    const grouped = new Map();
+    for (const item of items) {
+      const key = String(item.productId || item.product_id || item._id || "");
+      const quantity = Number(item.quantity);
+      if (!Number.isSafeInteger(quantity) || quantity < 1 || !productMap.has(key)) throw new ApiError(400, "Sản phẩm hoặc số lượng không hợp lệ");
+      const totalQuantity = quantity + (grouped.get(key)?.quantity || 0);
+      if (!Number.isSafeInteger(totalQuantity)) throw new ApiError(400, "Số lượng không hợp lệ");
+      grouped.set(key, { productId: key, quantity: totalQuantity });
+    }
+    const normalizedItems = [];
+    for (const item of grouped.values()) {
       const productId = item.productId || item.product_id || item._id || "";
       const product = productMap.get(String(productId)) || {};
-      const categoryId =
-        item.categoryId ||
-        item.category_id ||
-        product.categoryId ||
-        product.category_id ||
-        "";
-      const price =
-        item.price !== undefined
-          ? item.price
-          : product.sellingPrice !== undefined
+      const categoryId = product.categoryId || product.category_id || "";
+      const price = product.sellingPrice !== undefined
             ? product.sellingPrice
             : product.price;
-
-      return {
-        ...item,
+      if (!Number.isFinite(Number(price)) || Number(price) < 0) throw new ApiError(409, "Sản phẩm chưa có giá hợp lệ");
+      let batchAllocations = [];
+      if (discount?.scope === "batch" && product.inventoryItemId) {
+        const allocation = await new (require("./inventory.service"))(this.client).allocateFefo(product.inventoryItemId, item.quantity,
+          { session, preferredBatchId: discount.batchId });
+        if (!allocation.ok) throw new ApiError(409, "Không đủ hàng khả dụng");
+        batchAllocations = allocation.allocation;
+      }
+      normalizedItems.push({
         productId,
-        product_id: item.product_id || productId,
+        product_id: productId,
         categoryId,
-        category_id: item.category_id || categoryId,
-        price,
-      };
-    });
-
-    return { ...payload, items: normalizedItems };
+        category_id: categoryId,
+        price: Number(price), quantity: item.quantity, totalPrice: Number(price) * item.quantity, batchAllocations,
+      });
+    }
+    const subtotal = normalizedItems.reduce((sum, item) => sum + item.totalPrice, 0);
+    return { items: normalizedItems, subtotal, orderTotal: subtotal, code: payload.code };
   }
 
   extractApplicable(payload = {}) {
@@ -217,11 +221,11 @@ class DiscountService {
   }
 
   // Public display is opt-in. Legacy/private codes and internal usage/rules stay private.
-  findPublic(now = new Date()) {
+  async findPublic(now = new Date()) {
     const filter = {
       isPublic: true,
       status: "active",
-      scope: { $in: validator.SCOPES },
+      scope: { $in: ["order", "product", "category"] },
       type: { $in: validator.TYPES },
       value: { $gt: 0 },
       $and: [
@@ -255,7 +259,7 @@ class DiscountService {
         },
       ],
     };
-    return this.repository.findList(filter, {
+    const regular = await this.repository.findList(filter, {
       projection: {
         _id: 1, code: 1, name: 1, description: 1, scope: 1, type: 1, value: 1,
         minOrderValue: 1, maxDiscountAmount: 1, startDate: 1, endDate: 1,
@@ -263,9 +267,11 @@ class DiscountService {
       sort: { createdAt: -1 },
       limit: 12,
     });
+    return [...regular, ...await this.publicBatchOffers(now)];
   }
 
   async create(payload = {}) {
+    if (payload.scope === "batch") throw new ApiError(400, "Khuyến mãi theo lô phải được tạo từ đề xuất đã phê duyệt");
     const message = validator.validateCreate(payload);
     if (message) throw new ApiError(400, message);
 
@@ -281,6 +287,7 @@ class DiscountService {
 
     const current = await this.repository.findById(id);
     if (!current) return null;
+    if (current.scope === "batch" || payload.scope === "batch") throw new ApiError(409, "Hãy quản lý khuyến mãi theo lô tại Đề xuất giảm giá");
 
     const data = this.extractData(payload, false);
     await this.ensureUniqueCode(data, current._id);
@@ -288,7 +295,9 @@ class DiscountService {
       (session) => this.repository.updateById(id, data, { session }));
   }
 
-  remove(id) {
+  async remove(id) {
+    const current = await this.repository.findById(id);
+    if (current?.scope === "batch") throw new ApiError(409, "Hãy hủy đề xuất để giữ lịch sử khuyến mãi theo lô");
     return this.deletion.remove("discounts", id);
   }
 
@@ -348,15 +357,42 @@ class DiscountService {
     return { valid: false, message, discountAmount: 0 };
   }
 
-  async validateDiscount(payload = {}) {
+  async getBatchOffer(discount, { session, now = new Date() } = {}) {
+    const { isBatchSellable, classifyExpiry } = require("../utils/expiry.util");
+    if (discount?.scope !== "batch" || discount.status !== "active" || new Date(discount.startDate) > now || new Date(discount.endDate) <= now
+      || !(discount.value > 0 && discount.value <= require("../config/expiry").maxDiscount)) return null;
+    const batch = await this.Batch.findOne({ _id: discount.batchId }, { session });
+    if (!isBatchSellable(batch, now)) return null;
+    const proposal = await this.Proposal.findOne({ _id: discount.proposalId, discountId: discount._id, approvalStatus: "approved", open: true }, { session });
+    if (!proposal) return null;
+    const product = await this.Product.findOne({ _id: proposal.productId, inventoryItemId: batch.inventoryItemId, status: "active" }, { session });
+    const item = await this.client.db().collection("inventory_items").findOne({ _id: batch.inventoryItemId }, { session });
+    if (!product || !item || (item.status && item.status !== "active")) return null;
+    const availableQuantity = Math.min(batch.quantity, Number(discount.batchQuantity || 0) - Number(discount.usedQuantity || 0));
+    if (!(availableQuantity > 0)) return null;
+    const originalPrice = Number(product.sellingPrice ?? product.price);
+    if (!Number.isFinite(originalPrice) || originalPrice <= 0) return null;
+    return { _id: discount._id, code: discount.code, name: discount.name, scope: "batch", type: "percent", value: discount.value,
+      batchId: batch._id, batchNumber: batch.batchNumber, productId: product._id, productName: product.name, expiryDate: batch.expiryDate,
+      ...classifyExpiry(batch.expiryDate, now), availableQuantity, originalPrice,
+      discountedPrice: originalPrice - Math.floor(originalPrice * discount.value / 100), startDate: discount.startDate, endDate: discount.endDate,
+      description: "Nhập mã tại thanh toán. Chỉ giảm trên số lượng được phân bổ từ lô này; không cộng dồn mã khác." };
+  }
+  async publicBatchOffers(now = new Date()) {
+    const offers = [];
+    for await (const discount of this.repository.collection().find({ scope: "batch", isPublic: true, status: "active", startDate: { $lte: now }, endDate: { $gt: now } })) {
+      const offer = await this.getBatchOffer(discount, { now });
+      if (offer) offers.push(offer);
+    }
+    return offers;
+  }
+  async validateDiscount(payload = {}, options = {}) {
     const message = validator.validateValidatePayload(payload);
     if (message) throw new ApiError(400, message);
 
-    const normalizedPayload = await this.normalizeValidatePayload(payload);
-    const code = normalizeCode(normalizedPayload.code);
-    const discount = await this.repository.findByCode(code);
+    const code = normalizeCode(payload.code);
+    const discount = await this.repository.collection().findOne({ code }, { session: options.session });
     if (!discount) return this.inactiveResult("Ma giam gia khong ton tai");
-
     const now = new Date();
     if (discount.status !== "active") {
       return this.inactiveResult("Ma giam gia khong hoat dong");
@@ -375,12 +411,35 @@ class DiscountService {
       return this.inactiveResult("Ma giam gia da het luot su dung");
     }
 
+    let batchOffer = null, eligibleQuantity = 0, batchBreakdown = [];
+    if (discount.scope === "batch") {
+      batchOffer = await this.getBatchOffer(discount, options);
+      if (!batchOffer) return this.inactiveResult("Lô khuyến mãi đã hết hạn, hết hàng, bị hủy hoặc hết số lượng ưu đãi");
+    }
+    const normalizedPayload = options.trustedItems ? payload : await this.normalizeValidatePayload(payload, { ...options, discount });
+
     const orderTotal = this.getOrderTotal(normalizedPayload);
     if (orderTotal < Number(discount.minOrderValue || 0)) {
       return this.inactiveResult("Don hang chua dat gia tri toi thieu");
     }
 
-    const baseAmount = this.getDiscountBase(discount, normalizedPayload);
+    let baseAmount;
+    if (discount.scope === "batch") {
+      let remaining = batchOffer.availableQuantity;
+      baseAmount = 0;
+      for (const item of this.getPayloadItems(normalizedPayload)) {
+        if (String(item.productId || item.product_id) !== String(batchOffer.productId)) continue;
+        for (const row of item.batchAllocations || []) {
+          if (String(row.batchId) !== String(discount.batchId)) continue;
+          const quantity = Math.min(Number(row.quantity), remaining);
+          if (quantity <= 0) continue;
+          const amount = Number(item.price) * quantity;
+          baseAmount += amount; eligibleQuantity += quantity; remaining -= quantity;
+          batchBreakdown.push({ productId: batchOffer.productId, batchId: row.batchId, quantity, baseAmount: amount,
+            expiryDate: row.expiryDate, batchNumber: row.batchNumber });
+        }
+      }
+    } else baseAmount = this.getDiscountBase(discount, normalizedPayload);
     if (baseAmount <= 0) {
       return this.inactiveResult("Ma giam gia khong ap dung cho don hang nay");
     }
@@ -398,7 +457,9 @@ class DiscountService {
         scope: discount.scope,
         type: discount.type,
         value: discount.value,
+        ...(batchOffer ? { batchId: discount.batchId, eligibleQuantity } : {}),
       },
+      ...(batchOffer ? { batchOffer, batchBreakdown } : {}),
       baseAmount,
       orderTotal,
       discountAmount,

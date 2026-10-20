@@ -4595,7 +4595,7 @@
 .user-app.sage-storefront .approved-product-card .store-price { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin: 0; min-width: 0; color: var(--ink); }
 .user-app.sage-storefront .approved-product-card .store-price strong { font: 600 16px/1.6 var(--font-body); color: var(--ink); font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
 .user-app.sage-storefront .approved-product-card .store-price del { font: 400 13px/1.6 var(--font-body); color: var(--metadata-ink); min-width: 0; overflow-wrap: anywhere; }
-.user-app.sage-storefront .approved-product-card .store-price small { flex: 0 1 auto; margin: 0; font: 400 14px/1.5 var(--font-body); color: var(--metadata-ink); overflow-wrap: anywhere; margin-left: auto; font-size: 13px; }
+.user-app.sage-storefront .approved-product-card .store-price small { flex: 0 1 auto; margin: 0; font: 400 14px/1.5 var(--font-body); color: var(--metadata-ink); overflow-wrap: anywhere; font-size: 13px; }
 .user-app.sage-storefront .approved-product-card .stock-label { display: flex; align-items: baseline; gap: 6px; margin: 0; font: 400 14px/1.5 var(--font-body); overflow-wrap: anywhere; font-size: 13px; color: var(--muted); }
 .user-app.sage-storefront .approved-product-card .stock-label i { flex: none; font-size: 6px; }
 .user-app.sage-storefront .approved-product-card .card-wishlist { position: absolute; top: 10px; right: 10px; width: 44px; height: 44px; min-height: 44px; padding: 0; display: grid; place-items: center; border: 0; border-radius: var(--radius-pill); color: var(--ink); background: rgba(255,255,255,.86); box-shadow: var(--shadow-1); opacity: 1; transform: none; z-index: var(--z-control); }
@@ -4873,10 +4873,6 @@
 .user-app.sage-storefront .sage-catalog .catalog-search input { flex: 1; min-width: 0; min-height: 46px; border: 1px solid var(--input-border); background: var(--paper); font-size: var(--text-body); padding: 0 16px; color: var(--primary); border-radius: var(--radius-pill); }
 .user-app.sage-storefront .sage-catalog .catalog-workspace { display: grid; grid-template-columns: 248px minmax(0, 1fr); gap: 48px; }
 .user-app.sage-storefront .sage-catalog .catalog-rail { min-width: 0; }
-.user-app.sage-storefront .sage-catalog .catalog-category-nav { display: flex; flex-direction: row; gap: 8px; padding-bottom: var(--space-6); margin-bottom: var(--space-6); border-bottom: 1px solid var(--line-2); padding: 0; margin: 0; border: 0; flex-wrap: wrap; }
-.user-app.sage-storefront .sage-catalog .catalog-category-nav h2 { font-size: var(--text-product); margin: 0 0 var(--space-3); font: 500 12px/1.5 var(--font-mono); text-transform: uppercase; }
-.user-app.sage-storefront .sage-catalog .catalog-category-nav a { padding: 0 16px; min-height: 44px; border-radius: var(--radius-pill); overflow-wrap: anywhere; color: var(--ink); transition: background-color var(--d-fast) var(--ease-out), color var(--d-fast) var(--ease-out); display: inline-flex; align-items: center; border: 1px solid var(--line-2); font-size: 14px; }
-.user-app.sage-storefront .sage-catalog .catalog-category-nav a.selected { background: var(--sage); color: var(--paper); font-weight: 600; border-color: var(--sage); }
 .user-app.sage-storefront .sage-catalog .catalog-filter-form { display: grid; gap: var(--space-4); min-width: 0; }
 .user-app.sage-storefront .sage-catalog .catalog-filter-panel { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); }
 .user-app.sage-storefront .sage-catalog .catalog-filter-panel > h3 { margin: 0; }
@@ -4919,9 +4915,6 @@
 .user-app.sage-storefront .sage-catalog .catalog-action-feedback a { text-decoration: underline; min-height: 44px; display: inline-flex; align-items: center; }
 .user-app.sage-storefront .sage-catalog .catalog-action-feedback.has-error { border-color: var(--danger); }
 .user-app.sage-storefront .sage-catalog .catalog-filter-sheet .sage-overlay-panel { max-width: none; width: 100%; max-height: 86svh; border-radius: 24px 24px 0 0; }
-@media (hover: hover) and (pointer: fine) {
-  .user-app.sage-storefront .sage-catalog .catalog-category-nav a:hover { background: var(--mist); color: var(--primary); }
-}
 @media (max-width: 1024px) {
   .user-app.sage-storefront .sage-catalog .catalog-workspace { grid-template-columns: minmax(0, 1fr); gap: 48px; }
   .user-app.sage-storefront .sage-catalog .catalog-filter-option { min-height: 44px; }
@@ -4955,10 +4948,6 @@
 
 .user-app.sage-storefront .sage-catalog .catalog-mobile-search-host { display:none; }
 
-.user-app.sage-storefront .sage-catalog .catalog-bar { display:flex; justify-content:space-between; align-items:center; gap:16px; padding-block:16px; margin-bottom:32px; border-block:1px solid var(--border); }
-
-.user-app.sage-storefront .sage-catalog .catalog-category-nav h2 { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); }
-
 .user-app.sage-storefront .sage-catalog .catalog-sort-tools .sage-field > label { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
 
 .user-app.sage-storefront .sage-catalog .catalog-sort-tools .sage-field-placeholder { display:none; }
@@ -4972,9 +4961,6 @@
 @media(max-width:1024px) { .user-app.sage-storefront .sage-catalog .catalog-mobile-search-host { display:block; } }
 
 @media(max-width:720px) {
- .user-app.sage-storefront .sage-catalog .catalog-bar { flex-direction:column; align-items:stretch; }
- .user-app.sage-storefront .sage-catalog .catalog-category-nav { flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; }
- .user-app.sage-storefront .sage-catalog .catalog-category-nav a { flex:none; }
  .user-app.sage-storefront .sage-catalog .catalog-sort-tools { width:100%; justify-content:space-between; }
  .user-app.sage-storefront .sage-catalog .catalog-sort-tools .sage-field { flex:1; }
 }

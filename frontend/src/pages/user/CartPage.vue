@@ -14,6 +14,7 @@ import AppState from "@/components/user/common/AppState.vue";
 import ResponsiveImage from "@/components/user/common/ResponsiveImage.vue";
 import SageButton from "@/components/user/sage/SageButton.vue";
 import SageSkeleton from "@/components/user/sage/SageSkeleton.vue";
+import BatchPromotionNotice from "@/components/user/product/BatchPromotionNotice.vue";
 const auth = useAuthStore();
 const cart = useCartStore();
 const { items, cartTotal } = storeToRefs(cart);
@@ -168,6 +169,7 @@ onBeforeUnmount(() => { disposed = true; ++generation; ++readRequest; });
                 <div v-else class="cart-line-image"><ResponsiveImage :src="item.thumbnail || item.image" :alt="item.name || 'Sản phẩm'" /></div>
                 <div class="cart-line-body">
                   <h2 class="cart-line-title"><RouterLink v-if="normalizeId(item.product_id)" :to="'/products/' + normalizeId(item.product_id)">{{ item.name || item.productName || 'Sản phẩm' }}</RouterLink><span v-else>{{ item.name || 'Sản phẩm không còn khả dụng' }}</span></h2>
+                  <BatchPromotionNotice :product-id="normalizeId(item.product_id)" :promotions="item.batchPromotions" />
                   <p v-if="item.packageSize" class="cart-line-package">{{ item.packageSize }}</p>
                   <p class="cart-unit-price">{{ productPrice(item) === null ? 'Chưa có giá' : formatMoney(productPrice(item)) }}<span v-if="item.unit"> / {{ item.unit }}</span></p>
                   <p class="stock-label" :class="catalogStock(item) === null ? 'unknown-stock' : catalogStock(item) > 0 && !item.outOfStock ? 'in-stock' : 'out-stock'">{{ stockLabel(item) }}</p>

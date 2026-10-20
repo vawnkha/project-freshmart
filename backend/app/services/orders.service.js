@@ -121,6 +121,7 @@ class OrdersService {
       unit: item.unit,
       packageSize: item.packageSize,
       batchAllocations: item.batchAllocations || [],
+      discountAmount: Number(item.discountAmount || 0),
     };
   }
 
@@ -229,6 +230,7 @@ class OrdersService {
       quantity: item.quantity,
       subtotal: item.subtotal || item.totalPrice,
       totalPrice: item.totalPrice || item.subtotal,
+      batchAllocations: item.batchAllocations || [],
     }));
   }
 
@@ -243,10 +245,12 @@ class OrdersService {
       type: discount.type,
       value: Number(discount.value || 0),
       discount_amount: Number(validationResult.discountAmount || 0),
+      ...(discount.scope === "batch" ? { batchId: discount.batchId, eligibleQuantity: discount.eligibleQuantity,
+        batchBreakdown: validationResult.batchBreakdown, batchOffer: validationResult.batchOffer } : {}),
     };
   }
 
-  async resolveDiscount({ discountCode, subtotal, items }) {
+  async resolveDiscount({ discountCode, subtotal, items, session }) {
     if (!discountCode || !String(discountCode).trim()) {
       return {
         discount: null,
@@ -259,7 +263,7 @@ class OrdersService {
       code: discountCode,
       subtotal,
       cartItems: this.buildDiscountCartItems(items),
-    });
+    }, { session, trustedItems: true });
 
     if (!validation.valid) {
       return { error: validation.message || "Ma giam gia khong hop le" };
@@ -284,6 +288,10 @@ class OrdersService {
       {
         _id: discountId,
         status: "active",
+        ...(discount.scope === "batch" ? {
+          startDate: { $lte: new Date() }, endDate: { $gt: new Date() },
+          $expr: { $lte: [{ $add: [{ $ifNull: ["$usedQuantity", 0] }, Number(discount.eligibleQuantity)] }, "$batchQuantity"] },
+        } : {}),
         $or: [
           { quantity: { $exists: false } },
           { quantity: { $lte: 0 } },
@@ -298,7 +306,7 @@ class OrdersService {
         ],
       },
       {
-        $inc: { usedCount: 1 },
+        $inc: { usedCount: 1, ...(discount.scope === "batch" ? { usedQuantity: Number(discount.eligibleQuantity) } : {}) },
         $set: { updatedAt: new Date() },
       },
       { session },
@@ -314,6 +322,7 @@ class OrdersService {
         discountId,
         orderId,
         code: discount.code,
+        batchQuantity: Number(discount.eligibleQuantity || 0),
         usedAt: new Date(),
       },
       { session },
@@ -479,6 +488,8 @@ class OrdersService {
 
     let total = 0;
     const orderItems = [];
+    const requestedDiscount = discountCode ? await this.Discount.findOne({ code: String(discountCode).trim().toUpperCase() }, { session }) : null;
+    const preferredBatchId = requestedDiscount?.scope === "batch" ? requestedDiscount.batchId : null;
 
     for (const cartItem of cartItems) {
       const product = productMap.get(String(cartItem.product_id));
@@ -529,9 +540,10 @@ class OrdersService {
           return { error: `Sản phẩm "${product.name}" không đủ tồn kho` };
         }
 
-        const allocationResult = allocateBatches
+        const allocationResult = (allocateBatches || preferredBatchId)
           ? await this.inventoryService.allocateFefo(inventoryItemId, qty, {
               session,
+              preferredBatchId,
             })
           : { ok: true, allocation: [] };
 
@@ -626,10 +638,30 @@ class OrdersService {
       discountCode,
       subtotal: total,
       items: orderItems,
+      session,
     });
     if (discountResult.error) return { error: discountResult.error };
 
     const discountAmount = Number(discountResult.discount_amount || 0);
+    if (discountResult.discount?.scope === "batch") {
+      let remainder = discountAmount;
+      const target = discountResult.discount.batchOffer;
+      let remainingQuantity = Number(discountResult.discount.eligibleQuantity);
+      for (const item of orderItems) {
+        item.discountAmount = 0;
+        for (const allocation of item.batchAllocations || []) {
+          if (String(item.productId) !== String(target.productId) || String(allocation.batchId) !== String(target.batchId)) continue;
+          const quantity = Math.min(allocation.quantity, remainingQuantity);
+          remainingQuantity -= quantity;
+          const amount = remainingQuantity === 0 ? remainder : Math.floor(quantity * item.price * discountResult.discount.value / 100);
+          allocation.discountQuantity = quantity;
+          allocation.discountAmount = amount;
+          allocation.discountId = discountResult.discount.discount_id;
+          item.discountAmount += amount;
+          remainder -= amount;
+        }
+      }
+    }
     const finalTotal = Math.max(0, total + shippingFee - discountAmount);
 
     return {
@@ -946,6 +978,22 @@ class OrdersService {
     if (nextStatus === "canceled") {
       return this.cancelOrder(orderId, actor, note || "Hủy đơn hàng");
     }
+    if (nextStatus === "shipping") {
+      return this.inventoryService.stockService.withTransaction({}, async session => {
+        const order = await this.Order.findOne({ _id: oid, status: current.status }, { session });
+        if (!order) throw new ApiError(409, "Đơn hàng đã thay đổi trạng thái");
+        for (const item of order.items || []) for (const row of item.batchAllocations || []) {
+          await this.inventoryService.stockService.acquireItem(row.inventoryItemId, session);
+          const batch = await this.inventoryService.InventoryBatch.findOne({ _id: toObjectId(row.batchId) }, { session });
+          if (!batch || !(batch.expiryDate instanceof Date) || !["available", "sold_out"].includes(batch.status) || !(require("../utils/expiry.util").classifyExpiry(batch.expiryDate).daysRemaining > 0)) {
+            throw new ApiError(409, "Không được giao hàng từ lô đang khóa, thiếu hạn sử dụng hoặc đã hết hạn");
+          }
+        }
+        return this.Order.findOneAndUpdate({ _id: oid, status: current.status }, {
+          $set: { status: nextStatus, updated_at: new Date() }, $push: { timeline: this.timelineItem(nextStatus, note) },
+        }, { session, returnDocument: "after" });
+      });
+    }
 
     const updated = await this.Order.findOneAndUpdate(
       { _id: oid, status: current.status },
@@ -960,6 +1008,10 @@ class OrdersService {
   }
 
   async restoreOrderInventory(order, actor, session) {
+    if (order.discount?.scope === "batch" && Number(order.discount.eligibleQuantity) > 0) {
+      await this.Discount.updateOne({ _id: toObjectId(order.discount.discount_id), usedQuantity: { $gte: order.discount.eligibleQuantity } },
+        { $inc: { usedQuantity: -order.discount.eligibleQuantity } }, { session });
+    }
     for (const item of order.items || []) {
       if (item.inventoryItemId && item.batchAllocations?.length) {
         await this.inventoryService.restoreAllocation(
@@ -986,7 +1038,7 @@ class OrdersService {
     }
   }
 
-  async cancelOrder(orderId, actor = null, note = "Người dùng hủy đơn hàng") {
+  async cancelOrder(orderId, actor = null, note = "Người dùng hủy đơn hàng", options = {}) {
     const oid = toObjectId(orderId);
     if (!oid) return null;
 
@@ -1000,7 +1052,7 @@ class OrdersService {
         if (!order) return;
         const currentStatus = normalizeOrderStatus(order.status);
         if (
-          !["pending", "processing", "cancel_pending"].includes(currentStatus)
+          !(options.returnReceived ? ["shipping", "completed", "cancel_pending"] : ["pending", "processing", "cancel_pending"]).includes(currentStatus)
         ) {
           throw new ApiError(
             409,
@@ -1253,6 +1305,75 @@ class OrdersService {
     );
   }
 
+  async returnReceivedOrder(id, actor, reason) {
+    if (!hasPermission(actor || {}, ["order:update"])) throw new ApiError(403, "Không có quyền xác nhận hàng hoàn");
+    if (!String(reason || "").trim()) throw new ApiError(400, "Cần lý do và xác nhận đã nhận hàng hoàn");
+    return this.cancelOrder(id, actor, `Đã nhận hàng hoàn: ${reason}`, { returnReceived: true });
+  }
+
+  async releaseUnstartedPayment(payment, session, reason) {
+    const order = await this.Order.findOne({ _id: payment.order_id, status: "awaiting_payment" }, { session });
+    if (!order || order.inventory_restored_at) return false;
+    await this.restoreOrderInventory(order, { _id: payment.user_id }, session);
+    await this.Order.updateOne({ _id: order._id, status: "awaiting_payment" }, {
+      $set: { status: "canceled", inventory_restored_at: new Date(), updated_at: new Date() },
+      $push: { timeline: this.timelineItem("canceled", reason) },
+    }, { session });
+    await this.Payment.updateOne({ _id: payment._id, status: payment.status }, {
+      $set: { status: "failed", fail_note: reason, updated_at: new Date() },
+    }, { session });
+    await this.PaymentIntent.updateOne({ paypalOrderId: payment.idempotency_key }, { $set: { status: "expired", updatedAt: new Date() } }, { session });
+    return true;
+  }
+
+  // This durable gate precedes every provider capture. Only holds that have
+  // never crossed the gate can expire automatically; unknown outcomes retain stock.
+  async beginPaypalCapture(key) {
+    return this.inventoryService.stockService.withTransaction({}, async session => {
+      const payment = await this.Payment.findOne({ idempotency_key: key }, { session });
+      if (!payment || !["awaiting_capture", "capture_unknown", "completed"].includes(payment.status)) throw new ApiError(409, "Giao dịch không còn khả dụng");
+      if (payment.status === "completed") return { ok: true };
+      const order = await this.Order.findOne({ _id: payment.order_id }, { session });
+      if (!order || order.status !== "awaiting_payment") throw new ApiError(409, "Đơn hàng chưa được ghi nhận ở trạng thái chờ thanh toán");
+      let reason = payment.stock_hold_expires_at && new Date(payment.stock_hold_expires_at) <= new Date() ? "Hết thời gian giữ hàng trước thanh toán" : null;
+      for (const item of order?.items || []) for (const row of item.batchAllocations || []) {
+        await this.inventoryService.stockService.acquireItem(row.inventoryItemId, session);
+        const batch = await this.inventoryService.InventoryBatch.findOne({ _id: toObjectId(row.batchId) }, { session });
+        if (!batch || !(batch.expiryDate instanceof Date) || !(require("../utils/expiry.util").classifyExpiry(batch.expiryDate).daysRemaining > 0)) reason = "Lô đã hết hạn hoặc thiếu hạn sử dụng hợp lệ trước khi bắt đầu thanh toán";
+      }
+      if (reason) {
+        const released = payment.status === "awaiting_capture" && payment.capture_gate_version === 1
+          ? await this.releaseUnstartedPayment(payment, session, reason) : false;
+        return { error: reason, released };
+      }
+      if (payment.status === "capture_unknown") return { ok: true };
+      await this.Payment.updateOne({ _id: payment._id, status: "awaiting_capture" }, {
+        $set: { status: "capture_unknown", capture_started_at: new Date(), updated_at: new Date() },
+      }, { session });
+      return { ok: true };
+    });
+  }
+
+  async releaseExpiredPaypalHolds(now = new Date()) {
+    let released = 0;
+    const candidates = this.Payment.find({ method: "paypal", capture_gate_version: 1, status: "awaiting_capture", stock_hold_expires_at: { $lte: now } });
+    for await (const candidate of candidates) {
+      const didRelease = await this.inventoryService.stockService.withTransaction({}, async session => {
+        const current = await this.Payment.findOne({ _id: candidate._id, status: "awaiting_capture", capture_gate_version: 1, stock_hold_expires_at: { $lte: now } }, { session });
+        return current ? this.releaseUnstartedPayment(current, session, "Hết thời gian giữ hàng trước thanh toán") : false;
+      });
+      if (didRelease) released++;
+    }
+    return released;
+  }
+
+  async finalizeDeclinedPaypal(key) {
+    return this.inventoryService.stockService.withTransaction({}, async session => {
+      const payment = await this.Payment.findOne({ idempotency_key: key, method: "paypal", status: { $in: ["awaiting_capture", "capture_unknown"] } }, { session });
+      return payment ? this.releaseUnstartedPayment(payment, session, "PayPal xác nhận giao dịch bị từ chối / hủy, chưa thu tiền") : false;
+    });
+  }
+
   async queueInvoiceEmail(order, customerEmail, customerName) {
     const oid = toObjectId(order?._id);
     if (!oid) return null;
@@ -1297,7 +1418,7 @@ class OrdersService {
       addressId,
       shippingMethodId,
       discountCode,
-      allocateBatches: false,
+      allocateBatches: true,
     });
 
     if (plan?.error) return { error: plan.error };

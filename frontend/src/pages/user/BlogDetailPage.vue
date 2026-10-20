@@ -4,6 +4,7 @@ import { useRoute } from "vue-router";
 import AppState from "@/components/user/common/AppState.vue";
 import ResponsiveImage from "@/components/user/common/ResponsiveImage.vue";
 import BlogCard from "@/components/user/blog/BlogCard.vue";
+import ArticleComments from "@/components/user/blog/ArticleComments.vue";
 import SageSkeleton from "@/components/user/sage/SageSkeleton.vue";
 import { normalizeId } from "@/utils/id.util";
 import { normalizeList } from "@/utils/storefront.util";
@@ -96,6 +97,7 @@ onScopeDispose(() => { requestVersion++; });
           </ul>
           <router-link to="/blog" class="text-link knowledge-back"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Tất cả bài viết</router-link>
         </article>
+        <ArticleComments v-if="normalizeId(article._id || article.id)" :key="normalizeId(article._id || article.id)" :article-id="normalizeId(article._id || article.id)" />
         <section v-if="relatedPosts.length" class="knowledge-related" aria-labelledby="knowledge-related-title">
           <div class="knowledge-list-heading"><h2 id="knowledge-related-title">Tin liên quan</h2><router-link to="/blog" class="text-link">Xem tất cả <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></router-link></div>
           <div class="knowledge-related-grid" :class="`knowledge-related-count-${relatedPosts.length}`">

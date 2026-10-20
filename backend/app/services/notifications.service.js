@@ -81,6 +81,12 @@ class NotificationsService {
       .sort({ created_at: -1 })
       .toArray();
 
+    // Keep the original milestone/history, while exposing current stock on reads.
+    for (const item of items) if (item.type === "inventory_expiry" && ObjectId.isValid(item.data?.batchId)) {
+      const batch = await this.deletion.db.collection("inventory_batches").findOne({ _id: new ObjectId(item.data.batchId) });
+      if (batch) item.data.current = { quantity: batch.quantity, ...require("../utils/expiry.util").classifyExpiry(batch.expiryDate) };
+    }
+
     return { items };
   }
 

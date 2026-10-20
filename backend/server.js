@@ -19,6 +19,7 @@ async function startServer() {
     await new RbacService(MongoDB.client).ensureDefaults();
     console.log("RBAC defaults are ready!");
     startOutboxWorker(MongoDB.client);
+    require("./app/workers/expiry.worker").startExpiryWorker(MongoDB.client);
     if (process.env.PAYPAL_RECONCILIATION_ENABLED === "true") startPaypalReconciliationWorker(MongoDB.client);
 
     const PORT = config.app.port;

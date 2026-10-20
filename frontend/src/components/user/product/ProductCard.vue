@@ -11,6 +11,7 @@ import { userError } from "@/utils/user-error.util";
 import { notify } from "@/composables/useStorefrontNotice";
 import ResponsiveImage from "@/components/user/common/ResponsiveImage.vue";
 import ProductPrice from "./ProductPrice.vue";
+import BatchPromotionNotice from "./BatchPromotionNotice.vue";
 import SageIcon from "@/components/user/sage/SageIcon.vue";
 const props = defineProps({ product: { type: Object, required: true } });
 const wishlist = useWishlistStore();
@@ -118,6 +119,7 @@ async function toggleWishlist() {
           product.name
         }}</router-link>
       </h3>
+      <BatchPromotionNotice :product-id="id" :promotions="product.batchPromotions" compact />
       <ProductPrice :product="product" /><span
         class="stock-label"
         :class="stock > 0 ? 'in-stock' : 'out-stock'"

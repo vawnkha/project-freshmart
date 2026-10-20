@@ -133,6 +133,7 @@ function normalizeOrder(raw, previous) {
         price: Number(item.price || 0),
         quantity: Number(item.quantity || 1),
         subtotal: item.subtotal ?? item.totalPrice ?? null,
+        batchAllocations: item.batchAllocations || [],
       }))
     : [];
 

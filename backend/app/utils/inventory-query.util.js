@@ -1,4 +1,5 @@
 const { ObjectId } = require("mongodb");
+const { nextVietnamMidnight } = require("./expiry.util");
 
 const FEFO_SORT = { fefoExpiry: 1, createdAt: 1, _id: 1 };
 const SELLABLE_BATCH_STATUS = "available";
@@ -21,21 +22,16 @@ function buildAvailableBatchFefoFilter(inventoryItemId, now = new Date()) {
     inventoryItemId: itemId,
     status: SELLABLE_BATCH_STATUS,
     quantity: { $gt: 0 },
-    $or: [{ expiryDate: null }, { expiryDate: { $gte: now } }],
+    expiryDate: { $type: "date", $gte: nextVietnamMidnight(now) },
   };
 }
 
 function buildBatchStockGroup(now = new Date()) {
   const unexpired = {
-    $or: [
-      { $eq: [{ $ifNull: ["$expiryDate", null] }, null] },
-      {
         $and: [
           { $eq: [{ $type: "$expiryDate" }, "date"] },
-          { $gte: ["$expiryDate", now] },
+          { $gte: ["$expiryDate", nextVietnamMidnight(now)] },
         ],
-      },
-    ],
   };
   return {
     $group: {

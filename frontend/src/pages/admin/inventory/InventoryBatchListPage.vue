@@ -15,7 +15,6 @@ const itemLoading = ref(false);
 const actionLoadingId = ref("");
 const currentPage = ref(1);
 const pageSize = ref(12);
-const displayNow = ref(Date.now());
 let expiryTimer;
 
 const filters = reactive({
@@ -24,7 +23,7 @@ const filters = reactive({
   inventoryItemId: "",
 });
 function batchStatus(batch) {
-  return effectiveBatchStatus(batch, inventoryItems.value.find((item) => normalizeId(item) === normalizeId(batch.inventoryItemId)), displayNow.value);
+  return effectiveBatchStatus(batch, inventoryItems.value.find((item) => normalizeId(item) === normalizeId(batch.inventoryItemId)));
 }
 
 const filteredBatches = computed(() => {
@@ -80,7 +79,7 @@ function getId(item) {
 
 function formatDate(value) {
   if (!value) return "---";
-  return new Date(value).toLocaleString("vi-VN");
+  return new Date(value).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
 }
 
 function formatPrice(value) {
@@ -200,7 +199,7 @@ watch(filteredBatches, (list) => {
 });
 
 onMounted(() => {
-  expiryTimer = setInterval(() => { displayNow.value = Date.now(); }, 60000);
+  expiryTimer = setInterval(fetchBatches, 60000);
   fetchBatches();
   fetchInventoryItems();
 });

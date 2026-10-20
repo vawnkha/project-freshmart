@@ -19,11 +19,11 @@ const offer = computed(() => {
 });
 function dateLabel(value) {
   const date = value ? new Date(value) : null;
-  return date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString('vi-VN') : '';
+  return date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : '';
 }
 const expiry = computed(() => dateLabel(props.voucher.endDate) || 'Chưa có ngày hết hạn');
 const starts = computed(() => dateLabel(props.voucher.startDate));
-const scope = computed(() => ({ order: 'Áp dụng cho đơn hàng', product: 'Áp dụng cho sản phẩm', category: 'Áp dụng cho danh mục' })[props.voucher.scope] || 'Chưa có thông tin phạm vi áp dụng');
+const scope = computed(() => ({ order: 'Áp dụng cho đơn hàng', product: 'Áp dụng cho sản phẩm', category: 'Áp dụng cho danh mục', batch: 'Chỉ áp dụng cho lô sắp hết hạn' })[props.voucher.scope] || 'Chưa có thông tin phạm vi áp dụng');
 async function restoreFallbackFocus(trigger) {
   // The shared legacy helper restores focus after its post-flush watcher. Keep
   // the Home consumer's trigger last, without altering shared/native behavior.
@@ -51,6 +51,8 @@ async function copyCode() {
       <p class="voucher-card__offer">{{ offer }}<span v-if="voucher.maxDiscountAmount > 0"> · Tối đa {{ formatMoney(voucher.maxDiscountAmount) }}</span></p>
       <p :id="summaryId" class="sage-visually-hidden">{{ scope }}<span v-if="voucher.minOrderValue > 0"> · Đơn từ {{ formatMoney(voucher.minOrderValue) }}</span><span v-if="voucher.description">. {{ voucher.description }}</span></p>
       <div class="voucher-card__bottom">
+        <p v-if="voucher.scope === 'batch'" class="voucher-card__code">Lô sắp hết hạn {{ voucher.batchNumber }} · HSD lô {{ dateLabel(voucher.expiryDate) }} · Còn {{ voucher.availableQuantity }} suất.</p>
+        <RouterLink v-if="voucher.scope === 'batch' && voucher.productId" :to="`/products/${voucher.productId}`">{{ voucher.productName || 'Xem sản phẩm và điều kiện theo lô' }}</RouterLink>
         <p class="voucher-card__code">Mã: <strong>{{ code || 'Chưa có mã' }}</strong></p>
         <p class="voucher-card__expiry">HSD: {{ expiry }}</p>
         <button ref="copyTrigger" type="button" class="voucher-copy" :aria-label="`Sao chép mã ${code}`" :disabled="copying || !code" :aria-busy="copying" @click="copyCode">{{ copying ? 'Đang sao chép…' : 'Sao chép mã' }}</button>

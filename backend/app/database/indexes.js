@@ -1,5 +1,13 @@
 const INDEX_DEFINITIONS = [
   {
+    collection: "article_comments",
+    indexes: [
+      { key: { article_id: 1, created_at: -1, _id: -1 } },
+      { key: { user_id: 1 } },
+      { key: { created_at: -1, _id: -1 } },
+    ],
+  },
+  {
     collection: "users",
     indexes: [
       { key: { email: 1 }, options: { unique: true } },
@@ -66,6 +74,7 @@ const INDEX_DEFINITIONS = [
   {
     collection: "payments",
     indexes: [
+      { key: { method: 1, capture_gate_version: 1, status: 1, stock_hold_expires_at: 1 } },
       { key: { order_id: 1 }, options: { unique: true, sparse: true } },
       {
         key: { transaction_id: 1 },
@@ -209,12 +218,23 @@ const INDEX_DEFINITIONS = [
     ],
   },
   {
+    collection: "promotion_proposals",
+    indexes: [
+      { key: { batchId: 1 }, options: { unique: true, partialFilterExpression: { open: true }, name: "one_open_proposal_per_batch" } },
+      { key: { status: 1, createdAt: -1 } },
+      { key: { productId: 1 } },
+      { key: { inventoryItemId: 1 } },
+      { key: { discountId: 1 }, options: { unique: true, partialFilterExpression: { discountId: { $type: "objectId" } } } },
+    ],
+  },
+  {
     collection: "discounts",
     indexes: [
       { key: { code: 1 }, options: { unique: true } },
       { key: { status: 1, startDate: 1, endDate: 1 } },
       { key: { scope: 1, status: 1 } },
       { key: { "applicable.productIds": 1 } },
+      { key: { batchId: 1, status: 1 } },
       { key: { "applicable.categoryIds": 1 } },
       { key: { createdAt: -1 } },
     ],
@@ -272,6 +292,7 @@ const INDEX_DEFINITIONS = [
   {
     collection: "inventory_batches",
     indexes: [
+      { key: { status: 1, quantity: 1, expiryDate: 1 } },
       { key: { batchNumber: 1 } },
       { key: { expiryDate: 1, status: 1 } },
       { key: { supplierId: 1 } },

@@ -57,7 +57,7 @@ module.exports = {
       manufacturingDate: dateStringSchema,
       expiryDate: z
         .string()
-        .refine((value) => !Number.isNaN(new Date(value).getTime()), {
+        .refine((value) => !!require("../utils/expiry.util").normalizeExpiryDate(value), {
           message: "expiryDate khong hop le",
         }),
       warehouseLocation: optionalString,

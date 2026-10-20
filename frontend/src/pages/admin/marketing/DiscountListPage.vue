@@ -205,6 +205,7 @@ function formatDate(value) {
 }
 
 function scopeText(scope) {
+  if (scope === "batch") return "Lô hàng (đã duyệt)";
   if (scope === "order") return "Đơn hàng";
   if (scope === "product") return "Sản phẩm";
   if (scope === "category") return "Danh mục";
@@ -348,6 +349,7 @@ function openCreateModal() {
 }
 
 function openEditModal(item) {
+  if (item.scope === "batch") { window.location.assign("/admin/discounts/proposals"); return; }
   resetValidation();
   modalMode.value = "edit";
   currentId.value = getId(item);
@@ -387,6 +389,7 @@ async function submitForm() {
 }
 
 async function removeDiscount(item) {
+  if (item.scope === "batch") { window.location.assign("/admin/discounts/proposals"); return; }
   if (!window.confirm("Bạn có chắc muốn xóa mã giảm giá này?\n\nDữ liệu sau khi xóa sẽ không thể khôi phục.")) return;
 
   try {
@@ -423,6 +426,7 @@ onMounted(() => {
 </script>
 
 <template>
+  <RouterLink to="/admin/discounts/proposals" class="admin-btn admin-btn--secondary mb-3">Đề xuất giảm giá theo lô</RouterLink>
   <div class="admin-page">
     <div class="admin-page-title admin-page-title--stack">
       <h1>Mã giảm giá</h1>
@@ -479,6 +483,7 @@ onMounted(() => {
               <option value="order">Đơn hàng</option>
               <option value="product">Sản phẩm</option>
               <option value="category">Danh mục</option>
+              <option value="batch">Lô hàng đã duyệt</option>
             </select>
           </div>
           <div class="col-md-4">

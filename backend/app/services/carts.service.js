@@ -427,6 +427,8 @@ class CartService {
       .filter(Boolean);
 
     const subtotal = items.reduce((sum, item) => sum + item.line_total, 0);
+    const offers = await new (require("./discount.service"))(this.client).publicBatchOffers();
+    for (const item of items) item.batchPromotions = offers.filter(offer => String(offer.productId) === String(item.product_id));
     return { items, subtotal, updated_at: cart.updated_at };
   }
 }

@@ -143,3 +143,10 @@ vite.config.ts.timestamp-*
 
 scripts
 test
+!scripts/
+scripts/*
+!scripts/migrate-inventory-expiry.js
+!test/
+test/*
+!test/expiry.test.js
+!test/expiry.integration.test.js

@@ -32,6 +32,7 @@ function deleteUndefined(document) {
 
 class ProductsService {
   constructor(client) {
+    this.client = client;
     this.deletion = new ResourceDeletionService(client);
     this.repository = new ProductRepository(client);
     this.inventoryItemRepository = new InventoryItemRepository(client);
@@ -598,6 +599,7 @@ class ProductsService {
     const [rows, unitRows] = await Promise.all(requests);
     const selected = publicOnly ? [...new Set((Array.isArray(query.unit) ? query.unit : [query.unit]).map(normalizeUnit).filter(Boolean))] : [];
     const data = selected.length ? rows.filter(product => selected.includes(normalizeUnit(product.unit))) : rows;
+    if (publicOnly) await this.attachBatchOffers(data);
     return { data, ...(unitRows ? { units: [...new Set(unitRows.map(row => normalizeUnit(row._id)).filter(Boolean))].sort((a, b) => a.localeCompare(b, "vi")) } : {}) };
   }
 
@@ -722,7 +724,14 @@ class ProductsService {
       },
     ]).toArray();
 
+    if (publicOnly) await this.attachBatchOffers(result);
     return result[0] || null;
+  }
+
+  async attachBatchOffers(products) {
+    const offers = await new (require("./discount.service"))(this.client).publicBatchOffers();
+    for (const product of products) product.batchPromotions = offers.filter(offer => String(offer.productId) === String(product._id));
+    return products;
   }
 
   async update(id, payload) {

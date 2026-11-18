@@ -1,0 +1,10 @@
+# Install torch/torchvision CPU wheels first (see README); CUDA is optional.
+# ConvNeXtV2-Tiny uses timm + torchvision; no Ultralytics/detection dependency.
+torch==2.10.0
+torchvision==0.25.0
+timm==1.0.24
+Pillow==12.1.1
+fastapi==0.129.0
+uvicorn==0.41.0
+python-dotenv==1.2.1
+httpx==0.28.1

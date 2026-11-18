@@ -1,3 +1,4 @@
+const { read } = require("../config/environment");
 const MongoDB = require("../utils/mongodb.util");
 const ProductService = require("../services/products.service");
 const ApiError = require("../api-error");
@@ -86,7 +87,7 @@ function scoreProduct(product, normalizedMessage, keywords) {
 }
 
 async function callGroq(userMessage, products) {
-  const apiKey = process.env.GROQ_API_KEY;
+  const apiKey = read("GROQ_API_KEY");
   if (!apiKey) throw new ApiError(503, "Dịch vụ AI chưa được cấu hình");
 
   const productContext = products.length
@@ -104,6 +105,7 @@ Chỉ trả lời dựa trên dữ liệu sản phẩm bên dưới.
 Không tự tạo công dụng, liều dùng, chứng nhận hoặc cam kết điều trị. Không coi hàng trong lô khóa là còn hàng.
 Nếu không có dữ liệu phù hợp thì nói rõ là chưa tìm thấy sản phẩm phù hợp.
 Nếu có dữ liệu phù hợp mà số lượng tồn kho là 0 thì nói rõ có bán sản phẩm nhưng đã hết hàng.
+Không thực hiện các tác vụ nào khác ngoài tìm kiếm sản phẩm, tư vấn thông tin. Nếu có yêu cầu thực hiện tác vụ ngoài tìm kiếm sản phẩm, tư vấn thông tin cứ trả lời "ChatBot chưa hỗ trợ"
 
 Câu hỏi người dùng:
 ${userMessage}
@@ -121,7 +123,7 @@ ${productContext}
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
+        model: "openai/gpt-oss-120b",
         messages: [
           {
             role: "user",
@@ -209,6 +211,7 @@ exports.chat = async (req, res, next) => {
       products: topProducts.map((p) => ({
         _id: p._id,
         name: p.name,
+        slug: p.slug,
         price: p.price,
         stock: p.stock,
         availableStock: p.availableStock,

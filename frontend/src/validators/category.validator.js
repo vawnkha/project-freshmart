@@ -2,13 +2,13 @@ import {
   imageFileSchema,
   optionalString,
   requiredString,
-  slugSchema,
+  optionalSlugSchema,
   z,
 } from "./common.validator";
 
 export const categoryFormSchema = z.object({
   name: requiredString("Tên danh mục là bắt buộc"),
-  slug: slugSchema,
+  slug: optionalSlugSchema,
   description: optionalString,
   image: imageFileSchema,
 });

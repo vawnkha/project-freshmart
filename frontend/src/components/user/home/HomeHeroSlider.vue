@@ -37,7 +37,7 @@ onBeforeUnmount(() => { swiper.value?.autoplay?.stop(); swiper.value = null; });
           <SageButton variant="secondary" class="sage-icon-button" aria-label="Banner trước" @click="swiper?.slidePrev()"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i></SageButton>
           <span class="sage-numeric" aria-live="off">{{ active + 1 }} / {{ slides.length }}</span>
           <SageButton variant="secondary" class="sage-icon-button" aria-label="Banner tiếp theo" @click="swiper?.slideNext()"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i></SageButton>
-          <SageButton v-if="!reduced" variant="ghost" :aria-pressed="pausedByUser" @click="pausedByUser = !pausedByUser">{{ pausedByUser ? 'Bật chuyển tự động' : 'Dừng chuyển tự động' }}</SageButton>
+          
         </div>
       </div>
       <SageSkeleton v-if="loading" :lines="2" label="Đang tải banner" />

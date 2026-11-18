@@ -9,6 +9,7 @@ const notificationStore = useAdminNotificationStore();
 const toasts = computed(() => notificationStore.toastQueue);
 
 function iconByType(type) {
+  if (type === "subscription") return "fa-calendar-days";
   if (type === "order") return "fa-cart-shopping";
   if (type === "contact") return "fa-envelope";
   return "fa-bell";
@@ -20,6 +21,10 @@ function closeToast(id) {
 
 function handleToastClick(toast) {
   notificationStore.removeToast(toast.id);
+  if (toast.type === "subscription" && /^[a-f\d]{24}$/i.test(toast.data?.subscriptionId || "")) {
+    router.push(`/admin/subscriptions/${toast.data.subscriptionId}`);
+    return;
+  }
 
   if (toast.type === "order" && toast.data?.order_id) {
     router.push(`/admin/orders/${toast.data.order_id}`);

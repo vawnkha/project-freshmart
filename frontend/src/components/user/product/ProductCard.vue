@@ -1,5 +1,7 @@
 <script setup>
+import { productPath } from "@/utils/product-route.util";
 import { computed, onBeforeUnmount } from "vue";
+import CompareButton from './CompareButton.vue';
 import { useRouter } from "vue-router";
 import { useWishlistStore } from "@/stores/user/wishlist";
 import { useCartStore } from "@/stores/user/cart";
@@ -10,6 +12,7 @@ import { catalogStock } from "@/utils/catalog-query.util";
 import { userError } from "@/utils/user-error.util";
 import { notify } from "@/composables/useStorefrontNotice";
 import ResponsiveImage from "@/components/user/common/ResponsiveImage.vue";
+import ProductCardRating from "./ProductCardRating.vue";
 import ProductPrice from "./ProductPrice.vue";
 import BatchPromotionNotice from "./BatchPromotionNotice.vue";
 import SageIcon from "@/components/user/sage/SageIcon.vue";
@@ -26,7 +29,7 @@ const id = computed(() =>
     props.product.product_id || props.product._id || props.product.id,
   ),
 );
-const link = computed(() => `/products/${id.value}`);
+const link = computed(() => productPath(props.product));
 const stock = computed(() => catalogStock(props.product));
 const price = computed(() => productPrice(props.product));
 const quantity = computed(() => cart.items.filter(item => normalizeId(item.product_id) === id.value).reduce((sum, item) => sum + Number(item.quantity || 0), 0));
@@ -119,7 +122,9 @@ async function toggleWishlist() {
           product.name
         }}</router-link>
       </h3>
+      <ProductCardRating :product="product" />
       <BatchPromotionNotice :product-id="id" :promotions="product.batchPromotions" compact />
+      <CompareButton :product="product" />
       <ProductPrice :product="product" /><span
         class="stock-label"
         :class="stock > 0 ? 'in-stock' : 'out-stock'"

@@ -4,7 +4,8 @@ const MongoDB = require("../utils/mongodb.util");
 
 exports.create = async (req, res, next) => {
   try {
-    const { user_id, product_id, rating, comment } = req.body;
+    const { product_id, rating, comment } = req.body;
+    const user_id = req.user.id;
 
     if (!user_id) return next(new ApiError(400, "user là bắt buộc"));
     if (!product_id) return next(new ApiError(400, "product là bắt buộc"));
@@ -55,9 +56,9 @@ exports.findByProduct = async (req, res, next) => {
 };
 exports.canReview = async (req, res, next) => {
   try {
-    const { userId, productId } = req.params;
+    const { productId } = req.params;
     const reviewService = new ReviewsService(MongoDB.client);
-    const result = await reviewService.canReview(userId, productId);
+    const result = await reviewService.canReview(req.user.id, productId);
     return res.send(result);
   } catch (error) {
     return next(new ApiError(500, "Lỗi khi kiểm tra quyền đánh giá"));

@@ -129,6 +129,7 @@ class OrdersService {
     const address = doc.shipping_address_snapshot || doc.address;
     return {
       _id: doc._id,
+      ...(doc.subscriptionId ? { subscriptionId: doc.subscriptionId, subscriptionRunId: doc.subscriptionRunId, subscriptionOccurrence: doc.subscriptionOccurrence } : {}),
       user_id: doc.user_id,
       invoice_sent: doc.invoice_sent || false,
       invoice_sent_at: doc.invoice_sent_at || null,
@@ -195,14 +196,14 @@ class OrdersService {
     return ["active", "in_stock"].includes(product.status);
   }
 
-  async resolveShippingMethod(shippingMethodId) {
+  async resolveShippingMethod(shippingMethodId, session) {
     const sid = toObjectId(shippingMethodId);
     if (!sid) return { error: "shippingMethodId khong hop le" };
 
     const method = await this.ShippingMethod.findOne({
       _id: sid,
       status: "active",
-    });
+    }, { session });
 
     if (!method) {
       return { error: "Phuong thuc van chuyen khong hop le hoac da ngung" };
@@ -433,6 +434,7 @@ class OrdersService {
     shippingMethodId = null,
     discountCode = "",
     allocateBatches = true,
+    sourceItems,
     session,
   }) {
     const uid = toObjectId(userId);
@@ -442,7 +444,9 @@ class OrdersService {
       return { error: "userId và addressId không hợp lệ" };
     }
 
-    const cart = await this.Cart.findOne({ user_id: uid }, { session });
+    const cart = sourceItems === undefined
+      ? await this.Cart.findOne({ user_id: uid }, { session })
+      : { items: sourceItems.map(item => ({ product_id: item.productId, quantity: item.quantity })) };
     if (!cart || !cart.items?.length) {
       return { error: "Giỏ hàng trống" };
     }
@@ -627,7 +631,7 @@ class OrdersService {
     let shippingFee = 0;
 
     if (shippingMethodId) {
-      const shippingResult = await this.resolveShippingMethod(shippingMethodId);
+      const shippingResult = await this.resolveShippingMethod(shippingMethodId, session);
       if (shippingResult.error) return { error: shippingResult.error };
       shippingMethod = shippingResult.method;
       shippingSnapshot = shippingResult.snapshot;
@@ -739,6 +743,12 @@ class OrdersService {
     expectedCheckoutFingerprint,
     expectedTotalVnd,
     enqueueAdminNotification = false,
+    sourceItems,
+    subscriptionContext,
+    session: parentSession,
+    beforeCreate,
+    afterCreate,
+    maximumTotal,
   }) {
     if (idempotencyKey) {
       const existingPayment = await this.Payment.findOne({
@@ -759,12 +769,11 @@ class OrdersService {
 
     const method = payment_method || PAYMENT_METHODS.COD;
     const initialStatus = orderStatus || "pending";
-    const session = this.client.startSession();
+    const session = parentSession || this.client.startSession();
     let result = null;
 
     try {
-      await session.withTransaction(
-        async () => {
+      const create = async () => {
           if (idempotencyKey) {
             const existingPayment = await this.Payment.findOne(
               { idempotency_key: idempotencyKey },
@@ -785,7 +794,9 @@ class OrdersService {
             }
           }
 
+          if (beforeCreate) await beforeCreate(session);
           const plan = await this.buildCheckoutPlan({
+            sourceItems,
             userId,
             addressId,
             shippingMethodId,
@@ -799,7 +810,10 @@ class OrdersService {
             throw new ApiError(409, "Giỏ hàng đã thay đổi, vui lòng tạo lại thanh toán", "CHECKOUT_CHANGED");
           }
 
+          if (maximumTotal !== undefined && plan.total_price > maximumTotal) throw new ApiError(409, "Giá hiện tại vượt giới hạn đã đồng ý", "SUBSCRIPTION_PRICE_CONFIRMATION");
+
           const orderDoc = {
+            ...(subscriptionContext || {}),
             user_id: plan.uid,
             items: plan.items,
             address_id: plan.aid,
@@ -860,7 +874,7 @@ class OrdersService {
             session,
           );
 
-          await this.clearUserCart(plan.uid, { session });
+          if (sourceItems === undefined) await this.clearUserCart(plan.uid, { session });
 
           if (enqueueAdminNotification) {
             await this.outbox.enqueue(
@@ -881,10 +895,12 @@ class OrdersService {
             order: { _id: orderRs.insertedId, ...orderDoc },
             payment: { _id: paymentRs.insertedId, ...paymentDoc },
           };
-        },
-        { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } },
-      );
+          if (afterCreate) await afterCreate(result, session);
+      };
+      if (parentSession) await create();
+      else await session.withTransaction(create, { readConcern: { level: "snapshot" }, writeConcern: { w: "majority" } });
     } catch (error) {
+      if (parentSession) throw error;
       if (idempotencyKey && error?.code === 11000) {
         const existingPayment = await this.Payment.findOne({
           idempotency_key: idempotencyKey,
@@ -901,12 +917,18 @@ class OrdersService {
           };
         }
       }
-      return { error: error.message || "Không thể tạo đơn hàng" };
+      return { error: error.message || "Không thể tạo đơn hàng", code: error.code };
     } finally {
-      await session.endSession();
+      if (!parentSession) await session.endSession();
     }
 
     return result;
+  }
+
+  // Trusted server-side item source; uses the same checkout, FEFO, payment and stock transaction.
+  createFromItems(options) {
+    if (!Array.isArray(options.sourceItems) || !options.sourceItems.length) throw new ApiError(400, "Danh sách sản phẩm trống");
+    return this.createFromCart(options);
   }
 
   findPaymentByIdempotencyKey(idempotencyKey) {
@@ -1268,6 +1290,7 @@ class OrdersService {
           { _id: payment.order_id },
           { session },
         );
+        await this.recordSubscriptionPaymentEvent(order, "completed", session);
         await this.outbox.enqueue(
           "notification.admin",
           this.buildOrderNotification(order, {
@@ -1323,7 +1346,19 @@ class OrdersService {
       $set: { status: "failed", fail_note: reason, updated_at: new Date() },
     }, { session });
     await this.PaymentIntent.updateOne({ paypalOrderId: payment.idempotency_key }, { $set: { status: "expired", updatedAt: new Date() } }, { session });
+    await this.recordSubscriptionPaymentEvent(order, "failed", session);
     return true;
+  }
+
+  async recordSubscriptionPaymentEvent(order, outcome, session) {
+    if (!order?.subscriptionRunId) return;
+    await this.client.db().collection("subscription_runs").updateOne({ _id: order.subscriptionRunId }, { $set: { paymentOutcome: outcome, updatedAt: new Date() } }, { session });
+    await new (require("./notifications.service"))(this.client).createOnce({
+      type: "subscription",
+      title: outcome === "completed" ? "Thanh toán kỳ giao thành công" : "Thanh toán kỳ giao không thành công",
+      content: outcome === "completed" ? "Đơn hàng tiếp tục theo quy trình giao hàng hiện tại." : "Đơn chưa thu tiền đã hủy và hoàn đúng lô. Kỳ này không tự tạo đơn thay thế; liên hệ cửa hàng nếu cần đặt lại.",
+      data: { subscriptionId: order.subscriptionId, userId: order.user_id, runId: order.subscriptionRunId, orderId: order._id, event: `payment_${outcome}` },
+    }, `subscription-payment:${order._id}:${outcome}`, { session });
   }
 
   // This durable gate precedes every provider capture. Only holds that have
@@ -1408,12 +1443,14 @@ class OrdersService {
   }
 
   async getCheckoutPreview({
+    sourceItems,
     userId,
     addressId,
     shippingMethodId,
     discountCode,
   }) {
     const plan = await this.buildCheckoutPlan({
+      sourceItems,
       userId,
       addressId,
       shippingMethodId,

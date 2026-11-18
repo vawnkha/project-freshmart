@@ -1,12 +1,13 @@
+const { read } = require("../config/environment");
 const axios = require("axios");
 const { convertVndToUsd } = require("../services/exchange-rate.service");
 
 const BASE_URL =
-  process.env.PAYPAL_BASE_URL || "https://api-m.sandbox.paypal.com";
+  read("PAYPAL_BASE_URL");
 const PAYPAL_TIMEOUT_MS = 15_000;
 
 function getPaypalCurrency() {
-  return String(process.env.PAYPAL_CURRENCY || "USD")
+  return String(read("PAYPAL_CURRENCY"))
     .trim()
     .toUpperCase();
 }
@@ -80,10 +81,10 @@ function extractPaypalOrderAmount(orderResponse = {}) {
 }
 
 async function getAccessToken() {
-  const clientId = process.env.PAYPAL_CLIENT_ID;
-  const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+  const clientId = read("PAYPAL_CLIENT_ID");
+  const clientSecret = read("PAYPAL_CLIENT_SECRET");
   if (!clientId || !clientSecret) {
-    throw new Error("PayPal credentials are not configured");
+    throw new Error("PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET are required to use PayPal");
   }
 
   const response = await axios.post(

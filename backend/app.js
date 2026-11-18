@@ -52,6 +52,7 @@ const io = new Server(server, {
 });
 
 initSocket(io);
+require("./app/realtime/chat.realtime").installChat(io, () => MongoDB.client);
 
 io.use(async (socket, next) => {
   try {
@@ -109,16 +110,23 @@ app.use("/api/news-categories", newsCategoryRoute);
 app.use("/api/news", newsRoute);
 app.use("/api/banners", bannerRoute);
 app.use("/api/products", productRoute);
+app.use('/api/dosage-calculator',require('./app/routes/dosage-calculator.route'));
 app.use("/api/admin/products", adminProductRoute);
+app.use("/api/admin/dashboard", require("./app/routes/dashboard.route"));
+app.use("/api/chat", require("./app/routes/chat.route")(false));
+app.use("/api/admin/chat", require("./app/routes/chat.route")(true));
 app.use("/api/reviews", reviewRoute);
 app.use("/api/addresses", addressRoute);
 app.use("/api/cart", cartRoute);
 app.use("/api/order", orderRoute);
+app.use("/api/subscriptions", require("./app/routes/subscriptions.route"));
+app.use("/api/admin/subscriptions", require("./app/routes/admin-subscriptions.route"));
 app.use("/api/payment", paymentRoute);
 app.use("/api/contacts", contactRoute);
 app.use("/api/notifications", notificationRoute);
 app.use("/api/auth", loginRoute);
 app.use("/api/ai", aiRoute);
+app.use("/api/shrimp-diagnoses", require("./app/routes/shrimp-diagnosis.route"));
 app.use("/api/rbac", rbacRoute);
 app.use("/api/uploads", uploadsRoute);
 app.use("/api/inventory-items", inventoryItemRoute);

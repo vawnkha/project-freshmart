@@ -1,30 +1,11 @@
+const { read } = require("../config/environment");
 const axios = require("axios");
-
-const DEFAULT_FALLBACK_USD_VND_RATE = 25000;
-const DEFAULT_CACHE_TTL_MINUTES = 360;
 
 let rateCache = null;
 let pendingRequest = null;
 
-function getFallbackRate() {
-  const fallback = Number(
-    process.env.PAYPAL_USD_RATE || DEFAULT_FALLBACK_USD_VND_RATE,
-  );
-  return Number.isFinite(fallback) && fallback > 0
-    ? fallback
-    : DEFAULT_FALLBACK_USD_VND_RATE;
-}
-
-function getCacheTtlMs() {
-  const ttlMinutes = Number(
-    process.env.EXCHANGE_RATE_CACHE_TTL_MINUTES || DEFAULT_CACHE_TTL_MINUTES,
-  );
-  const safeTtl =
-    Number.isFinite(ttlMinutes) && ttlMinutes > 0
-      ? ttlMinutes
-      : DEFAULT_CACHE_TTL_MINUTES;
-  return safeTtl * 60 * 1000;
-}
+function getFallbackRate() { return read("PAYPAL_USD_RATE"); }
+function getCacheTtlMs() { return read("EXCHANGE_RATE_CACHE_TTL_MINUTES") * 60000; }
 
 function normalizeRate(rate) {
   const value = Number(rate);
@@ -76,13 +57,13 @@ function readUsdVndRateFromPayload(payload = {}) {
 
 async function fetchUsdVndRateFromProvider() {
   const provider = String(
-    process.env.EXCHANGE_RATE_PROVIDER || "exchangerate-api",
+    read("EXCHANGE_RATE_PROVIDER"),
   )
     .trim()
     .toLowerCase();
-  const apiKey = process.env.EXCHANGE_RATE_API_KEY;
+  const apiKey = read("EXCHANGE_RATE_API_KEY");
 
-  let url = process.env.EXCHANGE_RATE_API_URL;
+  let url = read("EXCHANGE_RATE_API_URL");
   let source = provider;
 
   if (!url && provider === "exchangerate-api" && apiKey) {

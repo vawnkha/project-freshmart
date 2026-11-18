@@ -1,3 +1,4 @@
+const { read } = require("../config/environment");
 const UserService = require("../services/users.service");
 const RbacService = require("../services/rbac.service");
 const MongoDB = require("../utils/mongodb.util");
@@ -59,7 +60,7 @@ exports.create = async (req, res, next) => {
 
 exports.activate = async (req, res, next) => {
   const frontendBaseUrl =
-    process.env.FRONTEND_BASE_URL || "http://localhost:3001";
+    read("FRONTEND_BASE_URL");
 
   try {
     const { id } = req.params;
@@ -154,7 +155,7 @@ exports.update = async (req, res, next) => {
   }
   try {
     const userService = new UserService(MongoDB.client);
-    const result = await userService.update(req.params.id, updatePayload);
+    const result = await userService.update(req.params.id, updatePayload, { actorId: req.user.id });
     if (!result) {
       return next(new ApiError(404, "User not found"));
     }
@@ -202,7 +203,7 @@ exports.updateAvatar = async (req, res, next) => {
 
     const result = await userService.update(req.params.id, {
       avatar_url: newAvatarUrl,
-    });
+    }, { actorId: req.user.id });
 
     if (!result) {
       await safeDeleteLocalImage(newAvatarUrl);
@@ -219,7 +220,7 @@ exports.updateAvatar = async (req, res, next) => {
     if (req.file) {
       await safeDeleteLocalImage(`/uploads/users/${req.file.filename}`);
     }
-    return next(new ApiError(500, error.message || "Lỗi cập nhật avatar"));
+    return next(error instanceof ApiError ? error : new ApiError(500, "Lỗi cập nhật avatar"));
   }
 };
 

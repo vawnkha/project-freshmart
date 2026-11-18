@@ -10,6 +10,10 @@ exports.listAdmin = async (req, res, next) => {
   try { res.send(await service().listAdmin(req.query)); }
   catch (error) { next(error); }
 };
+exports.articleOptions = async (_req, res, next) => {
+  try { res.send({ data: await service().articleOptions() }); }
+  catch (error) { next(error); }
+};
 exports.create = async (req, res, next) => {
   try { res.status(201).send({ message: "Đã gửi bình luận.", data: await service().create(req.params.articleId, req.body, req.user) }); }
   catch (error) { next(error); }

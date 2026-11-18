@@ -40,7 +40,8 @@ const totalPermissions = computed(() => permissions.value.length);
 
 const isEditing = computed(() => Boolean(editingRole.value));
 const isEditingSystemRole = computed(() => Boolean(editingRole.value?.is_system));
-const isEditingAdminRole = computed(() => editingRole.value?.code === "admin");
+const isEditingAdminRole = computed(() => isSystemAdmin(editingRole.value));
+const isSystemAdmin = (role) => role?.is_system && role.code === "admin";
 
 const assignablePermissionIds = computed(
   () =>
@@ -165,7 +166,7 @@ async function submitRole() {
     const payload = {
       name: form.name,
       description: form.description,
-      status: form.status,
+      ...(!isEditingAdminRole.value && { status: form.status }),
     };
 
     if (!isEditingSystemRole.value) {
@@ -310,6 +311,7 @@ onMounted(fetchData);
             <div class="admin-role-card__actions">
               <button
                 class="admin-btn admin-btn--success"
+                :disabled="isSystemAdmin(role) && authStore.role !== 'admin'"
                 @click="openEditForm(role)"
               >
                 Sua
@@ -367,10 +369,11 @@ onMounted(fetchData);
 
           <div class="admin-form__row">
             <label class="admin-form__label">Trang thai</label>
-            <select v-model="form.status" class="admin-form__control">
+            <select v-model="form.status" class="admin-form__control" :disabled="isEditingAdminRole">
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
             </select>
+            <small v-if="isEditingAdminRole">Mã, trạng thái và tập quyền của Admin hệ thống được bảo vệ.</small>
           </div>
 
           <div class="admin-role-permissions">

@@ -5,6 +5,11 @@ import { toTypedSchema } from "@vee-validate/zod";
 import { useRouter } from "vue-router";
 import categoryService from "@/services/category.service";
 import productService from "@/services/product.service";
+import TechnicalSpecsEditor from '@/components/admin/common/TechnicalSpecsEditor.vue';
+import RichTextEditor from '@/components/admin/common/RichTextEditor.vue';
+import { cleanSpecs } from '@/validators/technical-specs.validator';
+const technicalEditor = ref(null);
+const metadata = reactive({ technicalSpecs: {}, packageMeasure: null, packageSize: '', storageInstruction: '', expiryMonths: '' });
 import {
   imageFileSchema,
   nonNegativeNumberSchema,
@@ -82,12 +87,16 @@ async function validateForm() {
 }
 
 async function submitForm() {
+  if (!technicalEditor.value?.validate()) return;
   const valid = await validateForm();
   if (!valid) return;
 
   loading.value = true;
   try {
     const data = new FormData();
+    data.append('technicalSpecs', JSON.stringify(cleanSpecs(metadata.technicalSpecs)));
+    data.append('packageMeasure', JSON.stringify(metadata.packageMeasure?.value ? metadata.packageMeasure : null));
+    for (const key of ['packageSize','storageInstruction','expiryMonths']) if (metadata[key] !== '') data.append(key, metadata[key]);
     data.append("name", form.name);
     data.append("category_id", form.category_id);
     data.append("description", form.description);
@@ -165,10 +174,7 @@ onMounted(fetchCategories);
 
           <div class="admin-form__row">
             <label class="admin-form__label">Mô tả</label>
-            <textarea
-              v-model="form.description"
-              class="admin-form__textarea"
-            ></textarea>
+            <RichTextEditor v-model="form.description" content-type="product" label="Mô tả sản phẩm" min-height="240px" />
           </div>
 
           <div class="admin-form__row">
@@ -260,6 +266,7 @@ onMounted(fetchCategories);
             </div>
           </div>
 
+          <TechnicalSpecsEditor ref="technicalEditor" v-model="metadata.technicalSpecs" v-model:package-measure="metadata.packageMeasure" v-model:package-size="metadata.packageSize" v-model:storage-instruction="metadata.storageInstruction" v-model:expiry-months="metadata.expiryMonths" general />
           <div class="admin-form__actions">
             <button
               type="submit"

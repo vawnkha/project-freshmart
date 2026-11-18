@@ -5,6 +5,10 @@ class ProductRepository extends BaseRepository {
     super(client, "products");
   }
 
+  aggregate(pipeline) {
+    return this.collection().aggregate(pipeline).toArray();
+  }
+
   findByCategoryId(categoryId, options = {}) {
     const category_id = this.toObjectId(categoryId);
     return this.findList({ category_id }, options);

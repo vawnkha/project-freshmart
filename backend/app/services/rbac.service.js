@@ -1,9 +1,11 @@
 const { ObjectId } = require("mongodb");
 const ApiError = require("../api-error");
+const { requireActiveAdmin, protectAdminAccount } = require("./admin-protection.service");
 const {
   DEFAULT_ROLE_CODE,
   DEFAULT_ROLES,
   PERMISSION_CATALOG,
+  NEWS_COMMENT_PERMISSIONS,
   normalizePermissions,
   normalizeRoleCode,
 } = require("../config/permissions");
@@ -49,6 +51,10 @@ class RbacService {
     await this.ensureIndexes();
 
     if (!PERMISSION_CATALOG.length) return;
+    // Existing installations receive these keys and their grants together
+    // through the migration. New databases seed the full default catalog.
+    const existingAdmin = await this.Roles.findOne({ code: "admin" }, { projection: { _id: 1 } });
+    const migrationKeys = new Set(NEWS_COMMENT_PERMISSIONS.map(({ key }) => key));
 
     await this.Permissions.bulkWrite(
       PERMISSION_CATALOG.map((permission, index) => ({
@@ -66,7 +72,7 @@ class RbacService {
               created_at: new Date(),
             },
           },
-          upsert: true,
+          upsert: !existingAdmin || !migrationKeys.has(permission.key),
         },
       })),
       { ordered: false },
@@ -269,11 +275,12 @@ class RbacService {
       role = await this.findRoleById(user.role_id);
     }
 
+    const hasExplicitRole = Boolean(role);
     if (role?.status === "inactive") {
       role = null;
     }
 
-    if (!role && user.role) {
+    if (!role && user.role && !(hasExplicitRole && normalizeRoleCode(user.role) === "admin")) {
       role = await this.Roles.findOne({
         code: normalizeRoleCode(user.role),
         status: "active",
@@ -481,8 +488,13 @@ class RbacService {
         [{ collection: "roles", id: roleObjectId }], async (session) => {
           const existed = await this.Roles.findOne({ _id: roleObjectId }, { session });
           if (!existed) throw new ApiError(404, "Role khong ton tai");
-          if (existed.code === "admin" && payload.permissionIds !== undefined)
-            throw new ApiError(400, "Khong the thay doi permission cua role Admin");
+          if (existed.code === "admin") {
+            if (payload.permissionIds !== undefined || (update.status && update.status !== "active") ||
+                (update.code && update.code !== "admin")) {
+              throw new ApiError(409, "Không thể đổi mã, vô hiệu hóa hoặc sửa tập quyền của Admin hệ thống.", "ADMIN_ROLE_PROTECTED");
+            }
+            await requireActiveAdmin(this.client.db(), actor?.id, session, existed);
+          }
           if (update.code && existed.is_system && update.code !== existed.code)
             throw new ApiError(400, "Khong the doi ma cua role he thong");
           if (update.code && update.code !== existed.code &&
@@ -528,7 +540,10 @@ class RbacService {
 
   async canActorAssignRole(actor = {}, role = {}, options = {}) {
     if (!actor || !role) return false;
-    if (actor.role === "admin") return true;
+    if (actor.role === "admin") {
+      await requireActiveAdmin(this.client.db(), actor.id, options.session);
+      return true;
+    }
 
     const actorPermissions = new Set(normalizePermissions(actor.permissions));
     const rolePermissions = await this.getRolePermissions(role._id, options);
@@ -561,6 +576,10 @@ class RbacService {
       async (session) => {
       const currentRole = await this.Roles.findOne({ _id: role._id, status: "active" }, { session });
       if (!currentRole) throw new ApiError(409, "Role da thay doi hoac bi vo hieu hoa");
+      const target = await this.Users.findOne({ _id: userObjectId }, { session });
+      await protectAdminAccount(this.client.db(), session, actor?.id, target, {
+        action: "user:assign-role", role: currentRole, fields: ["role_id", "role"],
+      });
       if (actor && !(await this.canActorAssignRole(actor, currentRole, { session })))
         throw new ApiError(403, "Ban khong the gan role co quyen cao hon minh");
     const result = await this.Users.findOneAndUpdate(

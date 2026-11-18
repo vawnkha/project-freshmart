@@ -8,12 +8,13 @@ import {
   optionalEmailSchema,
   optionalString,
   requiredString,
-  slugSchema,
+  optionalSlugSchema,
   statusSchema,
   z,
 } from "@/validators/common.validator";
 import { mapBackendValidationErrors } from "@/utils/validation-error.util";
 import { normalizeId } from "@/utils/id.util";
+import { slugFromName } from "@/utils/slug.util";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const IMAGE_MAX_SIZE = 10 * 1024 * 1024;
@@ -83,7 +84,7 @@ const validationSchema = computed(() =>
       .object({
         code: optionalString,
         name: requiredString(`Ten ${props.entityLabel} la bat buoc`),
-        slug: props.showImageField ? slugSchema : optionalString,
+        slug: props.showImageField ? optionalSlugSchema : optionalString,
         description: optionalString,
         email: props.showContactFields ? optionalEmailSchema : optionalString,
         phone: optionalString,
@@ -570,10 +571,11 @@ onMounted(fetchItems);
             </div>
 
             <div v-if="showImageField" class="admin-form__row">
-              <label class="admin-form__label">Slug *</label>
+              <label class="admin-form__label">Slug</label>
               <div>
                 <input
                   v-model="form.slug"
+                  :placeholder="slugFromName(form.name) || 'Tự tạo từ tên danh mục'"
                   class="admin-form__control"
                   :class="{ 'is-invalid': errors.slug }"
                 />

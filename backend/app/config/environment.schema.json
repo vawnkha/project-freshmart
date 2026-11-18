@@ -1,0 +1,407 @@
+{
+  "NODE_ENV": {
+    "default": "development",
+    "description": "Chế độ ứng dụng; production bắt buộc MongoDB, CORS và khóa AI riêng.",
+    "scope": "Khởi động, bảo mật",
+    "type": "string",
+    "unit": "không",
+    "values": [
+      "development",
+      "test",
+      "production"
+    ]
+  },
+  "PORT": {
+    "default": 3000,
+    "description": "Cổng HTTP Backend.",
+    "scope": "HTTP",
+    "type": "integer",
+    "unit": "cổng",
+    "min": 1,
+    "max": 65535
+  },
+  "MONGODB_URI": {
+    "default": "mongodb://127.0.0.1:27017/myshop?replicaSet=rs0",
+    "description": "Chuỗi kết nối MongoDB; bắt buộc khai báo riêng ở production.",
+    "scope": "MongoDB",
+    "type": "mongo",
+    "unit": "không",
+    "secret": true
+  },
+  "JWT_SECRET": {
+    "default": null,
+    "description": "Khóa ký access token; tối thiểu 32 ký tự, không dùng khóa minh họa.",
+    "scope": "Xác thực",
+    "type": "string",
+    "unit": "không",
+    "required": true,
+    "minLength": 32,
+    "secret": true
+  },
+  "OUTBOX_ENCRYPTION_KEY": {
+    "default": null,
+    "description": "Khóa mã hóa dữ liệu outbox; tối thiểu 32 ký tự. Không đổi khi còn dữ liệu đã mã hóa.",
+    "scope": "Email outbox",
+    "type": "string",
+    "unit": "không",
+    "required": true,
+    "minLength": 32,
+    "secret": true
+  },
+  "JWT_EXPIRES_IN": {
+    "default": "1d",
+    "description": "Thời hạn token; chuỗi không có đơn vị được thư viện JWT hiểu là mili giây.",
+    "scope": "Xác thực",
+    "type": "duration",
+    "unit": "chuỗi thời gian"
+  },
+  "JWT_ISSUER": {
+    "default": "lv-ecommerce-api",
+    "description": "Đơn vị phát hành token.",
+    "scope": "Xác thực",
+    "type": "string",
+    "unit": "không"
+  },
+  "JWT_AUDIENCE": {
+    "default": "lv-ecommerce-web",
+    "description": "Đối tượng sử dụng token.",
+    "scope": "Xác thực",
+    "type": "string",
+    "unit": "không"
+  },
+  "CORS_ORIGINS": {
+    "default": "http://localhost:3001,http://127.0.0.1:3001",
+    "description": "Danh sách origin cách nhau bằng dấu phẩy; phải khai báo ở production.",
+    "scope": "CORS",
+    "type": "origins",
+    "unit": "không"
+  },
+  "FRONTEND_BASE_URL": {
+    "default": "http://localhost:3001",
+    "description": "URL website dùng trong liên kết email và xác thực.",
+    "scope": "Tài khoản, email",
+    "type": "url",
+    "unit": "không"
+  },
+  "APP_URL": {
+    "default": "http://localhost:3000",
+    "description": "URL Backend dùng trong liên kết kích hoạt tài khoản.",
+    "scope": "Tài khoản",
+    "type": "url",
+    "unit": "không"
+  },
+  "PAYPAL_BASE_URL": {
+    "default": "https://api-m.sandbox.paypal.com",
+    "description": "Endpoint PayPal; chọn endpoint live khi triển khai thanh toán thật.",
+    "scope": "Thanh toán",
+    "type": "url",
+    "unit": "không"
+  },
+  "PAYPAL_CLIENT_ID": {
+    "default": "",
+    "description": "Client ID PayPal; chỉ bắt buộc khi sử dụng tích hợp tương ứng.",
+    "scope": "PayPal",
+    "type": "string",
+    "unit": "không",
+    "allowEmpty": true,
+    "secret": true
+  },
+  "PAYPAL_CLIENT_SECRET": {
+    "default": "",
+    "description": "Secret PayPal; chỉ bắt buộc khi sử dụng tích hợp tương ứng.",
+    "scope": "PayPal",
+    "type": "string",
+    "unit": "không",
+    "allowEmpty": true,
+    "secret": true
+  },
+  "GROQ_API_KEY": {
+    "default": "",
+    "description": "Khóa Groq cho chatbot; chỉ bắt buộc khi sử dụng tích hợp tương ứng.",
+    "scope": "Chatbot",
+    "type": "string",
+    "unit": "không",
+    "allowEmpty": true,
+    "secret": true
+  },
+  "MAIL_APP_PASSWORD": {
+    "default": "",
+    "description": "Mật khẩu ứng dụng Gmail; chỉ bắt buộc khi sử dụng tích hợp tương ứng.",
+    "scope": "Email",
+    "type": "string",
+    "unit": "không",
+    "allowEmpty": true,
+    "secret": true
+  },
+  "MAIL_USER": {
+    "default": "",
+    "description": "Tài khoản Gmail gửi email; phải có cùng MAIL_APP_PASSWORD khi gửi.",
+    "scope": "Email",
+    "type": "email",
+    "unit": "không",
+    "allowEmpty": true,
+    "secret": true
+  },
+  "PAYPAL_CURRENCY": {
+    "default": "USD",
+    "description": "Mã tiền tệ PayPal, chuẩn ISO gồm 3 chữ cái; code chuẩn hóa viết hoa.",
+    "scope": "Thanh toán",
+    "type": "string",
+    "unit": "không",
+    "pattern": "^[A-Za-z]{3}$"
+  },
+  "PAYPAL_USD_RATE": {
+    "default": 25000,
+    "description": "Tỷ giá USD/VND dự phòng khi nhà cung cấp tỷ giá không truy cập được.",
+    "scope": "Thanh toán",
+    "type": "number",
+    "unit": "VND/USD",
+    "min": 0,
+    "max": 9007199254740991,
+    "exclusiveMin": true
+  },
+  "PAYPAL_STOCK_HOLD_MINUTES": {
+    "default": 15,
+    "description": "Thời gian giữ tồn kho cho PayPal chưa bắt đầu capture.",
+    "scope": "Tồn kho, PayPal",
+    "type": "number",
+    "unit": "phút",
+    "min": 1,
+    "max": 9007199254740991
+  },
+  "PAYPAL_RECONCILIATION_ENABLED": {
+    "default": false,
+    "description": "Bật tác vụ đối soát PayPal; không bật tự động khi thiếu biến.",
+    "scope": "Worker PayPal",
+    "type": "boolean",
+    "unit": "không"
+  },
+  "EXCHANGE_RATE_PROVIDER": {
+    "default": "exchangerate-api",
+    "description": "Tên nhà cung cấp tỷ giá; tên khác cần EXCHANGE_RATE_API_URL.",
+    "scope": "Tỷ giá",
+    "type": "string",
+    "unit": "không"
+  },
+  "EXCHANGE_RATE_API_KEY": {
+    "default": "",
+    "description": "Khóa nhà cung cấp tỷ giá; bỏ trống dùng endpoint công khai.",
+    "scope": "Tỷ giá",
+    "type": "string",
+    "unit": "không",
+    "allowEmpty": true,
+    "secret": true
+  },
+  "EXCHANGE_RATE_API_URL": {
+    "default": "",
+    "description": "URL tùy chỉnh trả tỷ giá USD/VND theo cấu trúc service hỗ trợ.",
+    "scope": "Tỷ giá",
+    "type": "url",
+    "unit": "không",
+    "allowEmpty": true
+  },
+  "EXCHANGE_RATE_CACHE_TTL_MINUTES": {
+    "default": 360,
+    "description": "Thời gian cache tỷ giá trong bộ nhớ mỗi tiến trình.",
+    "scope": "Tỷ giá",
+    "type": "number",
+    "unit": "phút",
+    "min": 0,
+    "max": 9007199254740991,
+    "exclusiveMin": true
+  },
+  "DOSAGE_MAX_AREA_M2": {
+    "default": 100000000,
+    "description": "Giới hạn diện tích ao đầu vào. Không thay công thức tính; phải là số hữu hạn dương.",
+    "scope": "Tính liều lượng",
+    "type": "number",
+    "unit": "m²",
+    "min": 0,
+    "max": 9007199254740991,
+    "exclusiveMin": true
+  },
+  "DOSAGE_MAX_DEPTH_M": {
+    "default": 100,
+    "description": "Giới hạn độ sâu ao đầu vào. Không thay công thức tính; phải là số hữu hạn dương.",
+    "scope": "Tính liều lượng",
+    "type": "number",
+    "unit": "m",
+    "min": 0,
+    "max": 9007199254740991,
+    "exclusiveMin": true
+  },
+  "DOSAGE_MAX_FEED_WEIGHT_KG": {
+    "default": 1000000,
+    "description": "Giới hạn khối lượng thức ăn đầu vào. Không thay công thức tính; phải là số hữu hạn dương.",
+    "scope": "Tính liều lượng",
+    "type": "number",
+    "unit": "kg",
+    "min": 0,
+    "max": 9007199254740991,
+    "exclusiveMin": true
+  },
+  "DOSAGE_MAX_PACKAGES": {
+    "default": 1000000000,
+    "description": "Giới hạn số gói kết quả tính. Không thay công thức tính; phải là số hữu hạn dương.",
+    "scope": "Tính liều lượng",
+    "type": "number",
+    "unit": "gói",
+    "min": 0,
+    "max": 9007199254740991,
+    "exclusiveMin": true
+  },
+  "DOSAGE_REQUESTS_PER_MINUTE": {
+    "default": 60,
+    "description": "Giới hạn yêu cầu tính liều trong một phút. Không thay công thức tính; phải là số hữu hạn dương.",
+    "scope": "Tính liều lượng",
+    "type": "number",
+    "unit": "yêu cầu/phút",
+    "min": 0,
+    "max": 9007199254740991,
+    "exclusiveMin": true
+  },
+  "EXPIRY_WARNING_DAYS": {
+    "default": 60,
+    "description": "Ngưỡng cảnh báo sắp hết hạn. Không tự cập nhật giá bán hoặc voucher trong MongoDB.",
+    "scope": "Hạn sử dụng",
+    "type": "number",
+    "unit": "ngày",
+    "min": 2,
+    "max": 3650
+  },
+  "EXPIRY_URGENT_DAYS": {
+    "default": 30,
+    "description": "Ngưỡng khẩn cấp; phải nhỏ hơn EXPIRY_WARNING_DAYS. Không tự cập nhật giá bán hoặc voucher trong MongoDB.",
+    "scope": "Hạn sử dụng",
+    "type": "number",
+    "unit": "ngày",
+    "min": 1,
+    "max": 3649
+  },
+  "EXPIRY_WARNING_DISCOUNT": {
+    "default": 10,
+    "description": "Phần trăm giảm đề xuất cho mức cảnh báo. Không tự cập nhật giá bán hoặc voucher trong MongoDB.",
+    "scope": "Hạn sử dụng",
+    "type": "number",
+    "unit": "%",
+    "min": 1,
+    "max": 100
+  },
+  "EXPIRY_URGENT_DISCOUNT": {
+    "default": 20,
+    "description": "Phần trăm giảm đề xuất cho mức khẩn cấp. Không tự cập nhật giá bán hoặc voucher trong MongoDB.",
+    "scope": "Hạn sử dụng",
+    "type": "number",
+    "unit": "%",
+    "min": 1,
+    "max": 100
+  },
+  "SUBSCRIPTIONS_ENABLED": {
+    "default": false,
+    "description": "Bật API đăng ký giao hàng định kỳ.",
+    "scope": "Giao hàng định kỳ",
+    "type": "boolean",
+    "unit": "không"
+  },
+  "SUBSCRIPTION_WORKER_ENABLED": {
+    "default": false,
+    "description": "Bật xử lý tự động các kỳ giao; chỉ chạy khi cả hai cờ true. Tắt thì không tự tạo đơn đến kỳ.",
+    "scope": "Giao hàng định kỳ",
+    "type": "boolean",
+    "unit": "không"
+  },
+  "SUBSCRIPTION_POLL_MS": {
+    "default": 60000,
+    "description": "Chu kỳ quét worker.",
+    "scope": "Giao hàng định kỳ",
+    "type": "integer",
+    "unit": "ms",
+    "min": 1000,
+    "max": 3600000
+  },
+  "SUBSCRIPTION_LEAD_DAYS": {
+    "default": 0,
+    "description": "Số ngày chuẩn bị trước ngày giao.",
+    "scope": "Giao hàng định kỳ",
+    "type": "integer",
+    "unit": "ngày",
+    "min": 0,
+    "max": 14
+  },
+  "SUBSCRIPTION_MAX_ATTEMPTS": {
+    "default": 3,
+    "description": "Số lần xử lý tối đa.",
+    "scope": "Giao hàng định kỳ",
+    "type": "integer",
+    "unit": "lần",
+    "min": 1,
+    "max": 10
+  },
+  "SUBSCRIPTION_RETRY_MS": {
+    "default": 900000,
+    "description": "Khoảng chờ thử lại.",
+    "scope": "Giao hàng định kỳ",
+    "type": "integer",
+    "unit": "ms",
+    "min": 1000,
+    "max": 86400000
+  },
+  "SUBSCRIPTION_LEASE_MS": {
+    "default": 300000,
+    "description": "Thời gian thuê xử lý một kỳ giao giữa các instance.",
+    "scope": "Giao hàng định kỳ",
+    "type": "integer",
+    "unit": "ms",
+    "min": 1000,
+    "max": 3600000
+  },
+  "SUBSCRIPTION_PRICE_INCREASE_PERCENT": {
+    "default": 10,
+    "description": "Ngưỡng tăng giá yêu cầu xác nhận.",
+    "scope": "Giao hàng định kỳ",
+    "type": "integer",
+    "unit": "%",
+    "min": 0,
+    "max": 100
+  },
+  "SUBSCRIPTION_PRODUCT_IDS": {
+    "default": "",
+    "description": "Danh sách ObjectId sản phẩm được phép, cách nhau bằng dấu phẩy; trống dùng sản phẩm active không bị loại.",
+    "scope": "Giao hàng định kỳ",
+    "type": "ids",
+    "unit": "không",
+    "allowEmpty": true
+  },
+  "SHRIMP_AI_URL": {
+    "default": "http://127.0.0.1:8001",
+    "description": "URL nội bộ AI service; phải truy cập được từ Backend.",
+    "scope": "Chẩn đoán tôm",
+    "type": "url",
+    "unit": "không"
+  },
+  "SHRIMP_AI_TIMEOUT_MS": {
+    "default": 60000,
+    "description": "Thời gian chờ AI; sai giá trị báo lỗi, không ép vào khoảng.",
+    "scope": "Chẩn đoán tôm",
+    "type": "integer",
+    "unit": "ms",
+    "min": 1000,
+    "max": 120000
+  },
+  "SHRIMP_AI_API_KEY": {
+    "default": "",
+    "description": "Khóa X-AI-API-Key phải trùng AI_API_KEY; bắt buộc ở production.",
+    "scope": "Chẩn đoán tôm",
+    "type": "string",
+    "unit": "không",
+    "allowEmpty": true,
+    "secret": true
+  },
+  "SHRIMP_DIAGNOSIS_STORAGE_DIR": {
+    "default": "backend/private/shrimp-diagnoses",
+    "description": "Thư mục lưu ảnh riêng; default giải quyết từ module, giá trị ghi đè tính theo CWD. Cấm đặt trong backend/public.",
+    "scope": "Chẩn đoán tôm",
+    "type": "path",
+    "unit": "không"
+  }
+}

@@ -8,6 +8,9 @@ class ArticleCommentService {
   async listAdmin(params = {}, signal) {
     return (await this.api.get("/comments", { params, signal })).data;
   }
+  async articleOptions() {
+    return (await this.api.get("/comments/articles")).data;
+  }
   async create(articleId, content) {
     return (await this.api.post(`/${articleId}/comments`, { content })).data;
   }

@@ -11,7 +11,10 @@
     "test": "node --test",
     "lint": "eslint app app.js server.js scripts test",
     "migrate:inventory-expiry": "node scripts/migrate-inventory-expiry.js",
-    "migrate:security-indexes": "node scripts/migrate-security-indexes.js"
+    "migrate:security-indexes": "node scripts/migrate-security-indexes.js",
+    "migrate:product-technical-specs": "node scripts/migrate-product-technical-specs.js",
+    "migrate:subscriptions": "node scripts/migrate-subscriptions.js",
+    "test:integration:isolated": "node scripts/run-isolated-regression.js"
   },
   "dependencies": {
     "axios": "^1.20.0",
@@ -31,9 +34,9 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
     "eslint": "^9.39.2",
-    "eslint-config-prettier": "^10.1.8",
-    "nodemon": "^3.1.11",
-    "prettier": "^3.8.0"
+    "globals": "^14.0.0",
+    "nodemon": "^3.1.11"
   }
 }

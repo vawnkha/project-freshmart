@@ -99,8 +99,8 @@ const discountUpdateSchema = z
     quantity: nonNegativeNumberSchema.optional(),
     usedCount: nonNegativeNumberSchema.optional(),
     applicable: applicableSchema.optional(),
-    productIds: objectIdArraySchema.optional(),
-    categoryIds: objectIdArraySchema.optional(),
+    productIds: objectIdArraySchema.unwrap().optional(),
+    categoryIds: objectIdArraySchema.unwrap().optional(),
     startDate: dateStringSchema,
     endDate: dateStringSchema,
     status: statusEnum.optional(),
@@ -199,6 +199,22 @@ module.exports = {
     keyword: optionalString,
   }),
   updateDiscountSchema: discountUpdateSchema,
+  batchDiscountUpdateSchema: z.object({
+    code: z.string().trim().min(1).max(100).optional(),
+    name: z.string().trim().min(1).max(200).optional(),
+    description: z.string().trim().max(2000).optional(),
+    isPublic: z.boolean().optional(),
+    value: z.number().positive().max(100).optional(),
+    batchQuantity: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+    startDate: z.string().max(40).optional(),
+    endDate: z.string().max(40).optional(),
+  }).strict(),
+  availableDiscountSchema: z.object({
+    cartItems: z.array(z.object({
+      productId: objectIdSchema,
+      quantity: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    })).min(1),
+  }).strict(),
   validateDiscountSchema: z.object({
     code: nonEmptyString,
     userId: objectIdSchema.optional(),

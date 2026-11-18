@@ -1,3 +1,4 @@
+const { read } = require("../config/environment");
 const crypto = require("crypto");
 const ApiError = require("../api-error");
 const OrdersService = require("./orders.service");
@@ -30,7 +31,7 @@ class PaypalCheckoutService {
     this.intents = new PaymentIntentService(client);
   }
 
-  // Recovery observes the provider; it never creates, captures, refunds or releases stock.
+  // Recovery only reads the provider; verified outcomes finalize or release the existing local order.
   async reconcileOrder({ userId, paypalOrderId }) {
     const intent = await this.intents.findOwned(paypalOrderId, userId);
     const payment = await this.orders.findPaymentByIdempotencyKey(paypalOrderId);
@@ -77,8 +78,17 @@ class PaypalCheckoutService {
     return { status: "completed", providerStatus };
   }
 
-  async createOrder({ userId, addressId, shippingMethodId, discountCode }) {
+  async createSubscriptionOrder({ userId, runId }) {
+    const SubscriptionsService = require("./subscriptions.service");
+    const context = await new SubscriptionsService(this.orders.client).paypalContext(runId, userId);
+    return this.createOrder({ userId, addressId: context.input.addressId,
+      shippingMethodId: context.input.shippingMethodId, discountCode: context.input.discountCode,
+      sourceItems: context.input.items, subscriptionRunId: context.run._id });
+  }
+
+  async createOrder({ userId, addressId, shippingMethodId, discountCode, sourceItems, subscriptionRunId }) {
     const preview = await this.orders.getCheckoutPreview({
+      sourceItems,
       userId,
       addressId,
       shippingMethodId,
@@ -103,6 +113,7 @@ class PaypalCheckoutService {
       throw new ApiError(502, "Không tạo được PayPal order");
 
     await this.intents.create({
+      subscriptionRunId,
       paypalOrderId: paypalOrder.id,
       userId,
       addressId,
@@ -123,6 +134,9 @@ class PaypalCheckoutService {
     const intent = await this.intents.findOwned(paypalOrderId, userId);
     if (!intent) throw new ApiError(404, "Giao dịch PayPal không tồn tại");
 
+    const subscriptionHooks = intent.subscriptionRunId
+      ? await new (require("./subscriptions.service"))(this.orders.client).paypalOrderHooks(intent.subscriptionRunId, userId)
+      : {};
     const existingPayment =
       await this.orders.findPaymentByIdempotencyKey(paypalOrderId);
     if (existingPayment && ["refunded", "refund_pending", "failed", "canceled"].includes(existingPayment.status)) {
@@ -133,6 +147,7 @@ class PaypalCheckoutService {
         throw new ApiError(409, "Giao dịch PayPal đã hết hạn. Vui lòng tạo thanh toán mới.", "PAYPAL_INTENT_EXPIRED");
       }
       const preview = await this.orders.getCheckoutPreview({
+        sourceItems: subscriptionHooks.sourceItems,
         userId: intent.userId,
         addressId: intent.addressId,
         shippingMethodId: intent.shippingMethodId,
@@ -176,6 +191,7 @@ class PaypalCheckoutService {
     }
 
     const localOrder = await this.orders.createFromCart({
+      ...subscriptionHooks,
       userId: intent.userId,
       addressId: intent.addressId,
       payment_method: "paypal",
@@ -189,7 +205,7 @@ class PaypalCheckoutService {
       idempotencyKey: paypalOrderId,
       paymentMetadata: {
         capture_gate_version: 1,
-        stock_hold_expires_at: new Date(Date.now() + Math.max(1, Number(process.env.PAYPAL_STOCK_HOLD_MINUTES) || 15) * 60000),
+        stock_hold_expires_at: new Date(Date.now() + read("PAYPAL_STOCK_HOLD_MINUTES") * 60000),
         currency: "VND",
         paypal: {
           expected_amount: intent.expectedAmount,

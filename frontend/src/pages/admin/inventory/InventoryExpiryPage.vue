@@ -29,34 +29,165 @@ onMounted(() => { filters.status = Object.hasOwn(expiryLabels, route.query.statu
 onBeforeUnmount(() => { ++version; clearInterval(timer); });
 </script>
 <template>
-  <div class="admin-page expiry-page">
-    <div class="admin-page-title admin-page-title--stack"><h1>Cảnh báo hạn sử dụng</h1><p>Theo ngày lịch Việt Nam. Lô hết hạn hôm nay ngừng bán.</p></div>
-    <div v-if="summary" class="expiry-stats">
-      <button v-for="[key,label] in [['total','Tổng lô còn tồn'],['warning','Sắp hết hạn'],['urgent','Gần hết hạn'],['expired','Hết hạn còn tồn']]" :key="key" class="admin-stat-card" @click="filters.status = key === 'total' ? '' : key; search()">
-        <span class="admin-stat-card__label">{{ label }}</span><strong class="admin-stat-card__value">{{ summary[key] }}</strong>
+  <div class="admin-workflow-page">
+    <div class="admin-page-title admin-page-title--stack">
+      <h1>Cảnh báo hạn sử dụng</h1>
+      <p>Theo ngày lịch Việt Nam. Lô hết hạn hôm nay ngừng bán.</p>
+    </div>
+
+    <div v-if="summary" class="admin-panel expiry-stats">
+      <button
+        v-for="[key, label] in [['total', 'Tổng lô còn tồn'], ['warning', 'Sắp hết hạn'], ['urgent', 'Gần hết hạn'], ['expired', 'Hết hạn còn tồn']]"
+        :key="key"
+        type="button"
+        class="admin-stat-card"
+        :aria-pressed="filters.status === (key === 'total' ? '' : key)"
+        @click="filters.status = key === 'total' ? '' : key; search()"
+      >
+        <span class="admin-stat-card__label">{{ label }}</span>
+        <strong class="admin-stat-card__value">{{ summary[key] }}</strong>
       </button>
     </div>
-    <p v-if="summary?.unknown" role="status">Có {{ summary.unknown }} lô thiếu hạn sử dụng cần rà soát; đang chặn xuất bán. <button class="admin-btn admin-btn--secondary" @click="filters.status='unknown'; search()">Xem các lô</button></p>
+    <div v-if="summary?.unknown" class="admin-panel">
+      <div class="admin-panel__body admin-action-row" role="status">
+        <span>Có {{ summary.unknown }} lô thiếu hạn sử dụng cần rà soát và đang chặn xuất bán.</span>
+        <button type="button" class="admin-btn admin-btn--secondary" @click="filters.status = 'unknown'; search()">Xem các lô</button>
+      </div>
+    </div>
     <p v-if="message" role="status">{{ message }}</p>
-    <section class="admin-panel"><div class="admin-panel__body">
-      <form class="expiry-filters" @submit.prevent="search">
-        <label>Tìm sản phẩm / mã lô<input v-model="filters.keyword" maxlength="150" class="form-control" type="search" /></label>
-        <label>Mức cảnh báo<select v-model="filters.status" class="form-select" @change="search"><option value="">Tất cả</option><option v-for="(label,key) in expiryLabels" :key="key" :value="key">{{ label }}</option></select></label>
-        <label>Sắp xếp<select v-model="filters.sort_by" class="form-select" @change="search"><option value="expiryDate">Hạn sử dụng</option><option value="quantity">Tồn kho</option><option value="createdAt">Ngày nhập</option></select></label>
-        <label>Thứ tự<select v-model="filters.sort_order" class="form-select" @change="search"><option value="asc">Tăng dần</option><option value="desc">Giảm dần</option></select></label>
-        <button class="admin-btn admin-btn--primary" :disabled="loading">Tìm kiếm</button>
-      </form>
-      <div v-if="error" role="alert"><p>{{ error }}</p><button class="admin-btn admin-btn--secondary" @click="load">Thử lại</button></div>
-      <p v-else-if="loading" class="admin-empty-state" role="status">Đang tải cảnh báo…</p>
-      <p v-else-if="!rows.length" class="admin-empty-state">Không có lô phù hợp bộ lọc.</p>
-      <div v-else class="table-responsive" role="region" tabindex="0" aria-label="Bảng cảnh báo hạn sử dụng, có thể cuộn ngang"><table class="admin-table"><thead><tr><th>Mã lô</th><th>Sản phẩm</th><th>Ngày nhập</th><th>Hạn sử dụng</th><th>Còn lại</th><th>Tồn kho</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
-        <tbody><tr v-for="batch in rows" :key="batch._id"><td>{{ batch.batchNumber }}</td><td>{{ batch.product?.name || batch.itemName }}</td><td>{{ expiryDate(batch.createdAt) }}</td><td>{{ expiryDate(batch.expiryDate) }}</td><td>{{ batch.daysRemaining === null ? 'Chưa xác định' : batch.daysRemaining + ' ngày' }}</td><td>{{ batch.quantity }} {{ batch.unit }}</td><td><span class="admin-badge" :class="expiryClass(batch.expiryStatus)">{{ expiryLabels[batch.expiryStatus] }}</span><small v-if="batch.status === 'locked'"> · Đang khóa</small></td><td><div class="expiry-actions"><RouterLink :to="`/admin/inventory-expiry/${batch._id}`" class="admin-btn admin-btn--secondary">Xem</RouterLink><button v-if="batch.sellable && ['warning','urgent'].includes(batch.expiryStatus) && batch.product" class="admin-btn admin-btn--primary" @click="selected = batch._id">Đề xuất giảm giá</button></div></td></tr></tbody>
-      </table></div>
-      <AdminPagination v-model="page" :total-items="total" :page-size="limit" @change="load" />
-    </div></section>
-    <PromotionProposalModal :batch-id="selected" @close="selected=null" @saved="saved" />
+
+    <section class="admin-panel" aria-labelledby="expiry-list-heading">
+      <h2 id="expiry-list-heading" class="admin-panel__header">Danh sách lô</h2>
+      <div class="admin-panel__body">
+        <form class="admin-form--stacked expiry-filters" @submit.prevent="search">
+          <div class="admin-form__fields">
+            <label class="admin-form__field">
+              Tìm sản phẩm / mã lô
+              <input v-model="filters.keyword" maxlength="150" class="admin-toolbar__input" type="search" />
+            </label>
+            <label class="admin-form__field">
+              Mức cảnh báo
+              <select v-model="filters.status" class="admin-toolbar__select" @change="search">
+                <option value="">Tất cả</option>
+                <option v-for="(label, key) in expiryLabels" :key="key" :value="key">{{ label }}</option>
+              </select>
+            </label>
+            <label class="admin-form__field">
+              Sắp xếp
+              <select v-model="filters.sort_by" class="admin-toolbar__select" @change="search">
+                <option value="expiryDate">Hạn sử dụng</option>
+                <option value="quantity">Tồn kho</option>
+                <option value="createdAt">Ngày nhập</option>
+              </select>
+            </label>
+            <label class="admin-form__field">
+              Thứ tự
+              <select v-model="filters.sort_order" class="admin-toolbar__select" @change="search">
+                <option value="asc">Tăng dần</option>
+                <option value="desc">Giảm dần</option>
+              </select>
+            </label>
+          </div>
+          <div class="admin-action-row">
+            <button type="submit" class="admin-btn admin-btn--primary" :disabled="loading">Tìm kiếm</button>
+          </div>
+        </form>
+
+        <div v-if="error" class="admin-action-row" role="alert">
+          <span>{{ error }}</span>
+          <button type="button" class="admin-btn admin-btn--secondary" @click="load">Thử lại</button>
+        </div>
+        <p v-else-if="loading" class="admin-empty-state" role="status">Đang tải cảnh báo…</p>
+        <p v-else-if="!rows.length" class="admin-empty-state">Không có lô phù hợp bộ lọc.</p>
+        <div v-else class="table-responsive" role="region" tabindex="0" aria-label="Bảng cảnh báo hạn sử dụng, có thể cuộn ngang">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th scope="col">Mã lô</th>
+                <th scope="col">Sản phẩm</th>
+                <th scope="col">Ngày nhập</th>
+                <th scope="col">Hạn sử dụng</th>
+                <th scope="col">Còn lại</th>
+                <th scope="col">Tồn kho</th>
+                <th scope="col">Trạng thái</th>
+                <th scope="col">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="batch in rows" :key="batch._id">
+                <td>{{ batch.batchNumber }}</td>
+                <td>{{ batch.product?.name || batch.itemName }}</td>
+                <td>{{ expiryDate(batch.createdAt) }}</td>
+                <td>{{ expiryDate(batch.expiryDate) }}</td>
+                <td>{{ batch.daysRemaining === null ? 'Chưa xác định' : batch.daysRemaining + ' ngày' }}</td>
+                <td>{{ batch.quantity }} {{ batch.unit }}</td>
+                <td>
+                  <span class="admin-badge" :class="expiryClass(batch.expiryStatus)">{{ expiryLabels[batch.expiryStatus] }}</span>
+                  <small v-if="batch.status === 'locked'"> · Đang khóa</small>
+                </td>
+                <td>
+                  <div class="admin-action-row">
+                    <RouterLink :to="`/admin/inventory-expiry/${batch._id}`" class="admin-btn admin-btn--secondary">Xem</RouterLink>
+                    <button v-if="batch.sellable && ['warning', 'urgent'].includes(batch.expiryStatus) && batch.product" type="button" class="admin-btn admin-btn--primary" @click="selected = batch._id">Đề xuất giảm giá</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <AdminPagination v-model="page" :total-items="total" :page-size="limit" @change="load" />
+      </div>
+    </section>
+    <PromotionProposalModal :batch-id="selected" @close="selected = null" @saved="saved" />
   </div>
 </template>
+
 <style scoped>
-.expiry-page{min-width:0;padding:0}.expiry-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:20px}.expiry-stats button{text-align:left;display:grid;gap:8px;color:inherit;background:var(--admin-card);border:1px solid var(--admin-border);border-radius:6px}.expiry-filters{display:flex;gap:12px;flex-wrap:wrap;align-items:end;margin-bottom:20px}.expiry-filters label{flex:1 1 145px;min-width:0}.expiry-filters input,.expiry-filters select{display:block;width:100%;padding:9px;border:1px solid var(--admin-border);border-radius:4px;font:inherit;background:white}.expiry-actions{display:flex;gap:6px;flex-wrap:wrap}.expiry-page h1{font-size:1.6rem}.table-responsive{max-width:100%;overflow:auto}.admin-table{min-width:850px}@media(max-width:800px){.expiry-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:420px){.expiry-stats{gap:8px}.expiry-stats button{padding:12px}}
+.expiry-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.expiry-stats button {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--admin-border);
+  background: var(--admin-card);
+  text-align: left;
+}
+
+.expiry-stats button:hover,
+.expiry-stats button[aria-pressed="true"] {
+  background: var(--admin-bg);
+}
+
+.expiry-stats button:focus-visible {
+  outline: 2px solid var(--admin-sidebar);
+  outline-offset: -2px;
+}
+
+.expiry-filters {
+  margin-bottom: 16px;
+}
+
+.admin-panel > h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.table-responsive {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.admin-table {
+  min-width: 850px;
+}
+
+@media (min-width: 1024px) {
+  .expiry-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
 </style>

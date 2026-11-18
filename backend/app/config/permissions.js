@@ -1,6 +1,13 @@
 const DEFAULT_ROLE_CODE = "user";
+const NEWS_COMMENT_PERMISSIONS = [
+  { key: "news-comment:read", label: "Xem bình luận bài viết", group: "content", description: "Xem và lọc danh sách bình luận trong khu vực quản trị" },
+  { key: "news-comment:moderate", label: "Kiểm duyệt bình luận bài viết", group: "content", description: "Xóa bình luận của người khác. Cấp thêm quyền xem để sử dụng trang quản lý bình luận." },
+];
 
 const PERMISSION_CATALOG = [
+  { key: "chat:read", label: "Xem chat hỗ trợ", group: "chat", description: "Xem hội thoại hỗ trợ và số tin chưa đọc của chính mình" },
+  { key: "chat:reply", label: "Trả lời chat hỗ trợ", group: "chat", description: "Nhận hội thoại chưa phân công và trả lời khách hàng" },
+  { key: "chat:manage", label: "Quản lý chat hỗ trợ", group: "chat", description: "Chuyển người phụ trách, đóng hoặc mở lại hội thoại" },
   {
     key: "admin:access",
     label: "Truy cap trang quan tri",
@@ -21,9 +28,9 @@ const PERMISSION_CATALOG = [
   },
   {
     key: "user:update",
-    label: "Cap nhat nguoi dung",
+    label: "Cập nhật người dùng",
     group: "users",
-    description: "Cap nhat trang thai va gan role cho nguoi dung",
+    description: "Cập nhật thông tin và trạng thái tài khoản người dùng",
   },
   {
     key: "user:delete",
@@ -98,12 +105,6 @@ const PERMISSION_CATALOG = [
     description: "Them, sua, xoa banner",
   },
   {
-    key: "order:manage",
-    label: "Quan ly don hang",
-    group: "orders",
-    description: "Tao hoac thao tac voi don hang thay nguoi dung",
-  },
-  {
     key: "order:read:any",
     label: "Xem tat ca don hang",
     group: "orders",
@@ -140,135 +141,24 @@ const PERMISSION_CATALOG = [
     description: "Tao va quan ly thong bao",
   },
   {
-    key: "profile:read",
-    label: "Xem ho so ca nhan",
-    group: "account",
-    description: "Xem thong tin tai khoan cua chinh minh",
-  },
-  {
-    key: "profile:update",
-    label: "Cap nhat ho so ca nhan",
-    group: "account",
-    description: "Cap nhat thong tin tai khoan cua chinh minh",
-  },
-  {
-    key: "password:update",
-    label: "Doi mat khau",
-    group: "account",
-    description: "Doi mat khau tai khoan cua chinh minh",
-  },
-  {
-    key: "cart:manage:own",
-    label: "Quan ly gio hang ca nhan",
-    group: "shopping",
-    description: "Them, sua, xoa san pham trong gio hang cua chinh minh",
-  },
-  {
-    key: "cart:manage:any",
-    label: "Quan ly moi gio hang",
-    group: "shopping",
-    description: "Them, sua, xoa san pham trong gio hang cua bat ky nguoi dung",
-  },
-  {
-    key: "wishlist:manage:own",
-    label: "Quan ly yeu thich ca nhan",
-    group: "shopping",
-    description: "Them, xoa san pham yeu thich cua chinh minh",
-  },
-  {
-    key: "wishlist:manage:any",
-    label: "Quan ly moi danh sach yeu thich",
-    group: "shopping",
-    description: "Them, xoa san pham yeu thich cua bat ky nguoi dung",
-  },
-  {
-    key: "address:manage:own",
-    label: "Quan ly dia chi ca nhan",
-    group: "shopping",
-    description: "Them, sua, xoa dia chi giao hang cua chinh minh",
-  },
-  {
-    key: "address:manage:any",
-    label: "Quan ly moi dia chi",
-    group: "shopping",
-    description: "Them, sua, xoa dia chi giao hang cua bat ky nguoi dung",
-  },
-  {
     key: "order:create:own",
-    label: "Dat hang",
+    label: "Tạo đăng ký mua định kỳ cá nhân",
     group: "shopping",
-    description: "Tao don hang cho chinh minh",
-  },
-  {
-    key: "order:read:own",
-    label: "Xem don hang ca nhan",
-    group: "shopping",
-    description: "Xem don hang cua chinh minh",
-  },
-  {
-    key: "order:cancel:own",
-    label: "Huy don hang ca nhan",
-    group: "shopping",
-    description: "Huy don hang cua chinh minh khi du dieu kien",
-  },
-  {
-    key: "order:complete:own",
-    label: "Hoan tat don hang ca nhan",
-    group: "shopping",
-    description: "Xac nhan hoan tat don hang cua chinh minh",
+    description: "Tạo đăng ký mua định kỳ cho chính mình",
   },
   {
     key: "payment:create:own",
-    label: "Thanh toan ca nhan",
+    label: "Khởi tạo PayPal cho kỳ mua định kỳ cá nhân",
     group: "shopping",
-    description: "Tao giao dich thanh toan cho don hang cua chinh minh",
-  },
-  {
-    key: "payment:create:any",
-    label: "Tao thanh toan thay nguoi dung",
-    group: "shopping",
-    description: "Tao giao dich thanh toan cho don hang cua bat ky nguoi dung",
-  },
-  {
-    key: "review:create:own",
-    label: "Viet danh gia",
-    group: "reviews",
-    description: "Viet danh gia san pham",
-  },
-  {
-    key: "review:create:any",
-    label: "Tao danh gia thay nguoi dung",
-    group: "reviews",
-    description: "Tao danh gia san pham cho bat ky nguoi dung",
-  },
-  {
-    key: "review:check:own",
-    label: "Kiem tra quyen danh gia",
-    group: "reviews",
-    description: "Kiem tra nguoi dung co the danh gia san pham hay khong",
-  },
-  {
-    key: "review:check:any",
-    label: "Kiem tra quyen danh gia bat ky",
-    group: "reviews",
-    description: "Kiem tra bat ky nguoi dung co the danh gia san pham hay khong",
+    description: "Khởi tạo thanh toán PayPal cho một kỳ thuộc đăng ký mua định kỳ của chính mình",
   },
 ];
 
+PERMISSION_CATALOG.push(...NEWS_COMMENT_PERMISSIONS);
+
 const USER_PERMISSION_KEYS = [
-  "profile:read",
-  "profile:update",
-  "password:update",
-  "cart:manage:own",
-  "wishlist:manage:own",
-  "address:manage:own",
   "order:create:own",
-  "order:read:own",
-  "order:cancel:own",
-  "order:complete:own",
   "payment:create:own",
-  "review:create:own",
-  "review:check:own",
 ];
 
 const MANAGER_PERMISSION_KEYS = [
@@ -349,6 +239,7 @@ module.exports = {
   DEFAULT_ROLE_CODE,
   DEFAULT_ROLES,
   PERMISSION_CATALOG,
+  NEWS_COMMENT_PERMISSIONS,
   normalizeRoleCode,
   normalizePermissions,
   hasPermission,

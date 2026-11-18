@@ -15,6 +15,15 @@ exports.findPublic = async (req, res, next) => {
   }
 };
 
+exports.findAvailable = async (req, res, next) => {
+  try {
+    res.set("Cache-Control", "no-store");
+    return res.send({ data: await getService().findAvailable(req.body) });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 exports.findAll = async (req, res, next) => {
   try {
     const data = await getService().find(req.query);
@@ -48,7 +57,7 @@ exports.create = async (req, res, next) => {
 
 exports.update = async (req, res, next) => {
   try {
-    const document = await getService().update(req.params.id, req.body);
+    const document = await getService().update(req.params.id, req.body, req.user);
     if (!document) return next(new ApiError(404, "Ma giam gia khong ton tai"));
     return res.send({
       message: "Cap nhat ma giam gia thanh cong",

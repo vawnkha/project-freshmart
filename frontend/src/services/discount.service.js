@@ -15,6 +15,11 @@ class DiscountService {
     return res.data;
   }
 
+  async getAvailable(cartItems) {
+    const res = await this.api.post("/available", { cartItems });
+    return res.data;
+  }
+
   async getById(id) {
     const res = await this.api.get(`/${id}`);
     return res.data;

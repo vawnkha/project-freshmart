@@ -12,7 +12,6 @@ const {
 
 const canAccessCart = authMiddleware.authorizeOwnerOrPermissions(
   (req) => req.params.userId,
-  "cart:manage:any",
 );
 
 router.use(authMiddleware);

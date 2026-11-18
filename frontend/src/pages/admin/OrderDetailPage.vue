@@ -91,7 +91,22 @@ onMounted(fetchOrder);
 <template>
   <div v-if="order" class="admin-page">
     <div class="admin-page-title">Hóa đơn</div>
-    <details v-if="canUpdateOrders && ['shipping','completed','cancel_pending'].includes(order.status)" class="admin-panel mb-3"><summary>Xác nhận đã nhận hàng hoàn</summary><form class="admin-panel__body" @submit.prevent="returnReceived"><p>Chỉ xác nhận sau khi đã nhận lại toàn bộ hàng. Hệ thống hoàn về đúng lô; lô khóa hoặc hết hạn không được mở bán. Thanh toán PayPal hoàn tất sẽ được hoàn tiền trước khi hoàn kho.</p><label>Lý do / biên bản nhận hàng<textarea v-model="returnReason" maxlength="2000" required class="form-control" /></label><p v-if="returnError" role="alert">{{ returnError }}</p><button class="admin-btn admin-btn--primary mt-2" :disabled="returning || !returnReason.trim()">{{ returning ? 'Đang xử lý…' : 'Xác nhận đã nhận đủ hàng hoàn' }}</button></form></details>
+    <details v-if="canUpdateOrders && ['shipping', 'completed', 'cancel_pending'].includes(order.status)" class="admin-panel admin-disclosure">
+      <summary class="admin-panel__header">Xác nhận đã nhận hàng hoàn</summary>
+      <form class="admin-panel__body admin-form--stacked" :aria-busy="returning" @submit.prevent="returnReceived">
+        <p>Chỉ xác nhận sau khi đã nhận lại toàn bộ hàng. Hệ thống hoàn về đúng lô; lô khóa hoặc hết hạn không được mở bán. Thanh toán PayPal hoàn tất sẽ được hoàn tiền trước khi hoàn kho.</p>
+        <label class="admin-form__field">
+          Lý do / biên bản nhận hàng
+          <textarea v-model="returnReason" class="admin-form__textarea" maxlength="2000" rows="3" required />
+        </label>
+        <p v-if="returnError" class="admin-form__error" role="alert">{{ returnError }}</p>
+        <div class="admin-action-row">
+          <button type="submit" class="admin-btn admin-btn--primary" :disabled="returning || !returnReason.trim()">
+            {{ returning ? 'Đang xử lý…' : 'Xác nhận nhận đủ hàng' }}
+          </button>
+        </div>
+      </form>
+    </details>
 
     <section ref="invoiceRef" class="admin-panel admin-invoice-panel">
       <div class="admin-panel__header">Hóa đơn</div>

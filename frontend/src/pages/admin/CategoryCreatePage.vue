@@ -3,6 +3,7 @@ import { reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import categoryService from "@/services/category.service";
 import { categoryFormSchema } from "@/validators/category.validator";
+import { slugFromName } from "@/utils/slug.util";
 
 const router = useRouter();
 const preview = ref("");
@@ -31,7 +32,7 @@ async function submitForm() {
   }
   const data = new FormData();
   data.append("name", parsed.data.name);
-  data.append("slug", parsed.data.slug);
+  if (parsed.data.slug) data.append("slug", parsed.data.slug);
   data.append("description", parsed.data.description || "");
   if (form.image) data.append("image", form.image);
 
@@ -59,8 +60,8 @@ async function submitForm() {
           </div>
 
           <div class="admin-form__row">
-            <label class="admin-form__label">Slug *</label>
-            <input v-model="form.slug" class="admin-form__control" />
+            <label class="admin-form__label">Slug</label>
+            <input v-model="form.slug" :placeholder="slugFromName(form.name) || 'Tự tạo từ tên danh mục'" class="admin-form__control" />
           </div>
 
           <div class="admin-form__row">

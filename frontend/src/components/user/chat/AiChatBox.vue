@@ -1,4 +1,5 @@
 <script setup>
+import { productPath } from "@/utils/product-route.util";
 import { computed, nextTick, ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import aiService from '@/services/ai.service';
 import { useAuthStore, captureAuthRequestContext } from '@/stores/user/auth';
@@ -7,8 +8,12 @@ import { productPrice, formatMoney } from '@/utils/storefront.util';
 import { catalogStock } from '@/utils/catalog-query.util';
 import { normalizeId } from '@/utils/id.util';
 import ResponsiveImage from '@/components/user/common/ResponsiveImage.vue';
+const props = defineProps({embedded:Boolean,active:{type:Boolean,default:true}});
 const auth = useAuthStore();
 const opened = ref(false);
+const visible = computed(()=>props.embedded?props.active:opened.value);
+const atBottom = ref(true);
+let savedScroll=0;
 const loading = ref(false);
 const input = ref('');
 const bodyRef = ref(null);
@@ -24,7 +29,9 @@ let trigger, modalObserver;
 const initialMessages = () => [{ role: 'assistant', text: 'Xin chào! Mình có thể giúp bạn tìm sản phẩm, hỏi giá và xem tình trạng còn hàng trên website.', products: [] }];
 const messages = ref(initialMessages());
 // Presentation entry point for the approved Home support callout.
-defineExpose({ open: () => { opened.value = true; } });
+const emit = defineEmits(['open']);
+watch(opened, value => { if (value) emit('open'); });
+defineExpose({ open: () => { opened.value = true; }, close: () => close(false), focus:()=>composer.value?.focus({preventScroll:true}) });
 function close(restore = true) {
   const ownsFocus = panel.value?.contains(document.activeElement);
   opened.value = false;
@@ -47,6 +54,7 @@ function resetSession() {
   loading.value = false;
   input.value = '';
   messages.value = initialMessages();
+  savedScroll=0;atBottom.value=true;
   close(false);
 }
 // These are local presentation fences, not a second auth/session store. The
@@ -61,9 +69,15 @@ watch(opened, async (value) => {
   await nextTick();
   if (!disposed && opened.value) composer.value?.focus({ preventScroll: true });
 });
+function trackScroll(){if(!visible.value || !bodyRef.value)return;savedScroll=bodyRef.value.scrollTop;atBottom.value=bodyRef.value.scrollHeight-savedScroll-bodyRef.value.clientHeight<40;}
+watch(()=>props.active,async active=>{
+  if(!props.embedded)return;
+  if(!active){if(bodyRef.value)savedScroll=bodyRef.value.scrollTop;return;}
+  await nextTick();if(bodyRef.value)bodyRef.value.scrollTop=atBottom.value?bodyRef.value.scrollHeight:savedScroll;
+},{flush:'sync'});
 async function scrollToBottom() {
   await nextTick();
-  if (bodyRef.value) bodyRef.value.scrollTop = bodyRef.value.scrollHeight;
+  if (bodyRef.value && visible.value && atBottom.value) bodyRef.value.scrollTop = bodyRef.value.scrollHeight;
 }
 async function sendMessage(text = input.value.trim()) {
   text = String(text).trim();
@@ -72,6 +86,7 @@ async function sendMessage(text = input.value.trim()) {
   const current = { controller: new AbortController() };
   const isCurrent = () => !disposed && request === current && (!context || context.isCurrent());
   request = current;
+  atBottom.value=true;
   messages.value.push({ role: 'user', text, products: [] });
   input.value = '';
   loading.value = true;
@@ -104,6 +119,7 @@ function updateViewport() {
   } : {};
 }
 onMounted(() => {
+  if(props.embedded)return;
   updateViewport();
   window.visualViewport?.addEventListener('resize', updateViewport);
   window.visualViewport?.addEventListener('scroll', updateViewport);
@@ -126,21 +142,21 @@ onBeforeUnmount(() => {
 });
 </script>
 <template>
-  <div ref="widget" class="ai-chat" :class="{ 'ai-chat--compact': compactViewport }" :style="viewportStyle">
-    <button aria-label="Mở hỗ trợ trực tuyến" :aria-expanded="opened" aria-controls="support-panel" class="ai-chat__toggle" @click="opened = !opened">
+  <div ref="widget" class="ai-chat" :class="{ 'ai-chat--compact': !embedded && compactViewport, 'ai-chat--embedded':embedded }" :style="viewportStyle">
+    <button v-if="!embedded" aria-label="Mở hỗ trợ trực tuyến" :aria-expanded="opened" aria-controls="support-panel" class="ai-chat__toggle" @click="opened = !opened">
       <i class="fa-solid fa-comment" aria-hidden="true"></i>
     </button>
     <Transition name="client-chat-panel" @before-enter="preparePanel" @before-leave="hidePanel">
-    <section v-if="opened" id="support-panel" ref="panel" class="ai-chat__panel" role="dialog" aria-label="Hỗ trợ trực tuyến" tabindex="-1" @keydown.esc.stop.prevent="close()">
-      <div class="ai-chat__header"><div><strong>Hỗ trợ trực tuyến</strong><div class="ai-chat__sub">Hỏi giá hoặc tìm sản phẩm</div></div>
+    <section v-if="embedded || opened" v-show="visible" id="support-panel" ref="panel" class="ai-chat__panel" :role="embedded?'region':'dialog'" :aria-label="embedded?'Trợ lý AI':'Hỗ trợ trực tuyến'" tabindex="-1" @keydown.esc="!embedded && ($event.stopPropagation(),$event.preventDefault(),close())">
+      <div v-if="!embedded" class="ai-chat__header"><div><strong>Hỗ trợ trực tuyến</strong><div class="ai-chat__sub">Hỏi giá hoặc tìm sản phẩm</div></div>
         <button aria-label="Đóng hỗ trợ trực tuyến" class="ai-chat__close" @click="close()">×</button>
       </div>
-      <div ref="bodyRef" class="ai-chat__body" role="log" aria-live="polite" aria-relevant="additions" :aria-busy="loading">
+      <div ref="bodyRef" class="ai-chat__body" role="log" aria-live="polite" aria-relevant="additions" :aria-busy="loading" @scroll.passive="trackScroll">
         <div v-for="(message, index) in messages" :key="index" class="ai-chat__msg" :class="message.role">
           <div class="ai-chat__bubble" :role="message.retry ? 'alert' : undefined">{{ message.text }}</div>
           <button v-if="message.retry" class="text-button" :disabled="loading" @click="sendMessage(message.retry)">Thử gửi lại câu hỏi</button>
           <div v-if="message.products.length" class="ai-chat__products">
-            <router-link v-for="product in message.products" :key="product._id" class="ai-chat__product" :to="'/products/' + product._id">
+            <router-link v-for="product in message.products" :key="product._id" class="ai-chat__product" :to="productPath(product)">
               <ResponsiveImage :src="product.thumbnail" :alt="product.name" class="ai-chat__product-thumb" />
               <div class="ai-chat__product-info"><div class="ai-chat__product-name">{{ product.name }}</div>
                 <div>{{ productPrice(product) === null ? 'Chưa có giá' : formatMoney(productPrice(product)) }}</div>
@@ -152,7 +168,7 @@ onBeforeUnmount(() => {
         <div v-if="loading" class="ai-chat__bubble" role="status">Đang trả lời...</div>
       </div>
       <div class="ai-chat__footer">
-        <textarea ref="composer" v-model="input" class="ai-chat__input" rows="2" maxlength="1000" placeholder="Tìm chế phẩm sinh học hoặc hỏi giá sản phẩm..." aria-label="Tin nhắn hỗ trợ" aria-describedby="support-limit support-ai-note" @keydown="handleEnter"></textarea>
+        <textarea ref="composer" v-model="input" class="ai-chat__input" rows="2" maxlength="1000" placeholder="Tìm chế phẩm sinh học hoặc hỏi giá sản phẩm..." :aria-label="embedded?'Tin nhắn cho trợ lý AI':'Tin nhắn hỗ trợ'" aria-describedby="support-limit support-ai-note" @keydown="handleEnter"></textarea>
         <small id="support-limit">{{ input.length }}/1000 ký tự · Shift + Enter để xuống dòng</small>
         <button class="btn btn-primary btn-block ai-chat__send" :disabled="!canSend" :aria-busy="loading" @click="sendMessage()">{{ loading ? 'Đang gửi...' : 'Gửi' }}</button>
         <p id="support-ai-note" class="ai-chat__note">Trợ lý AI hỗ trợ tra cứu sản phẩm. Kết quả chỉ để tham khảo.</p>

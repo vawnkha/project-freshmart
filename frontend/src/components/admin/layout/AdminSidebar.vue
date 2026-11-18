@@ -2,11 +2,13 @@
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/user/auth";
+import { useLiveChatStore } from "@/stores/live-chat";
 import { hasPermission as hasUserPermission } from "@/utils/permission.util";
 
 const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
+const liveChat = useLiveChatStore();
 
 const avatar = computed(() => {
   return (
@@ -24,6 +26,7 @@ const openGroups = ref({
 });
 
 const menus = [
+  { key: 'live-chat', label: 'Chat hỗ trợ khách hàng', icon: 'fa-solid fa-comments', to: { name: 'admin-live-chat' }, names: ['admin-live-chat'], permission: 'chat:read' },
   {
     key: "dashboard",
     label: "Dashboard",
@@ -49,7 +52,7 @@ const menus = [
   },
   {
     key: "catalog",
-    label: "Quản lý danh mục",
+    label: "Danh mục & Đối tác",
     icon: "fa-solid fa-layer-group",
     to: null,
     names: [
@@ -91,16 +94,9 @@ const menus = [
     key: "products",
     label: "Quản lý sản phẩm",
     icon: "fa-solid fa-desktop",
-    to: null,
-    names: ["admin-products", "admin-product-create", "admin-product-edit"],
+    to: { name: "admin-products" },
+    names: ["admin-products", "admin-product-edit"],
     permission: "product:manage",
-    children: [
-      {
-        label: "Danh sách sản phẩm",
-        to: { name: "admin-products" },
-        names: ["admin-products", "admin-product-edit"],
-      },
-    ],
   },
   {
     key: "inventory",
@@ -160,8 +156,12 @@ const menus = [
     key: "orders",
     label: "Quản lý đơn hàng",
     icon: "fa-solid fa-pen-to-square",
-    to: { name: "admin-orders" },
-    names: ["admin-orders", "admin-order-detail"],
+    to: null,
+    names: ["admin-orders", "admin-order-detail", "admin-subscriptions", "admin-subscription-detail"],
+    children: [
+      { label: "Đơn hàng", to: { name: "admin-orders" }, names: ["admin-orders", "admin-order-detail"] },
+      { label: "Đơn hàng định kỳ", to: { name: "admin-subscriptions" }, names: ["admin-subscriptions", "admin-subscription-detail"] },
+    ],
     permission: "order:read:any",
   },
   {
@@ -211,7 +211,7 @@ const menus = [
         label: "Bình luận bài viết",
         to: { name: "admin-news-comments" },
         names: ["admin-news-comments"],
-        permission: "news:manage",
+        permission: "news-comment:read",
       },
       {
         label: "Banner",
@@ -347,6 +347,7 @@ watch(
           >
             <i :class="item.icon"></i>
             <span>{{ item.label }}</span>
+            <span v-if="item.key==='live-chat' && liveChat.unread" class="admin-chat-unread" :aria-label="liveChat.unread+' tin chat chưa đọc'">{{ liveChat.unread>99?'99+':liveChat.unread }}</span>
           </RouterLink>
         </template>
 

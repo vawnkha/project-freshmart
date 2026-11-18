@@ -1,4 +1,12 @@
 const { z } = require("zod");
+const { technicalSpecsSchema, packageMeasureSchema, jsonField } = require("./technical-specs.validator");
+const directProductFields = {
+  technicalSpecs: jsonField(technicalSpecsSchema).optional(),
+  packageMeasure: jsonField(packageMeasureSchema.nullable()).optional(),
+  packageSize: z.string().trim().max(160).optional(),
+  storageInstruction: z.string().trim().max(2000).optional(),
+  expiryMonths: z.preprocess(value => value === "" || value === null ? null : typeof value === "string" ? Number(value) : value, z.number().finite().min(0).max(1200).nullable()).optional(),
+};
 const {
   idParamSchema,
   nonEmptyString,
@@ -47,6 +55,9 @@ const productCategoryParamSchema = z.object({
 
 const productCreateSchema = z
   .object({
+    ...directProductFields,
+    brandId: optionalObjectIdSchema,
+    manufacturerId: optionalObjectIdSchema,
     name: nonEmptyString,
     slug: optionalSlugSchema,
     inventoryItemId: optionalObjectIdSchema,
@@ -76,6 +87,9 @@ const productCreateSchema = z
 
 const productUpdateSchema = z
   .object({
+    ...directProductFields,
+    brandId: optionalObjectIdSchema,
+    manufacturerId: optionalObjectIdSchema,
     name: nonEmptyString.optional(),
     slug: optionalSlugSchema,
     inventoryItemId: optionalObjectIdSchema,
@@ -103,6 +117,7 @@ const createProductFromInventoryParamSchema = z.object({
 
 const createProductFromInventorySchema = z
   .object({
+    ...directProductFields,
     name: optionalString,
     slug: optionalSlugSchema,
     productCode: optionalString,
@@ -169,6 +184,9 @@ function validateCreateFromInventory(body = {}) {
 }
 
 module.exports = {
+  productMetadataSchema: z.object(directProductFields),
+  compareQuerySchema: z.object({ ids: z.string().max(120).transform(value => [...new Set(value.split(",").map(id => id.trim().toLowerCase()))])
+    .pipe(z.array(z.string().regex(/^[a-f0-9]{24}$/, "Product ID không hợp lệ")).min(2, "Chọn ít nhất 2 sản phẩm khác nhau").max(3, "Chỉ so sánh tối đa 3 sản phẩm")) }),
   createProductFromInventoryParamSchema,
   createProductFromInventorySchema,
   productCategoryParamSchema,

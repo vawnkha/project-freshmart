@@ -21,6 +21,6 @@ const { categories, loading, error, loadCategories } = useCatalog();
       <div v-else-if="error" role="alert"><p>{{ error }}</p><SageButton variant="secondary" @click="loadCategories(true)">Thử lại</SageButton></div>
       <nav v-else aria-label="Danh mục mobile" class="shell-mobile-categories"><router-link v-for="category in categories" :key="category._id" :to="{ path: '/products', query: { category_id: category._id } }" @click="emit('navigate')">{{ category.name }}</router-link><router-link to="/products" @click="emit('navigate')">Tất cả sản phẩm</router-link></nav>
     </SageAccordion>
-    <div class="shell-mobile-account"><router-link :to="loggedIn ? '/profile' : '/login'" @click="emit('navigate')"><i class="fa-regular fa-user" aria-hidden="true"></i> {{ loggedIn ? accountName : 'Đăng nhập' }}</router-link><router-link to="/wishlist" @click="emit('navigate')">Sản phẩm yêu thích</router-link><SageButton v-if="loggedIn" variant="ghost" @click="emit('logout')">Đăng xuất</SageButton></div>
+    <div class="shell-mobile-account"><router-link :to="loggedIn ? '/profile' : '/login'" @click="emit('navigate')"><i class="fa-regular fa-user" aria-hidden="true"></i> {{ loggedIn ? accountName : 'Đăng nhập' }}</router-link><router-link v-if="loggedIn" to="/account/subscriptions" @click="emit('navigate')">Đơn hàng định kỳ</router-link><router-link to="/wishlist" @click="emit('navigate')">Sản phẩm yêu thích</router-link><SageButton v-if="loggedIn" variant="ghost" @click="emit('logout')">Đăng xuất</SageButton></div>
   </SageDrawer>
 </template>

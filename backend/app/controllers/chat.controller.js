@@ -1,0 +1,15 @@
+const MongoDB=require('../utils/mongodb.util');
+const {ChatService}=require('../services/chat.service');
+const service=()=>new ChatService(MongoDB.client);
+const handle=work=>async(req,res,next)=>{try{res.set('Cache-Control','no-store');return res.json(await work(req));}catch(error){return next(error);}};
+const admin=req=>req.baseUrl.startsWith('/api/admin/');
+exports.me=handle(req=>service().me(req.user));
+exports.list=handle(req=>service().list(req.user,req.query));
+exports.summary=handle(req=>service().summary(req.user));
+exports.agents=handle(req=>service().agents(req.user));
+exports.detail=handle(req=>service().detail(req.params.id,req.user,{admin:admin(req)}));
+exports.history=handle(req=>service().history(req.params.id,req.user,req.query,{admin:admin(req)}));
+exports.send=handle(req=>service().send(req.user,req.body,{admin:admin(req)}));
+exports.read=handle(req=>service().read(req.params.id,req.user,req.body.throughSeq,{admin:admin(req)}));
+exports.status=handle(req=>service().mutate(req.params.id,req.user,req.body,'status'));
+exports.assign=handle(req=>service().mutate(req.params.id,req.user,req.body,'assign'));

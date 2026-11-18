@@ -11,6 +11,6 @@ const compare = computed(() => productComparePrice(props.product));
     ><del v-if="price !== null && compare > price">{{
       formatMoney(compare)
     }}</del></span>
-    <small v-if="product.packageSize || product.unit"><span v-if="product.packageSize">{{ product.packageSize }}</span><span v-if="product.unit">{{ product.packageSize ? ' · ' : '/ ' }}{{ product.unit }}</span></small>
+    <small v-if="product.packageSize || product.unit"><span v-if="product.packageSize">{{ product.packageSize }}</span><span v-if="product.unit">{{ product.packageSize ? ' / ' : '. ' }}{{ product.unit }}</span></small>
   </div>
 </template>

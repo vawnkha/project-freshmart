@@ -20,6 +20,9 @@ const assigningRoleUserId = ref("");
 const canUpdateUsers = computed(() => hasPermission(authStore, "user:update"));
 const canDeleteUsers = computed(() => hasPermission(authStore, "user:delete"));
 const canManageRoles = computed(() => hasPermission(authStore, "role:manage"));
+const isSelf = (user) => normalizeId(user._id) === normalizeId(authStore.userId);
+const canManageAccount = (user) => user.role !== "admin" || authStore.role === "admin";
+const isProtectedSelf = (user) => user.role === "admin" && isSelf(user);
 
 function resolveType(role) {
   const matchedRole = roles.value.find((item) => item.code === role);
@@ -78,7 +81,7 @@ function roleIdForUser(user) {
 }
 
 async function changeUserRole(user, event) {
-  if (!canManageRoles.value) {
+  if (!canManageRoles.value || !canManageAccount(user) || isProtectedSelf(user)) {
     alert("Ban khong co quyen gan vai tro cho nguoi dung");
     event.target.value = roleIdForUser(user);
     return;
@@ -107,7 +110,7 @@ const paginatedUser = computed(() => {
 });
 
 async function blockUser(user) {
-  if (!canUpdateUsers.value) {
+  if (!canUpdateUsers.value || !canManageAccount(user) || isProtectedSelf(user)) {
     alert("Ban khong co quyen cap nhat nguoi dung");
     return;
   }
@@ -116,12 +119,12 @@ async function blockUser(user) {
     await userService.updateUser(user._id, { status: "blocked" });
     await fetchUsers();
   } catch (error) {
-    alert(error?.message || "Không thể chặn người dùng");
+    alert(error?.response?.data?.message || error?.message || "Không thể chặn người dùng");
   }
 }
 
 async function restoreUser(user) {
-  if (!canUpdateUsers.value) {
+  if (!canUpdateUsers.value || !canManageAccount(user)) {
     alert("Ban khong co quyen cap nhat nguoi dung");
     return;
   }
@@ -130,12 +133,12 @@ async function restoreUser(user) {
     await userService.updateUser(user._id, { status: "active" });
     await fetchUsers();
   } catch (error) {
-    alert(error?.message || "Không thể khôi phục người dùng");
+    alert(error?.response?.data?.message || error?.message || "Không thể khôi phục người dùng");
   }
 }
 
 async function removeUser(user) {
-  if (!canDeleteUsers.value) {
+  if (!canDeleteUsers.value || !canManageAccount(user) || isSelf(user)) {
     alert("Ban khong co quyen xoa nguoi dung");
     return;
   }
@@ -333,7 +336,7 @@ onMounted(initialize);
                 </div>
 
                 <select
-                  v-if="canManageRoles && roles.length"
+                  v-if="canManageRoles && roles.length && canManageAccount(item) && !isProtectedSelf(item)"
                   class="admin-user-card__role-select"
                   :value="roleIdForUser(item)"
                   :disabled="assigningRoleUserId === item._id"
@@ -343,11 +346,12 @@ onMounted(initialize);
                     v-for="role in roles"
                     :key="role._id"
                     :value="role._id"
-                    :disabled="role.status === 'inactive'"
+                    :disabled="role.status === 'inactive' || (role.is_system && role.code === 'admin' && authStore.role !== 'admin')"
                   >
                     {{ role.name }}
                   </option>
                 </select>
+                <small v-if="isProtectedSelf(item)">Tài khoản Admin của bạn được bảo vệ.</small>
               </div>
             </div>
 
@@ -355,7 +359,7 @@ onMounted(initialize);
               class="admin-user-card__actions admin-user-card__actions--modern"
             >
               <button
-                v-if="canUpdateUsers && item.status !== 'blocked'"
+                v-if="canUpdateUsers && item.status !== 'blocked' && canManageAccount(item) && !isProtectedSelf(item)"
                 class="admin-btn admin-btn--warning"
                 @click="blockUser(item)"
               >
@@ -364,7 +368,7 @@ onMounted(initialize);
               </button>
 
               <button
-                v-if="canUpdateUsers && item.status === 'blocked'"
+                v-if="canUpdateUsers && item.status === 'blocked' && canManageAccount(item)"
                 class="admin-btn admin-btn--success"
                 @click="restoreUser(item)"
               >
@@ -373,7 +377,7 @@ onMounted(initialize);
               </button>
 
               <button
-                v-if="canDeleteUsers"
+                v-if="canDeleteUsers && canManageAccount(item) && !isSelf(item)"
                 class="admin-btn admin-btn--danger"
                 @click="removeUser(item)"
               >

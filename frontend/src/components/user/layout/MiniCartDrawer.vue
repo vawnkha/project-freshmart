@@ -1,4 +1,5 @@
 <script setup>
+import { productPath } from "@/utils/product-route.util";
 import { computed, ref, watch, onBeforeUnmount } from 'vue';
 import { useAuthStore } from '@/stores/user/auth';
 import { useCartStore } from '@/stores/user/cart';
@@ -66,7 +67,7 @@ function total(item) { const value = item.line_total ?? item.subtotal; return va
         <li v-for="item in cart.items" :key="item.product_id" class="shell-cart-line">
           <ResponsiveImage :src="item.thumbnail || item.image" :alt="item.name || 'Sản phẩm'" />
           <div class="shell-cart-info">
-            <router-link v-if="normalizeId(item.product_id)" :to="'/products/' + normalizeId(item.product_id)" class="shell-cart-name" @click="emit('navigate')">{{ item.name || 'Sản phẩm' }}</router-link><span v-else class="shell-cart-name">{{ item.name || 'Sản phẩm không còn khả dụng' }}</span>
+            <router-link v-if="normalizeId(item.product_id)" :to="productPath(item)" class="shell-cart-name" @click="emit('navigate')">{{ item.name || 'Sản phẩm' }}</router-link><span v-else class="shell-cart-name">{{ item.name || 'Sản phẩm không còn khả dụng' }}</span>
             <p class="shell-cart-unit">{{ productPrice(item) === null ? 'Chưa có giá' : formatMoney(productPrice(item)) }}<span v-if="item.unit"> / {{ item.unit }}</span></p>
             <p v-if="lineProblem(item)" class="shell-cart-problem">{{ lineProblem(item) }}</p>
             <div class="shell-cart-controls">

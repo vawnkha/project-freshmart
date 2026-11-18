@@ -24,7 +24,6 @@ const photo = new URL('../../assets/images/user/approved-home/mangroves-photo.jp
         </div>
         <figure>
           <ResponsiveImage :src="photo" alt="Ao nuôi tại Bangladesh — ảnh bối cảnh, không phải cơ sở FreshMart" width="1280" height="853" />
-          <figcaption>Ảnh: Amdadphoto · CC BY-SA 4.0. <a href="https://commons.wikimedia.org/wiki/File:Shrimp_Farm_by_the_Mangroves.jpg" target="_blank" rel="noopener noreferrer">Nguồn ảnh và giấy phép</a>.</figcaption>
         </figure>
       </section>
       <div class="approved-about-cta">

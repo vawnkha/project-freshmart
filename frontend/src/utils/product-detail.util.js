@@ -1,6 +1,7 @@
 import { normalizeId } from './id.util.js';
 import { publicSearchProducts } from './storefront-shell.util.js';
 import { catalogStock, catalogResponse } from './catalog-query.util.js';
+import { validSlug } from './slug.util.js';
 
 export const detailId = value => normalizeId(value);
 export const validDetailId = value => /^[a-f\d]{24}$/i.test(detailId(value));
@@ -11,9 +12,13 @@ export function productGallery(product) {
   return [...new Set([product?.thumbnail, ...images].map(text).filter(Boolean))];
 }
 
-export function detailProduct(response, requestedId) {
+export function detailProduct(response, requested) {
+  const id = detailId(response?._id || response?.id);
+  const requestedId = detailId(requested);
   if (!response || typeof response !== 'object' || Array.isArray(response) ||
-      detailId(response._id || response.id) !== detailId(requestedId)) {
+      !id || (requestedId
+        ? id.toLowerCase() !== requestedId.toLowerCase()
+        : !validSlug(requested) || response.slug !== requested)) {
     throw new TypeError('Unexpected public product detail response');
   }
   return publicSearchProducts([response])[0] || null;
@@ -60,17 +65,29 @@ export function productSpecifications(product) {
     .flatMap(([key, label]) => scalar(product?.[key]) ? [{ label, value: scalar(product[key]) }] : []);
   const packageSize = scalar(product?.packageSize ?? product?.inventoryItem?.packageSize);
   if (packageSize) rows.push({ label: 'Quy cách đóng gói', value: packageSize });
+  for(const [key,label] of [['brand','Thương hiệu'],['manufacturer','Nhà sản xuất']])if(text(product?.[key]?.name))rows.push({label,value:text(product[key].name)});
+  if(scalar(product?.packageMeasure?.value)&&text(product?.packageMeasure?.unit))rows.push({label:'Dung lượng mỗi đơn vị bán',value:scalar(product.packageMeasure.value)+' '+text(product.packageMeasure.unit)});
+  const normalized=product?.normalizedPrice;
+  if(normalized&&Number.isFinite(normalized.value)&&['VND/kg','VND/L'].includes(normalized.unit))rows.push({label:'Giá quy đổi',value:normalized.value.toLocaleString('vi-VN')+' đ/'+(normalized.unit==='VND/kg'?'kg':'L')});
   const specs = product?.specifications;
   if (Array.isArray(specs)) {
     for (const row of specs) {
       const label = text(row?.label || row?.name), value = scalar(row?.value);
-      if (label && value) rows.push({ label, value });
+      if (label && value) rows.push({ label, value: value+(text(row.unit)?' '+text(row.unit):'') });
     }
   } else if (specs && typeof specs === 'object') {
     for (const [label, value] of Object.entries(specs)) {
       if (scalar(value)) rows.push({ label, value: scalar(value) });
     }
   } else if (text(specs)) rows.push({ label: 'Thông số sản phẩm', value: text(specs) });
+  return rows;
+}
+
+export function productStorage(product){
+  const rows=[],storage=text(product?.storageInstruction)||text(product?.storage);
+  if(storage)rows.push({label:'Điều kiện bảo quản',value:storage});
+  const months=product?.expiryMonths;
+  if((typeof months==='number'&&Number.isFinite(months)||typeof months==='string'&&/^\d+(?:\.\d+)?$/.test(months))&&Number(months)>=0)rows.push({label:'Thời hạn sử dụng tham khảo',value:String(months)+' tháng'});
   return rows;
 }
 

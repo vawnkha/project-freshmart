@@ -17,7 +17,6 @@ router.get(
   validate({ query: addressByUserQuerySchema }),
   authMiddleware.authorizeOwnerOrPermissions(
     (req) => req.query.userId,
-    "address:manage:any",
   ),
   addresses.findByUser,
 );
@@ -26,7 +25,6 @@ router.post(
   validate({ body: createAddressSchema }),
   authMiddleware.authorizeOwnerOrPermissions(
     (req) => req.body.user_id,
-    "address:manage:any",
   ),
   addresses.create,
 );

@@ -1,11 +1,15 @@
 <script setup>
 import { normalizeId } from "@/utils/id.util";
 import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { useSchemaForm } from "@/composables/useSchemaForm";
 import { toTypedSchema } from "@vee-validate/zod";
 import AdminPagination from "@/components/admin/common/AdminPagination.vue";
 import MultiSelectSearch from "@/components/admin/common/MultiSelectSearch.vue";
+import BatchDiscountEditModal from "@/components/admin/inventory/BatchDiscountEditModal.vue";
+import DiscountEditorDialog from "@/components/admin/marketing/DiscountEditorDialog.vue";
 import discountService from "@/services/discount.service";
+import expiryService from "@/services/expiry.service";
 import productService from "@/services/admin-product.service";
 import categoryService from "@/services/category.service";
 import {
@@ -21,8 +25,10 @@ import { mapBackendValidationErrors } from "@/utils/validation-error.util";
 import { useAuthStore } from "@/stores/user/auth";
 import { loadWhenAllowed } from "@/utils/authorized-load.util";
 const authStore = useAuthStore();
+const route = useRoute(), router = useRouter();
 
 const discounts = ref([]);
+const discountsReady = ref(false);
 const products = ref([]);
 const categories = ref([]);
 const loading = ref(false);
@@ -32,6 +38,9 @@ const keyword = ref("");
 const scopeFilter = ref("");
 const statusFilter = ref("");
 const showModal = ref(false);
+const batchDiscount = ref(null);
+const batchNotice = ref("");
+const stoppingBatchId = ref("");
 const modalMode = ref("create");
 const currentId = ref("");
 const currentPage = ref(1);
@@ -315,6 +324,7 @@ async function fetchDiscounts() {
   try {
     const res = await discountService.getAll();
     discounts.value = normalizeList(res);
+    discountsReady.value = true;
   } catch (error) {
     console.error(error);
     alert(error?.response?.data?.message || "Không thể tải mã giảm giá");
@@ -349,7 +359,11 @@ function openCreateModal() {
 }
 
 function openEditModal(item) {
-  if (item.scope === "batch") { window.location.assign("/admin/discounts/proposals"); return; }
+  if (item.scope === "batch") {
+    batchNotice.value = "";
+    batchDiscount.value = item;
+    return;
+  }
   resetValidation();
   modalMode.value = "edit";
   currentId.value = getId(item);
@@ -364,8 +378,9 @@ function closeModal() {
 }
 
 async function submitForm() {
+  if (saving.value) return;
   const valid = await validateForm();
-  if (!valid) return;
+  if (!valid || saving.value) return;
 
   saving.value = true;
   try {
@@ -388,8 +403,26 @@ async function submitForm() {
   }
 }
 
+async function batchSaved() {
+  batchNotice.value = "Đã lưu thay đổi cho mã giảm giá theo lô.";
+  await fetchDiscounts();
+}
+
 async function removeDiscount(item) {
-  if (item.scope === "batch") { window.location.assign("/admin/discounts/proposals"); return; }
+  if (item.scope === "batch") {
+    if (stoppingBatchId.value || !window.confirm("Dừng mã giảm giá theo lô này? Các đơn đã dùng mã và lịch sử vẫn được lưu.")) return;
+    stoppingBatchId.value = getId(item);
+    try {
+      await expiryService.cancel(normalizeId(item.proposalId));
+      batchNotice.value = "Đã dừng mã giảm giá theo lô.";
+      await fetchDiscounts();
+    } catch (error) {
+      alert(error?.response?.data?.message || "Không thể dừng ưu đãi theo lô");
+    } finally {
+      stoppingBatchId.value = "";
+    }
+    return;
+  }
   if (!window.confirm("Bạn có chắc muốn xóa mã giảm giá này?\n\nDữ liệu sau khi xóa sẽ không thể khôi phục.")) return;
 
   try {
@@ -404,6 +437,18 @@ async function removeDiscount(item) {
 
 watch([keyword, scopeFilter, statusFilter], () => {
   currentPage.value = 1;
+});
+
+watch([() => route.query.editBatch, discountsReady], ([requested, ready]) => {
+  if (!ready || requested === undefined) return;
+  const id = typeof requested === "string" ? normalizeId(requested) : "";
+  const item = id && discounts.value.find(row => row.scope === "batch" && getId(row) === id);
+  if (item) openEditModal(item);
+  else batchNotice.value = "Không tìm thấy mã giảm giá theo lô này.";
+
+  const query = { ...route.query };
+  delete query.editBatch;
+  void router.replace({ query });
 });
 
 watch(filteredDiscounts, (list) => {
@@ -430,7 +475,7 @@ onMounted(() => {
   <div class="admin-page">
     <div class="admin-page-title admin-page-title--stack">
       <h1>Mã giảm giá</h1>
-      <p>Quản lý mã giảm giá theo đơn hàng, sản phẩm hoặc danh mục.</p>
+      <p>Quản lý mã giảm giá theo đơn hàng, sản phẩm, danh mục và lô hàng.</p>
     </div>
 
     <div class="admin-stat-row admin-stat-row--orders">
@@ -452,6 +497,7 @@ onMounted(() => {
       </div>
     </div>
 
+    <p v-if="batchNotice" role="status">{{ batchNotice }}</p>
     <section class="admin-panel">
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
@@ -526,7 +572,10 @@ onMounted(() => {
                   <span v-if="item.type === 'percent'">{{ Number(item.value || 0) }}%</span>
                   <span v-else>{{ formatCurrency(item.value) }}</span>
                 </td>
-                <td>{{ Number(item.usedCount || 0) }} / {{ Number(item.quantity || 0) || "∞" }}</td>
+                <td>
+                  <template v-if="item.scope === 'batch'">{{ Number(item.usedQuantity || 0) }} / {{ item.batchQuantity }} suất</template>
+                  <template v-else>{{ Number(item.usedCount || 0) }} / {{ Number(item.quantity || 0) || "∞" }}</template>
+                </td>
                 <td>{{ formatDate(item.startDate) }} - {{ formatDate(item.endDate) }}</td>
                 <td>
                   <span class="admin-badge" :class="statusClass(item.status)">
@@ -540,11 +589,13 @@ onMounted(() => {
                       Sửa
                     </button>
                     <button
+                      v-if="item.scope !== 'batch' || item.status === 'active'"
                       type="button"
                       class="admin-btn admin-btn--danger"
+                      :disabled="item.scope === 'batch' && !!stoppingBatchId"
                       @click.stop="removeDiscount(item)"
                     >
-                      Xóa
+                      {{ item.scope === 'batch' ? 'Dừng' : 'Xóa' }}
                     </button>
                   </div>
                 </td>
@@ -561,229 +612,202 @@ onMounted(() => {
       </div>
     </section>
 
-    <div v-if="showModal" class="admin-modal-mask" @click.self="closeModal">
-      <div class="admin-modal admin-modal--wide">
-        <div class="admin-modal__header">
-          <div class="admin-modal__title">
-            {{ modalMode === "create" ? "Thêm mã giảm giá" : "Sửa mã giảm giá" }}
-          </div>
-          <button type="button" class="admin-btn admin-btn--secondary" @click="closeModal">
-            Đóng
-          </button>
-        </div>
-
-        <div class="admin-modal__body">
-          <form class="admin-form" @submit.prevent="submitForm">
-            <div class="admin-form__row">
-              <label class="admin-form__label">Mã *</label>
-              <div>
-                <input
-                  v-model="form.code"
-                  class="admin-form__control"
-                  :class="{ 'is-invalid': errors.code }"
-                  placeholder="VD: SALE10"
-                />
-                <div v-if="errors.code" class="admin-form__error">{{ errors.code }}</div>
-              </div>
-            </div>
-
-            <div class="admin-form__row">
-              <label class="admin-form__label">Tên mã *</label>
-              <div>
-                <input
-                  v-model="form.name"
-                  class="admin-form__control"
-                  :class="{ 'is-invalid': errors.name }"
-                />
-                <div v-if="errors.name" class="admin-form__error">{{ errors.name }}</div>
-              </div>
-            </div>
-
-            <div class="admin-form__row">
-              <label for="discount-description" class="admin-form__label">Mô tả hiển thị</label>
-              <textarea id="discount-description" v-model="form.description" class="admin-form__textarea" rows="2" />
-            </div>
-            <div class="admin-form__row">
-              <span class="admin-form__label">Hiển thị Homepage</span>
-              <div>
-                <label><input v-model="form.isPublic" type="checkbox" /> Công khai mã trên Homepage</label>
-                <p class="admin-form__hint">Chỉ mã đang hoạt động, trong thời gian áp dụng và còn lượt dùng được hiển thị.</p>
-              </div>
-            </div>
-            <div class="admin-form__row">
-              <label class="admin-form__label">Phạm vi *</label>
-              <select v-model="form.scope" class="admin-form__select">
-                <option value="order">Đơn hàng</option>
-                <option value="product">Sản phẩm</option>
-                <option value="category">Danh mục</option>
-              </select>
-            </div>
-
-            <div v-if="form.scope === 'product'" class="admin-form__row">
-              <label class="admin-form__label">Sản phẩm áp dụng</label>
-              <MultiSelectSearch
-                :items="productOptions"
-                :selected-ids="form.productIds"
-                label-key="discountLabel"
-                value-key="_id"
-                code-key="discountCode"
-                group-key="discountCategoryLabel"
-                group-label-key="discountCategoryLabel"
-                :search-keys="[
-                  'discountCode',
-                  'discountLabel',
-                  'name',
-                  'productName',
-                  'itemCode',
-                  'productCode',
-                  'slug',
-                  'discountCategoryLabel',
-                ]"
-                placeholder="Tìm sản phẩm theo mã, tên hoặc danh mục..."
-                :loading="optionLoading"
-                helper-text="Để trống nếu áp dụng cho mọi sản phẩm."
-                empty-text="Không tìm thấy sản phẩm phù hợp"
-                @update:selected-ids="form.productIds = $event"
-              />
-              <div v-if="errors.productIds" class="admin-form__error">
-                {{ errors.productIds }}
-              </div>
-            </div>
-
-            <div v-if="form.scope === 'category'" class="admin-form__row">
-              <label class="admin-form__label">Danh mục áp dụng</label>
-              <MultiSelectSearch
-                :items="categoryOptions"
-                :selected-ids="form.categoryIds"
-                label-key="discountLabel"
-                value-key="_id"
-                code-key="discountCode"
-                group-key="discountParentLabel"
-                group-label-key="discountParentLabel"
-                :search-keys="['discountCode', 'discountLabel', 'name', 'title', 'slug', 'discountParentLabel']"
-                placeholder="Tìm danh mục theo tên, slug hoặc danh mục cha..."
-                :loading="optionLoading"
-                helper-text="Để trống nếu áp dụng cho mọi danh mục."
-                empty-text="Không tìm thấy danh mục phù hợp"
-                @update:selected-ids="form.categoryIds = $event"
-              />
-              <div v-if="errors.categoryIds" class="admin-form__error">
-                {{ errors.categoryIds }}
-              </div>
-            </div>
-
-            <div class="admin-form__row">
-              <label class="admin-form__label">Loại giảm *</label>
-              <select v-model="form.type" class="admin-form__select">
-                <option value="percent">Phần trăm</option>
-                <option value="fixed">Số tiền cố định</option>
-              </select>
-            </div>
-
-            <div class="admin-form__row">
-              <label class="admin-form__label">Giá trị *</label>
-              <div>
-                <input
-                  v-model="form.value"
-                  type="number"
-                  min="0"
-                  class="admin-form__control"
-                  :class="{ 'is-invalid': errors.value }"
-                />
-                <div v-if="errors.value" class="admin-form__error">{{ errors.value }}</div>
-              </div>
-            </div>
-
-            <div class="admin-form__row">
-              <label class="admin-form__label">Giá trị đơn tối thiểu</label>
-              <div>
-                <input
-                  v-model="form.minOrderValue"
-                  type="number"
-                  min="0"
-                  class="admin-form__control"
-                  :class="{ 'is-invalid': errors.minOrderValue }"
-                />
-                <div v-if="errors.minOrderValue" class="admin-form__error">
-                  {{ errors.minOrderValue }}
-                </div>
-              </div>
-            </div>
-
-            <div class="admin-form__row">
-              <label class="admin-form__label">Giảm tối đa</label>
-              <div>
-                <input
-                  v-model="form.maxDiscountAmount"
-                  type="number"
-                  min="0"
-                  class="admin-form__control"
-                  :class="{ 'is-invalid': errors.maxDiscountAmount }"
-                />
-                <div v-if="errors.maxDiscountAmount" class="admin-form__error">
-                  {{ errors.maxDiscountAmount }}
-                </div>
-              </div>
-            </div>
-
-            <div class="admin-form__row">
-              <label class="admin-form__label">Số lượng mã</label>
-              <div>
-                <input
-                  v-model="form.quantity"
-                  type="number"
-                  min="0"
-                  class="admin-form__control"
-                  :class="{ 'is-invalid': errors.quantity }"
-                />
-                <div v-if="errors.quantity" class="admin-form__error">{{ errors.quantity }}</div>
-              </div>
-            </div>
-
-            <div class="admin-form__row">
-              <label class="admin-form__label">Ngày bắt đầu</label>
-              <input v-model="form.startDate" type="date" class="admin-form__control" />
-            </div>
-
-            <div class="admin-form__row">
-              <label class="admin-form__label">Ngày kết thúc</label>
-              <div>
-                <input
-                  v-model="form.endDate"
-                  type="date"
-                  class="admin-form__control"
-                  :class="{ 'is-invalid': errors.endDate }"
-                />
-                <div v-if="errors.endDate" class="admin-form__error">
-                  {{ errors.endDate }}
-                </div>
-              </div>
-            </div>
-
-            <div class="admin-form__row">
-              <label class="admin-form__label">Trạng thái</label>
-              <select v-model="form.status" class="admin-form__select">
-                <option value="active">Đang hoạt động</option>
-                <option value="inactive">Ngừng hoạt động</option>
-              </select>
-            </div>
-          </form>
-        </div>
-
-        <div class="admin-modal__footer">
-          <button type="button" class="admin-btn admin-btn--secondary" @click="closeModal">
-            Quay lại
-          </button>
-          <button
-            type="button"
-            class="admin-btn admin-btn--primary"
-            :disabled="saving"
-            @click="submitForm"
-          >
-            {{ saving ? "Đang lưu..." : "Lưu" }}
-          </button>
+    <BatchDiscountEditModal :discount="batchDiscount" @close="batchDiscount = null" @saved="batchSaved" />
+    <DiscountEditorDialog :open="showModal" :title="modalMode === 'create' ? 'Thêm mã giảm giá' : 'Sửa mã giảm giá'"
+      :saving="saving" @close="closeModal" @submit="submitForm">
+      <div class="admin-form__row">
+        <label class="admin-form__label">Mã *</label>
+        <div>
+          <input
+            v-model="form.code"
+            class="admin-form__control"
+            :class="{ 'is-invalid': errors.code }"
+            placeholder="VD: SALE10"
+          />
+          <div v-if="errors.code" class="admin-form__error">{{ errors.code }}</div>
         </div>
       </div>
-    </div>
+
+      <div class="admin-form__row">
+        <label class="admin-form__label">Tên mã *</label>
+        <div>
+          <input
+            v-model="form.name"
+            class="admin-form__control"
+            :class="{ 'is-invalid': errors.name }"
+          />
+          <div v-if="errors.name" class="admin-form__error">{{ errors.name }}</div>
+        </div>
+      </div>
+
+      <div class="admin-form__row">
+        <label for="discount-description" class="admin-form__label">Mô tả hiển thị</label>
+        <textarea id="discount-description" v-model="form.description" class="admin-form__textarea" rows="2" />
+      </div>
+      <div class="admin-form__row">
+        <span class="admin-form__label">Hiển thị Homepage</span>
+        <div>
+          <label><input v-model="form.isPublic" type="checkbox" /> Công khai mã trên Homepage</label>
+          <p class="admin-form__hint">Chỉ mã đang hoạt động, trong thời gian áp dụng và còn lượt dùng được hiển thị.</p>
+        </div>
+      </div>
+      <div class="admin-form__row">
+        <label class="admin-form__label">Phạm vi *</label>
+        <select v-model="form.scope" class="admin-form__select">
+          <option value="order">Đơn hàng</option>
+          <option value="product">Sản phẩm</option>
+          <option value="category">Danh mục</option>
+        </select>
+      </div>
+
+      <div v-if="form.scope === 'product'" class="admin-form__row">
+        <label class="admin-form__label">Sản phẩm áp dụng</label>
+        <MultiSelectSearch
+          :items="productOptions"
+          :selected-ids="form.productIds"
+          label-key="discountLabel"
+          value-key="_id"
+          code-key="discountCode"
+          group-key="discountCategoryLabel"
+          group-label-key="discountCategoryLabel"
+          :search-keys="[
+            'discountCode',
+            'discountLabel',
+            'name',
+            'productName',
+            'itemCode',
+            'productCode',
+            'slug',
+            'discountCategoryLabel',
+          ]"
+          placeholder="Tìm sản phẩm theo mã, tên hoặc danh mục..."
+          :loading="optionLoading"
+          helper-text="Để trống nếu áp dụng cho mọi sản phẩm."
+          empty-text="Không tìm thấy sản phẩm phù hợp"
+          @update:selected-ids="form.productIds = $event"
+        />
+        <div v-if="errors.productIds" class="admin-form__error">
+          {{ errors.productIds }}
+        </div>
+      </div>
+
+      <div v-if="form.scope === 'category'" class="admin-form__row">
+        <label class="admin-form__label">Danh mục áp dụng</label>
+        <MultiSelectSearch
+          :items="categoryOptions"
+          :selected-ids="form.categoryIds"
+          label-key="discountLabel"
+          value-key="_id"
+          code-key="discountCode"
+          group-key="discountParentLabel"
+          group-label-key="discountParentLabel"
+          :search-keys="['discountCode', 'discountLabel', 'name', 'title', 'slug', 'discountParentLabel']"
+          placeholder="Tìm danh mục theo tên, slug hoặc danh mục cha..."
+          :loading="optionLoading"
+          helper-text="Để trống nếu áp dụng cho mọi danh mục."
+          empty-text="Không tìm thấy danh mục phù hợp"
+          @update:selected-ids="form.categoryIds = $event"
+        />
+        <div v-if="errors.categoryIds" class="admin-form__error">
+          {{ errors.categoryIds }}
+        </div>
+      </div>
+
+      <div class="admin-form__row">
+        <label class="admin-form__label">Loại giảm *</label>
+        <select v-model="form.type" class="admin-form__select">
+          <option value="percent">Phần trăm</option>
+          <option value="fixed">Số tiền cố định</option>
+        </select>
+      </div>
+
+      <div class="admin-form__row">
+        <label class="admin-form__label">Giá trị *</label>
+        <div>
+          <input
+            v-model="form.value"
+            type="number"
+            min="0"
+            class="admin-form__control"
+            :class="{ 'is-invalid': errors.value }"
+          />
+          <div v-if="errors.value" class="admin-form__error">{{ errors.value }}</div>
+        </div>
+      </div>
+
+      <div class="admin-form__row">
+        <label class="admin-form__label">Giá trị đơn tối thiểu</label>
+        <div>
+          <input
+            v-model="form.minOrderValue"
+            type="number"
+            min="0"
+            class="admin-form__control"
+            :class="{ 'is-invalid': errors.minOrderValue }"
+          />
+          <div v-if="errors.minOrderValue" class="admin-form__error">
+            {{ errors.minOrderValue }}
+          </div>
+        </div>
+      </div>
+
+      <div class="admin-form__row">
+        <label class="admin-form__label">Giảm tối đa</label>
+        <div>
+          <input
+            v-model="form.maxDiscountAmount"
+            type="number"
+            min="0"
+            class="admin-form__control"
+            :class="{ 'is-invalid': errors.maxDiscountAmount }"
+          />
+          <div v-if="errors.maxDiscountAmount" class="admin-form__error">
+            {{ errors.maxDiscountAmount }}
+          </div>
+        </div>
+      </div>
+
+      <div class="admin-form__row">
+        <label class="admin-form__label">Số lượng mã</label>
+        <div>
+          <input
+            v-model="form.quantity"
+            type="number"
+            min="0"
+            class="admin-form__control"
+            :class="{ 'is-invalid': errors.quantity }"
+          />
+          <div v-if="errors.quantity" class="admin-form__error">{{ errors.quantity }}</div>
+        </div>
+      </div>
+
+      <div class="admin-form__row">
+        <label class="admin-form__label">Ngày bắt đầu</label>
+        <input v-model="form.startDate" type="date" class="admin-form__control" />
+      </div>
+
+      <div class="admin-form__row">
+        <label class="admin-form__label">Ngày kết thúc</label>
+        <div>
+          <input
+            v-model="form.endDate"
+            type="date"
+            class="admin-form__control"
+            :class="{ 'is-invalid': errors.endDate }"
+          />
+          <div v-if="errors.endDate" class="admin-form__error">
+            {{ errors.endDate }}
+          </div>
+        </div>
+      </div>
+
+      <div class="admin-form__row">
+        <label class="admin-form__label">Trạng thái</label>
+        <select v-model="form.status" class="admin-form__select">
+          <option value="active">Đang hoạt động</option>
+          <option value="inactive">Ngừng hoạt động</option>
+        </select>
+      </div>
+    </DiscountEditorDialog>
   </div>
 </template>

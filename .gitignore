@@ -1,7 +1,70 @@
-.agents
-.aider-desk
-.codex-artifacts
-docs
-references
-shrimp-store
-skills-lock.json
+# Local agent/editor state
+/.agents/
+/.aider-desk/
+/.codex-artifacts/
+/.hallmark/
+/.vscode/
+.idea/
+/skills-lock.json
+
+# Design references, not runtime application assets
+/references/
+/shrimp-store/
+
+# Dependencies and generated output
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+/frontend/dist/
+/frontend/dist-ssr/
+.vite/
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+
+# Local environment and secrets; keep configuration templates
+.env
+.env.*
+*.env
+.env.example
+
+
+# Logs and temporary files
+logs/
+*.log
+*.pid
+*.pid.lock
+*.tsbuildinfo
+.eslintcache
+.stylelintcache
+.DS_Store
+Thumbs.db
+
+# Unused checkpoint at repository root
+/best.pt
+
+# Local tests and test helpers
+test/
+tests/
+test-support/
+
+# Frontend QA and development scripts
+/frontend/scripts/
+
+# Backend optional development/test scripts; retain database maintenance
+/backend/scripts/
+/docs/
+/ai-service/tests/
+/backend/test/
+/frontend/test/
+/frontend/scripts/
+output/
+tmp/
+backend/test/

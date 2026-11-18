@@ -2,7 +2,7 @@ const { z } = require("zod");
 const {
   nonEmptyString,
   optionalString,
-  slugSchema,
+  optionalSlugSchema,
   statusEnum,
   booleanQuerySchema,
 } = require("./common.validator");
@@ -21,8 +21,8 @@ function bad(message) {
 
 function validateCreateCategory(req) {
   const body = req.body || {};
-  if (!hasValue(body.name) || !hasValue(body.slug)) {
-    return bad("name va slug la bat buoc");
+  if (!hasValue(body.name)) {
+    return bad("name la bat buoc");
   }
   return ok();
 }
@@ -36,14 +36,14 @@ function validateUpdateCategory(req) {
 module.exports = {
   createCategorySchema: z.object({
     name: nonEmptyString,
-    slug: slugSchema,
+    slug: optionalSlugSchema,
     description: optionalString,
     status: statusEnum.optional(),
   }),
   updateCategorySchema: z
     .object({
       name: nonEmptyString.optional(),
-      slug: slugSchema.optional(),
+      slug: optionalSlugSchema,
       description: optionalString,
       status: statusEnum.optional(),
       removeImage: booleanQuerySchema,

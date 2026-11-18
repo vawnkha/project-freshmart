@@ -1,12 +1,13 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import ordersService from "@/services/orders.service";
 import AdminPagination from "@/components/admin/common/AdminPagination.vue";
 import { useAuthStore } from "@/stores/user/auth";
 import { hasPermission } from "@/utils/permission.util";
 
 const router = useRouter();
+const route = useRoute();
 const authStore = useAuthStore();
 const orders = ref([]);
 const activeShipping = ref(null);
@@ -15,6 +16,12 @@ const loading = ref(false);
 const keyword = ref("");
 const selectedStatus = ref("");
 const selectedPayment = ref("");
+watch(() => route.query.status, value => {
+  selectedStatus.value = ['awaiting_payment', 'pending', 'processing', 'shipping', 'completed', 'canceled', 'cancel_pending'].includes(value) ? value : '';
+}, { immediate: true });
+watch(() => route.query.payment, value => {
+  selectedPayment.value = ['pending', 'completed', 'failed', 'capture_unknown', 'refund_pending', 'refunded'].includes(value) ? value : '';
+}, { immediate: true });
 const canUpdateOrders = computed(() => hasPermission(authStore, "order:update"));
 
 const currentPage = ref(1);
@@ -119,7 +126,7 @@ const filteredOrders = computed(() => {
         .includes(q);
 
     const matchStatus =
-      !selectedStatus.value || item.status === selectedStatus.value;
+      !selectedStatus.value || ({ delivered: 'completed', confirmed: 'processing', cancelled: 'canceled' }[item.status] || item.status) === selectedStatus.value;
 
     const matchPayment =
       !selectedPayment.value || item.payment_status === selectedPayment.value;
@@ -219,11 +226,13 @@ onMounted(fetchOrders);
           <div class="col-md-3 col-lg-3">
             <select v-model="selectedStatus" class="admin-toolbar__select">
               <option value="">Tất cả trạng thái</option>
+              <option value="awaiting_payment">Chờ thanh toán</option>
               <option value="pending">Chờ xác nhận</option>
               <option value="processing">Đang xử lý</option>
               <option value="shipping">Đang giao</option>
               <option value="completed">Hoàn thành</option>
               <option value="canceled">Đã hủy</option>
+              <option value="cancel_pending">Chờ hoàn tiền</option>
             </select>
           </div>
 
@@ -233,6 +242,9 @@ onMounted(fetchOrders);
               <option value="pending">Chưa thanh toán</option>
               <option value="completed">Đã thanh toán</option>
               <option value="failed">Thất bại</option>
+              <option value="capture_unknown">Cần đối soát PayPal</option>
+              <option value="refund_pending">Chờ hoàn tiền</option>
+              <option value="refunded">Đã hoàn tiền</option>
             </select>
           </div>
         </div>

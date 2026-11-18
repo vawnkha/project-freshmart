@@ -1,10 +1,11 @@
+const { read } = require("../config/environment");
 const ApiError = require("../api-error");
 const MongoDB = require("../utils/mongodb.util");
 const PaypalCheckoutService = require("../services/paypal-checkout.service");
 const { getPaypalCurrency } = require("../utils/paypal.util");
 
 exports.config = (req, res) => res.send({
-  clientId: process.env.PAYPAL_CLIENT_ID || "",
+  clientId: read("PAYPAL_CLIENT_ID"),
   currency: getPaypalCurrency(),
 });
 

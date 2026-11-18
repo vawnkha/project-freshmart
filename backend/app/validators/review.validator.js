@@ -40,9 +40,13 @@ module.exports = {
   }),
   createReviewSchema: z.object({
     user_id: objectIdSchema,
+    userId: objectIdSchema.optional(),
     product_id: objectIdSchema,
     rating: ratingSchema,
     comment: optionalString,
+  }).refine((value) => !value.userId || value.userId === value.user_id, {
+    path: ["user_id"],
+    message: "user_id va userId khong khop",
   }),
   validateCreateReview,
 };

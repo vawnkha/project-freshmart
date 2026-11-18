@@ -12,7 +12,7 @@ import { hasAllPermissions } from "@/utils/permission.util";
 
 const route = useRoute();
 const isLoginPage = computed(() => route.name === "admin-login");
-const expiryPages = ["admin-inventory-expiry", "admin-inventory-expiry-detail", "admin-promotion-proposals"];
+const expiryPages = ["admin-live-chat", "admin-dashboard", "admin-inventory-expiry", "admin-inventory-expiry-detail", "admin-promotion-proposals", "admin-subscriptions", "admin-subscription-detail", "admin-order-detail"];
 const isExpiryPage = computed(() => expiryPages.includes(route.name));
 const mobileNavigation = ref(false);
 async function toggleExpiryNavigation() {

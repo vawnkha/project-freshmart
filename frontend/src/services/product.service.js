@@ -15,8 +15,18 @@ class ProductService {
     return res.data;
   }
 
+  async compare(ids) {
+    const res = await this.api.get('/compare', { params: { ids: ids.join(',') } });
+    return res.data;
+  }
+
   async getById(id) {
     const res = await this.api.get(`/${id}`);
+    return res.data;
+  }
+
+  async getBySlug(slug) {
+    const res = await this.api.get(`/by-slug/${encodeURIComponent(slug)}`);
     return res.data;
   }
 

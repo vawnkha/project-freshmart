@@ -1,6 +1,6 @@
 import { io } from "socket.io-client";
 
-const SOCKET_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+import { socketOrigin as SOCKET_URL } from "../config/environment";
 
 class SocketService {
   constructor() {

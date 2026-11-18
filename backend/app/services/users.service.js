@@ -1,8 +1,11 @@
+const { read } = require("../config/environment");
 const { ObjectId } = require("mongodb");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const RbacService = require("./rbac.service");
 const OutboxService = require("./outbox.service");
+const ApiError = require("../api-error");
+const { protectAdminAccount } = require("./admin-protection.service");
 
 class UsersService {
   constructor(client) {
@@ -68,7 +71,7 @@ class UsersService {
         await this.deletion.withReferences(this.deletion.referencesFor("users", data), async () => {}, { session });
         const result = await this.User.insertOne(data, { session });
         insertedId = result.insertedId;
-        const baseUrl = process.env.APP_URL || "http://localhost:3000";
+        const baseUrl = read("APP_URL");
         await this.outbox.enqueue(
           "mail.activation",
           {
@@ -147,7 +150,7 @@ class UsersService {
         }
 
         const frontendBaseUrl =
-          process.env.FRONTEND_BASE_URL || "http://localhost:3001";
+          read("FRONTEND_BASE_URL");
         await this.outbox.enqueue(
           "mail.reset-password",
           {
@@ -228,8 +231,11 @@ class UsersService {
     return await this.find({});
   }
 
-  async update(id, payload) {
+  async update(id, payload, options = {}) {
     const update = this.extractData(payload, { includeCreatedAt: false });
+    if (update.role_id !== undefined || update.role !== undefined) {
+      throw new ApiError(400, "Thay đổi vai trò phải thực hiện qua API phân quyền.");
+    }
 
     if (update.password) {
       const salt = await bcrypt.genSalt(10);
@@ -240,11 +246,14 @@ class UsersService {
     };
     const result = await this.deletion.withReferences(
       this.deletion.referencesFor("users", update),
-      (session) => this.User.findOneAndUpdate(
-        filter,
-        { $set: update },
-        { returnDocument: "after", session },
-      ),
+      async (session) => {
+        const target = await this.User.findOne(filter, { session });
+        if (!target) return null;
+        await protectAdminAccount(this.client.db(), session, options.actorId, target, {
+          action: "user:update", status: update.status, fields: Object.keys(payload),
+        });
+        return this.User.findOneAndUpdate(filter, { $set: update }, { returnDocument: "after", session });
+      },
     );
     return result;
   }

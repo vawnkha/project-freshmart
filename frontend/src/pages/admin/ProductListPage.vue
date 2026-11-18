@@ -6,6 +6,11 @@ import { toTypedSchema } from "@vee-validate/zod";
 import categoryService from "@/services/category.service";
 import productService from "@/services/product.service";
 import adminProductService from "@/services/admin-product.service";
+import TechnicalSpecsEditor from '@/components/admin/common/TechnicalSpecsEditor.vue';
+import RichTextEditor from '@/components/admin/common/RichTextEditor.vue';
+import { cleanSpecs } from '@/validators/technical-specs.validator';
+const technicalEditor = ref(null);
+const metadata = reactive({ technicalSpecs: {}, packageMeasure: null, packageSize: '', storageInstruction: '', expiryMonths: '' });
 import AdminPagination from "@/components/admin/common/AdminPagination.vue";
 import {
   imageFileSchema,
@@ -131,6 +136,8 @@ function hasInventoryLink(item) {
 }
 
 function openEditModal(item) {
+  Object.assign(metadata, { technicalSpecs: JSON.parse(JSON.stringify(item.technicalSpecs || {})), packageMeasure: item.packageMeasure ? { ...item.packageMeasure } : null,
+    packageSize: item.packageSize || '', storageInstruction: item.storageInstruction || '', expiryMonths: item.expiryMonths ?? '' });
   resetEditValidation();
   editForm._id = item._id || item.id;
   editForm.name = item.name || "";
@@ -225,6 +232,7 @@ async function validateEditForm() {
 }
 
 async function submitEdit(nextStatus = editForm.status) {
+  if (!technicalEditor.value?.validate()) return;
   if (saving.value) return;
   saving.value = true;
   const valid = await validateEditForm();
@@ -233,6 +241,11 @@ async function submitEdit(nextStatus = editForm.status) {
   saving.value = true;
   try {
     const data = new FormData();
+    data.append('technicalSpecs', JSON.stringify(cleanSpecs(metadata.technicalSpecs)));
+    if (!isEditingInventoryProduct.value) {
+      data.append('packageMeasure', JSON.stringify(metadata.packageMeasure?.value ? metadata.packageMeasure : null));
+      for (const key of ['packageSize','storageInstruction','expiryMonths']) data.append(key, metadata[key]);
+    }
     data.append("name", editForm.name);
     data.append("category_id", editForm.category_id);
     data.append("description", editForm.description);
@@ -493,6 +506,7 @@ onMounted(fetchData);
           <button
             type="button"
             class="admin-btn admin-btn--secondary"
+            aria-label="Đóng chỉnh sửa sản phẩm"
             @click="closeEditModal"
           >
             ×
@@ -500,6 +514,14 @@ onMounted(fetchData);
         </div>
 
         <div class="admin-modal__body">
+          <section v-if="isEditingInventoryProduct" class="admin-note">
+            <p>Quy cách, bảo quản và thời hạn tham khảo được quản lý tại hồ sơ hàng kho.</p>
+            <RouterLink :to="{ name: 'admin-inventory-items', query: { edit: editForm.inventoryItemId } }">Chỉnh sửa hồ sơ hàng kho</RouterLink>
+            <p>Quy cách: {{ metadata.packageSize || 'Chưa công bố' }}<span v-if="metadata.packageMeasure"> · {{ metadata.packageMeasure.value }} {{ metadata.packageMeasure.unit }}</span></p>
+            <p>Bảo quản: {{ metadata.storageInstruction || 'Chưa công bố' }}</p>
+            <p>Thời hạn tham khảo: {{ metadata.expiryMonths === '' ? 'Chưa công bố' : metadata.expiryMonths + ' tháng' }}</p>
+          </section>
+          <TechnicalSpecsEditor ref="technicalEditor" v-model="metadata.technicalSpecs" v-model:package-measure="metadata.packageMeasure" v-model:package-size="metadata.packageSize" v-model:storage-instruction="metadata.storageInstruction" v-model:expiry-months="metadata.expiryMonths" :general="!isEditingInventoryProduct" :packaging="!isEditingInventoryProduct" />
           <div class="admin-form__row">
             <label class="admin-form__label">Tên sản phẩm *</label>
             <div>
@@ -530,11 +552,7 @@ onMounted(fetchData);
 
           <div class="admin-form__row">
             <label class="admin-form__label">Mô tả *</label>
-            <textarea
-              v-model="editForm.description"
-              class="admin-form__textarea"
-              rows="5"
-            />
+            <RichTextEditor v-model="editForm.description" content-type="product" label="Mô tả sản phẩm" min-height="240px" />
           </div>
 
           <div class="admin-form__row">
@@ -741,11 +759,11 @@ onMounted(fetchData);
           >
             {{ saving ? "Đang lưu..." : editForm.status === "draft" ? "Lưu bản nháp" : "Cập nhật" }}
           </button>
-          <button v-if="['draft', 'inactive'].includes(editForm.status)" type="button"
+          <button v-if="editForm.status !== 'active'" type="button"
             class="admin-btn admin-btn--success" :disabled="saving" @click="submitEdit('active')">
             Xuất bản
           </button>
-          <button v-else type="button" class="admin-btn admin-btn--secondary"
+          <button v-if="!['draft', 'inactive'].includes(editForm.status)" type="button" class="admin-btn admin-btn--secondary"
             :disabled="saving" @click="submitEdit('inactive')">
             Ẩn sản phẩm
           </button>
@@ -754,3 +772,13 @@ onMounted(fetchData);
     </div>
   </div>
 </template>
+
+<style scoped>
+.admin-modal--product { width:min(1120px,100%); max-height:calc(100dvh - 32px); }
+.admin-modal--product .admin-modal__header,.admin-modal--product .admin-modal__footer { padding:12px 16px; }
+.admin-modal--product .admin-modal__body { padding:12px 16px; }
+.admin-modal--product .admin-modal__header button { min-width:44px; min-height:44px; padding:0; }
+.admin-modal--product .admin-modal__footer .admin-btn { min-height:40px; }
+@media(max-width:650px) { .admin-modal--product .admin-modal__header,.admin-modal--product .admin-modal__body,.admin-modal--product .admin-modal__footer { padding:12px; } }
+@media(max-width:650px) { .admin-modal--product .admin-modal__footer .admin-btn { min-height:44px; } }
+</style>

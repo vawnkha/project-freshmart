@@ -18,7 +18,6 @@ router.post(
   validate({ body: createOrderSchema }),
   authMiddleware.authorizeOwnerOrPermissions(
     (req) => req.body.user_id,
-    "order:manage",
   ),
   order.create,
 );

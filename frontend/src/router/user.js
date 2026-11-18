@@ -1,8 +1,14 @@
 const userRoutes = [
   {
     path: "/",
+    meta: { layout: "customer" },
     component: () => import("@/layouts/UserLayout.vue"),
     children: [
+      { path: 'account/subscriptions', name: 'subscriptions', component: () => import('@/pages/user/SubscriptionListPage.vue'), meta: { requiresAuth: true } },
+      { path: 'account/subscriptions/new', name: 'subscription-create', component: () => import('@/pages/user/SubscriptionCreatePage.vue'), meta: { requiresAuth: true } },
+      { path: 'account/subscriptions/:id', name: 'subscription-detail', component: () => import('@/pages/user/SubscriptionDetailPage.vue'), meta: { requiresAuth: true } },
+      {path:'tools/dosage-calculator',name:'dosage-calculator',component:()=>import('@/pages/user/DosageCalculatorPage.vue'),meta:{title:'Công cụ tính liều lượng chế phẩm'}},
+      { path: 'compare', name: 'product-compare', component: () => import('@/pages/user/ProductComparePage.vue'), meta: { title: 'So sánh sản phẩm' } },
       {
         path: "",
         name: "home",

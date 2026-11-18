@@ -11,7 +11,6 @@ const {
 
 const canAccessWishlist = authMiddleware.authorizeOwnerOrPermissions(
   (req) => req.params.userId,
-  "wishlist:manage:any",
 );
 
 router.use(authMiddleware);

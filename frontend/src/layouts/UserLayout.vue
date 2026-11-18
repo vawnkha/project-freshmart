@@ -1,21 +1,22 @@
 <script setup>
-import { ref, provide, onMounted, onBeforeUnmount, watch, nextTick } from "vue";
+import { ref, provide, onBeforeUnmount, watch, nextTick } from "vue";
 import { useRoute } from "vue-router";
 import "@/assets/css/user/storefront.css";
 import UserHeader from "@/components/user/layout/UserHeader.vue";
 import UserFooter from "@/components/user/layout/UserFooter.vue";
-import AiChatBox from "@/components/user/chat/AiChatBox.vue";
+import ComparisonBar from '@/components/user/product/ComparisonBar.vue';
+import { useChatWidgetStore } from "@/stores/chat-widget";
 import { storefrontNotice } from "@/composables/useStorefrontNotice";
 import { useFormAccessibility } from "@/composables/useFormAccessibility";
 import { useStorefrontMotion } from "@/composables/useStorefrontMotion";
 const storefrontRoot = ref(null);
 const header = ref(null);
 const main = ref(null);
-const support = ref(null);
-provide('client-support', () => support.value?.open());
+const chatWidget = useChatWidgetStore();
+provide('client-support', () => chatWidget.open('ai'));
+provide('client-live-support', () => chatWidget.open('support'));
 useFormAccessibility(storefrontRoot);
 const motion = useStorefrontMotion(storefrontRoot);
-const showGoUp = ref(false);
 const route = useRoute();
 let focusVersion = 0;
 watch(() => route.fullPath, async (path, previous) => {
@@ -35,24 +36,15 @@ watch(
   () => route.path,
   () => window.scrollTo({ top: 0, behavior: "instant" }),
 );
-const handleScroll = () => {
-  showGoUp.value = window.scrollY > 500;
-};
-const scrollToTop = () => window.scrollTo({
-  top: 0,
-  behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
-});
-onMounted(() =>
-  window.addEventListener("scroll", handleScroll, { passive: true }),
-);
-onBeforeUnmount(() => { ++focusVersion; window.removeEventListener("scroll", handleScroll); });
+onBeforeUnmount(() => { ++focusVersion; });
 </script>
 <template>
   <div class="user-app sage-storefront" ref="storefrontRoot">
     <a href="#main-content" class="skip-link">Đi đến nội dung</a>
     <UserHeader ref="header" />
     <main id="main-content" ref="main" tabindex="-1"><router-view /></main>
-    <UserFooter /><AiChatBox ref="support" />
+    <UserFooter />
+    <ComparisonBar />
     <div
       v-if="storefrontNotice"
       class="store-notice"
@@ -65,13 +57,6 @@ onBeforeUnmount(() => { ++focusVersion; window.removeEventListener("scroll", han
         ×
       </button>
     </div>
-    <button
-      v-show="showGoUp"
-      class="back-top"
-      aria-label="Về đầu trang"
-      @click="scrollToTop"
-    >
-      <i class="fa-solid fa-arrow-up" aria-hidden="true"></i>
-    </button>
+
   </div>
 </template>

@@ -13,7 +13,7 @@ const props = defineProps({ articleId: { type: String, required: true } });
 const route = useRoute(), root = ref(null), deleting = ref(null);
 const resource = useArticleComments(toRef(props, "articleId"));
 const { auth, items, total, hasMore, form, state, canWrite, locked } = resource;
-const moderator = computed(() => canWrite.value && hasAllPermissions(auth, ["admin:access", "news:manage"]));
+const moderator = computed(() => canWrite.value && hasAllPermissions(auth, ["admin:access", "news-comment:moderate"]));
 const mine = comment => canWrite.value && String(comment.user_id) === String(auth.userId);
 const avatar = person => person?.avatar || person?.avatar_url || "";
 function date(value) { const parsed = new Date(value);return Number.isNaN(parsed.getTime()) ? "" : parsed.toLocaleString("vi-VN"); }

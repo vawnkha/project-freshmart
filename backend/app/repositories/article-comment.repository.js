@@ -20,6 +20,16 @@ class ArticleCommentRepository extends BaseRepository {
     return rows[0] || null;
   }
 
+  articleOptions() {
+    return this.collection().aggregate([
+      { $group: { _id: "$article_id" } },
+      { $lookup: { from: "news", localField: "_id", foreignField: "_id", pipeline: [{ $project: { title: 1 } }], as: "article" } },
+      { $unwind: "$article" },
+      { $replaceWith: "$article" },
+      { $sort: { title: 1, _id: 1 } },
+    ]).toArray();
+  }
+
   async paginate(filter, { page, limit, keyword = "", admin = false }) {
     const search = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const [result] = await this.collection().aggregate([

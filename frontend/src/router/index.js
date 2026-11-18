@@ -8,6 +8,7 @@ import {
 } from "@/utils/permission.util";
 import userRoutes from "./user";
 import adminRoutes from "./admin";
+import { subscriptionLoginReturn } from "@/utils/subscription.util";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -17,6 +18,7 @@ const router = createRouter({
     {
       path: "/:pathMatch(.*)*",
       name: "not-found",
+      meta: { layout: "customer" },
       component: () => import("@/pages/user/NotFoundPage.vue"),
     },
   ],
@@ -46,7 +48,8 @@ router.beforeEach(async (to, from, next) => {
       to.matched.some((record) => record.meta.requiresAdmin);
 
     if (to.meta.requiresAuth && !token) {
-      return next(isAdminArea ? "/admin-login" : "/login");
+      const returnPath = subscriptionLoginReturn(to.fullPath);
+      return next(isAdminArea ? "/admin-login" : returnPath ? { path: "/login", query: { redirect: returnPath } } : "/login");
     }
 
     let decoded = null;

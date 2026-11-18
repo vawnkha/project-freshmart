@@ -42,8 +42,15 @@ async function handleEvent(client, event) {
           },
         );
     }
+    case "chat.event":
+      return new (require("../services/chat.service").ChatService)(client).publishMessage(payload.messageId);
     case "notification.admin":
       return notifyAdmin(payload, { eventId: event._id });
+    case "notification.subscription": {
+      const notification = await client.db().collection("notifications").findOne({ _id: new ObjectId(payload.notificationId) });
+      if (notification) require("../utils/socket.util").emitAdminNotification({ ...notification, _id: String(notification._id), id: String(notification._id) });
+      return;
+    }
     default:
       throw new Error(`Unsupported outbox event type: ${event.type}`);
   }

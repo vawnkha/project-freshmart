@@ -1,0 +1,11 @@
+const { z } = require('zod');
+const id = z.string().regex(/^[a-f\d]{24}$/i, 'Mã hội thoại không hợp lệ');
+const seq = z.coerce.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
+const message = z.object({ conversationId: id.optional(), content: z.string().trim().min(1,'Nhập nội dung tin nhắn').max(2000,'Tin nhắn tối đa 2.000 ký tự'), clientMessageId: z.string().regex(/^[a-zA-Z0-9_-]{16,100}$/,'Mã gửi không hợp lệ') }).strict();
+const history = z.object({ before: seq.optional(), after: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(), limit: z.coerce.number().int().min(1).max(100).default(40) }).strict().refine(q=>q.before===undefined || q.after===undefined,{message:'Chỉ chọn một hướng tải lịch sử'});
+const list = z.object({ filter: z.enum(['all','unread','waiting','active','closed']).default('all'), keyword: z.string().trim().max(80).default(''), cursor: z.string().max(200).optional(), limit: z.coerce.number().int().min(1).max(50).default(20) }).strict();
+const read = z.object({ throughSeq: seq }).strict();
+const status = z.object({ status: z.enum(['waiting','active','closed']), version: z.number().int().nonnegative() }).strict();
+const assign = z.object({ assignedAdminId: id.nullable(), version: z.number().int().nonnegative() }).strict();
+const join = z.object({ conversationId: id }).strict();
+module.exports = { id: z.object({id}).strict(), message, history, list, read, status, assign, join };

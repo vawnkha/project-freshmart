@@ -1,6 +1,8 @@
 <script setup>
 import { userError, userFieldErrors, userMessage } from "@/utils/user-error.util";
+import { subscriptionLoginReturn } from "@/utils/subscription.util";
 import { articleLoginReturn } from "@/utils/article-comment.util";
+import { liveChatLoginReturn } from "@/utils/live-chat-route.util";
 import PasswordField from "@/components/user/auth/PasswordField.vue";
 import { useAuthRequestContext } from "@/components/user/auth/useAuthRequestContext";
 import AuthPanel from "@/components/user/common/AuthPanel.vue";
@@ -67,7 +69,7 @@ async function handleLogin() {
     await pending;
     if (disposed || !loginRequest.isCurrent()) return;
 
-    router.push(articleLoginReturn(route.query.redirect));
+    router.push(liveChatLoginReturn(route.query, router) || (route.query.redirect === '/chan-doan' ? '/chan-doan' : null) || subscriptionLoginReturn(route.query.redirect) || articleLoginReturn(route.query.redirect));
   } catch (error) {
     if (disposed || isAuthRequestInvalidated(error) || (loginRequest && !loginRequest.isCurrent(false))) return;
     setErrors(userFieldErrors(error));

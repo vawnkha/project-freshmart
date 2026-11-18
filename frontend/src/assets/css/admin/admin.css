@@ -2508,3 +2508,102 @@ a:hover {
     font-size: 18px;
   }
 }
+
+/* Hallmark · pre-emit critique: P4 H5 E4 S5 R5 V4 · existing Admin design */
+.admin-workflow-page {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-workflow-page > .admin-page-title a {
+  display: inline-block;
+  margin-bottom: 8px;
+  color: var(--admin-sidebar);
+  font-size: 14px;
+}
+
+.admin-form--stacked {
+  display: grid;
+  gap: 14px;
+  max-width: none;
+  margin: 0;
+}
+
+.admin-form__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 14px;
+  align-items: end;
+}
+
+.admin-form__field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  color: var(--admin-sidebar);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.admin-form__field :is(input, textarea, select) {
+  box-sizing: border-box;
+  min-height: 40px;
+  border-radius: 4px;
+  font-weight: 400;
+}
+
+.admin-form__field .admin-form__textarea {
+  min-height: 90px;
+}
+
+.admin-form--stacked :is(p, dl, h3) {
+  margin: 0;
+}
+
+.admin-action-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-action-row .admin-btn {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+}
+
+.admin-form__field :is(input, textarea, select):focus-visible,
+.admin-action-row .admin-btn:focus-visible,
+.admin-disclosure > summary:focus-visible {
+  outline: 2px solid var(--admin-sidebar);
+  outline-offset: 2px;
+}
+
+.admin-disclosure > summary {
+  display: list-item;
+  list-style-position: inside;
+  color: var(--admin-sidebar);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.admin-disclosure:not([open]) > .admin-panel__header {
+  border-bottom: 0;
+}
+
+.admin-disclosure[open] > summary:not(.admin-panel__header) {
+  margin-bottom: 12px;
+}
+
+.admin-modal--compact {
+  box-sizing: border-box;
+  width: min(680px, 100%);
+  max-height: calc(100dvh - 32px);
+}
+
+.admin-modal--compact .admin-modal__title {
+  margin: 0;
+}

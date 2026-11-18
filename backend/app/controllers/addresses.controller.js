@@ -6,7 +6,7 @@ const authMiddleware = require("../middlewares/auth.middleware");
 exports.create = async (req, res, next) => {
   try {
     const addressService = new AddressService(MongDB.client);
-    const result = await addressService.create(req.body);
+    const result = await addressService.create({ ...req.body, user_id: req.user.id });
     if (result.error) {
       return next(new ApiError(400, result.error));
     }
@@ -21,7 +21,7 @@ exports.create = async (req, res, next) => {
 
 exports.findByUser = async (req, res, next) => {
   try {
-    const { userId } = req.query;
+    const userId = req.user.id;
     if (!userId) {
       return next(new ApiError(400, "userId là bắt buộc"));
     }
@@ -44,7 +44,7 @@ exports.update = async (req, res, next) => {
     }
 
     if (
-      !authMiddleware.canAccessOwner(req, existed.user_id, "address:manage:any")
+      !authMiddleware.canAccessOwner(req, existed.user_id)
     ) {
       return next(new ApiError(403, "Bạn không có quyền cập nhật địa chỉ này"));
     }
@@ -70,7 +70,7 @@ exports.delete = async (req, res, next) => {
     }
 
     if (
-      !authMiddleware.canAccessOwner(req, existed.user_id, "address:manage:any")
+      !authMiddleware.canAccessOwner(req, existed.user_id)
     ) {
       return next(new ApiError(403, "Bạn không có quyền xóa địa chỉ này"));
     }

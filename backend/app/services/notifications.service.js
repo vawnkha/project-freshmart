@@ -5,6 +5,7 @@ class NotificationsService {
     const ResourceDeletionService = require("./resource-deletion.service");
     this.deletion = new ResourceDeletionService(client);
     this.Notification = client.db().collection("notifications");
+    this.outbox = new (require("./outbox.service"))(client);
   }
 
   extractNotificationData(payload) {
@@ -74,6 +75,16 @@ class NotificationsService {
       _id: result.insertedId,
       ...document,
     };
+  }
+
+  // In-app subscription events participate in the order transaction and are
+  // shared with administrators; customer APIs always scope data.userId.
+  async createOnce(payload, deduplicationKey, { session } = {}) {
+    const document = this.extractNotificationData(payload);
+    await this.Notification.updateOne({ deduplicationKey }, { $setOnInsert: { ...document, deduplicationKey } }, { upsert: true, session });
+    const notification = await this.Notification.findOne({ deduplicationKey }, { session });
+    await this.outbox.enqueue("notification.subscription", { notificationId: String(notification._id) }, { session, idempotencyKey: `notification-socket:${deduplicationKey}` });
+    return notification;
   }
 
   async find(filter = {}) {

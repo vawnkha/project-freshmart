@@ -50,6 +50,7 @@ useDialogFocus(isAddressModalOpen, addressDialog, closeAddressModal);
 const menuItems = [
   { key: "dashboard", label: "Bảng điều khiển", icon: "fa-solid fa-house" },
   { key: "orders", label: "Đơn hàng", icon: "fa-solid fa-file-lines" },
+  { key: "subscriptions", label: "Đơn hàng định kỳ", icon: "fa-solid fa-calendar-days" },
   { key: "addresses", label: "Địa chỉ", icon: "fa-solid fa-location-dot" },
   { key: "account", label: "Thông tin cá nhân", icon: "fa-solid fa-user" },
   { key: "password", label: "Đổi mật khẩu", icon: "fa-solid fa-key" },
@@ -199,6 +200,7 @@ async function fetchOrders() {
       if (!Array.isArray(raw) || raw.some(item => item.user_id && normalizeId(item.user_id) !== normalizeId(userId.value))) throw new Error('Order owner mismatch');
       orders.value = raw.map(item => normalizeOrder(item));
       if (selectedOrder.value) selectedOrder.value = orders.value.find(item => item.id === selectedOrder.value.id) || null;
+      if (route.query.orderId && activeTab.value === "orders") selectedOrder.value = orders.value.find(item => item.id === route.query.orderId) || null;
     }, 'Không thể tải đơn hàng. Vui lòng thử lại.', () => { orders.value=[]; selectedOrder.value=null; });
 }
 
@@ -226,10 +228,10 @@ async function updateAccount() {
   submittedForms.account=true;
   if (!validateFields(accountSchema, accountForm, accountErrors)) return;
   const values={name:accountForm.name.trim(),phone:accountForm.phone.trim(),address:accountForm.address.trim()};
-  await mutateAccount('account', saving, 'account', context => userService.updateUser(context.owner, values), res => {
+  await mutateAccount('account', saving, 'account', context => userService.updateUser(context.owner, values), () => {
     Object.assign(userProfile, values);
     if (normalizeId(authStore.user?._id) === normalizeId(userId.value)) authStore.user={...authStore.user,...values};
-    notify(res.message || 'Cập nhật thông tin thành công');
+    notify('Cập nhật thông tin thành công', 'success');
   }, error => { accountErrors.value=userFieldErrors(error); notify(userError(error,'Cập nhật thông tin thất bại')); });
 }
 
@@ -263,6 +265,7 @@ async function backToOrders() {
 }
 
 function openTab(tabKey) {
+  if (tabKey === "subscriptions") { router.push("/account/subscriptions"); return; }
   activeTab.value = tabKey;
   router.replace({ query: { ...route.query, tab: tabKey } });
   if (tabKey !== "orders") {

@@ -1,3 +1,4 @@
+const { read } = require("../config/environment");
 const MongoDB = require("../utils/mongodb.util");
 const bcrypt = require("bcryptjs");
 const ApiError = require("../api-error");
@@ -6,7 +7,7 @@ const RbacService = require("../services/rbac.service");
 const { sanitizeUser } = require("../utils/user.util");
 const { signAccessToken } = require("../utils/jwt.util");
 
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1d";
+const JWT_EXPIRES_IN = read("JWT_EXPIRES_IN");
 
 exports.login = async (req, res, next) => {
   try {
@@ -78,7 +79,7 @@ exports.changePassword = async (req, res, next) => {
     if (!isMatch) {
       return next(new ApiError(401, "Mật khẩu cũ không đúng", "INVALID_CURRENT_PASSWORD"));
     }
-    await userService.update(userId, { password: newPassword });
+    await userService.update(userId, { password: newPassword }, { actorId: userId });
     return res.send({ message: "Đổi mật khẩu thành công" });
   } catch (error) {
     return next(new ApiError(500, "Lỗi đổi mật khẩu"));

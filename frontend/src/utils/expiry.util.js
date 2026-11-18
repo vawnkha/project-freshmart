@@ -2,7 +2,27 @@ export const expiryLabels = { normal: "Bình thường", warning: "Sắp hết h
 export const proposalLabels = { draft: "Nháp", pending: "Chờ duyệt", approved: "Đã duyệt / chờ bắt đầu", active: "Đang áp dụng", rejected: "Từ chối", expired: "Đã kết thúc", cancelled: "Đã hủy" };
 export const expiryClass = status => ({ normal: "admin-badge--info", warning: "admin-badge--warning", urgent: "admin-badge--danger", expired: "admin-badge--danger", unknown: "admin-badge--warning" }[status]);
 export const expiryDate = value => value ? new Date(value).toLocaleDateString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }) : "Chưa xác định";
+export const expiryDateTime = value => value && Number.isFinite(Date.parse(value))
+  ? new Date(value).toLocaleString("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh", hourCycle: "h23", hour: "2-digit", minute: "2-digit",
+    day: "2-digit", month: "2-digit", year: "numeric",
+  })
+  : "Chưa xác định";
 export const money = value => Number(value || 0).toLocaleString("vi-VN") + " ₫";
+export const batchOfferCondition = "Chỉ áp dụng cho lô sắp hết hạn";
+export function batchOfferLotLabel(offer) {
+  const expiry = Number.isFinite(Date.parse(offer.expiryDate))
+    ? `Dùng sản phẩm trước ${expiryDate(offer.expiryDate)}`
+    : "Chưa xác định hạn sử dụng";
+  const remaining = Number.isSafeInteger(offer.availableQuantity) && offer.availableQuantity >= 0
+    ? `Còn ${offer.availableQuantity} suất`
+    : "Chưa xác định số suất còn lại";
+  return [offer.batchNumber || "Chưa xác định số lô", expiry, remaining].join(" · ");
+}
+export function batchOfferCustomName(offer) {
+  const name = typeof offer.name === "string" ? offer.name.trim() : "";
+  return name === `Ưu đãi lô ${offer.batchNumber}` ? "" : name;
+}
 export function vietnamInput(value) {
   if (!value) return "";
   const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(value)).map(part => [part.type, part.value]));

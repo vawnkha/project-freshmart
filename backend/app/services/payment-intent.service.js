@@ -16,6 +16,7 @@ class PaymentIntentService {
   async create(data) {
     const document = {
       paypalOrderId: String(data.paypalOrderId),
+      ...(data.subscriptionRunId ? { subscriptionRunId: toObjectId(data.subscriptionRunId) } : {}),
       userId: toObjectId(data.userId),
       addressId: toObjectId(data.addressId),
       shippingMethodId: toObjectId(data.shippingMethodId),

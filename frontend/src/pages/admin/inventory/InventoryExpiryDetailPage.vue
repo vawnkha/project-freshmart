@@ -32,27 +32,132 @@ watch(() => route.params.id, load, { immediate: true });
 onBeforeUnmount(() => { ++version; });
 </script>
 <template>
-  <div class="admin-page"><RouterLink to="/admin/inventory-expiry">← Cảnh báo hạn sử dụng</RouterLink><h1 class="admin-page-title">Chi tiết lô hàng</h1>
-    <p v-if="message" role="status">{{ message }}</p><p v-if="loading" role="status">Đang tải…</p>
-    <div v-else-if="error" role="alert">{{ error }} <button class="admin-btn admin-btn--secondary" @click="load">Thử lại</button></div>
+  <div class="admin-workflow-page">
+    <div class="admin-page-title admin-page-title--stack">
+      <RouterLink to="/admin/inventory-expiry">← Cảnh báo hạn sử dụng</RouterLink>
+      <h1>Chi tiết lô hàng</h1>
+    </div>
+    <p v-if="message" role="status">{{ message }}</p>
+    <p v-if="loading" class="admin-empty-state" role="status">Đang tải chi tiết lô…</p>
+    <div v-else-if="error" class="admin-action-row" role="alert">
+      <span>{{ error }}</span>
+      <button type="button" class="admin-btn admin-btn--secondary" @click="load">Thử lại</button>
+    </div>
+
     <template v-else-if="batch">
-      <section class="admin-panel"><div class="admin-panel__body">
-        <img v-if="batch.product?.thumbnail || batch.product?.images?.[0]" :src="batch.product.thumbnail || batch.product.images[0]" :alt="batch.product.name" width="110" height="110" style="object-fit:contain" />
-        <h2>{{ batch.product?.name || batch.itemName }} · {{ batch.batchNumber }}</h2>
-        <dl class="expiry-detail-grid"><div><dt>Ngày sản xuất</dt><dd>{{ expiryDate(batch.manufacturingDate) }}</dd></div><div><dt>Ngày nhập kho</dt><dd>{{ expiryDate(batch.createdAt) }}</dd></div><div><dt>Hạn sử dụng</dt><dd>{{ expiryDate(batch.expiryDate) }}</dd></div><div><dt>Số lượng nhập</dt><dd>{{ batch.originalQuantity ?? 'Chưa ghi nhận' }} {{ batch.unit }}</dd></div><div><dt>Tồn chưa phân bổ</dt><dd>{{ batch.quantity }} {{ batch.unit }}</dd></div><div><dt>Giữ riêng chưa trừ kho</dt><dd>{{ batch.reservedQuantity }} (đơn đã nhận được trừ vào lô)</dd></div></dl>
-        <p><span class="admin-badge" :class="expiryClass(batch.expiryStatus)">{{ expiryLabels[batch.expiryStatus] }}</span> · {{ batch.daysRemaining === null ? 'Chưa rõ số ngày' : batch.daysRemaining + ' ngày' }} · Trạng thái kho: {{ batch.status }}</p>
-        <button v-if="batch.sellable && ['warning','urgent'].includes(batch.expiryStatus)" class="admin-btn admin-btn--primary" @click="propose()">Đề xuất giảm giá</button>
-        <details class="mt-3"><summary>Điều chỉnh / bổ sung hạn sử dụng theo chứng từ</summary><form @submit.prevent="correctExpiry"><label>Hạn sử dụng<input v-model="correctionDate" type="date" required class="form-control" /></label><label class="d-block">Lý do / chứng từ<textarea v-model="correctionReason" required maxlength="2000" class="form-control" /></label><p v-if="correctionError" role="alert">{{ correctionError }}</p><button class="admin-btn admin-btn--primary mt-2" :disabled="correcting">{{ correcting ? 'Đang lưu…' : 'Lưu điều chỉnh' }}</button></form></details>
-      </div></section>
-      <section class="admin-panel mt-3"><div class="admin-panel__body"><h2>Lịch sử cảnh báo</h2><p v-if="!batch.alerts.length">Chưa có thông báo được gửi. Cảnh báo mới được chuyển qua hàng đợi thông báo.</p><ul v-else><li v-for="alert in batch.alerts" :key="alert._id">{{ expiryDate(alert.created_at) }} · {{ alert.title }} · {{ alert.content }}</li></ul></div></section>
-      <section class="admin-panel mt-3"><div class="admin-panel__body"><h2>Đề xuất và khuyến mãi liên quan</h2><p v-if="!batch.proposals.length">Chưa có đề xuất.</p><div v-for="proposal in batch.proposals" :key="proposal._id" class="expiry-proposal">
-        <p><strong>{{ proposalLabels[proposal.status] }}</strong> · {{ proposal.percent }}% · {{ money(proposal.discountedPrice) }} · {{ proposal.quantity }} {{ batch.unit }}</p><p>{{ expiryDate(proposal.startDate) }} – {{ expiryDate(proposal.endDate) }} · {{ proposal.discountCode || 'Chưa tạo mã' }}</p><p v-if="proposal.rejectionReason">Lý do: {{ proposal.rejectionReason }}</p>
-        <button v-if="['draft','pending'].includes(proposal.status) && String(proposal.createdBy) === String(auth.userId)" class="admin-btn admin-btn--secondary" @click="propose(proposal)">Chỉnh sửa / gửi duyệt</button>
-        <RouterLink v-if="hasPermission(auth,'discount:manage')" to="/admin/discounts/proposals" class="admin-btn admin-btn--secondary">Quản lý phê duyệt</RouterLink>
-        <details><summary>Lịch sử thay đổi</summary><ul><li v-for="(event,index) in proposal.history" :key="index">{{ expiryDate(event.at) }} · {{ event.action }} · {{ event.actorId || 'Hệ thống' }} <span v-if="event.reason">· {{ event.reason }}</span></li></ul></details>
-      </div></div></section>
+      <section class="admin-panel" aria-labelledby="batch-info-title">
+        <header class="admin-panel__header admin-panel__header--flex">
+          <h2 id="batch-info-title">{{ batch.product?.name || batch.itemName }} · {{ batch.batchNumber }}</h2>
+          <div class="admin-action-row">
+            <span class="admin-badge" :class="expiryClass(batch.expiryStatus)">{{ expiryLabels[batch.expiryStatus] }}</span>
+            <button v-if="batch.sellable && ['warning', 'urgent'].includes(batch.expiryStatus)" type="button" class="admin-btn admin-btn--primary" @click="propose()">Đề xuất giảm giá</button>
+          </div>
+        </header>
+        <div class="admin-panel__body admin-form--stacked">
+          <img v-if="batch.product?.thumbnail || batch.product?.images?.[0]" :src="batch.product.thumbnail || batch.product.images[0]" :alt="batch.product.name" class="admin-thumb admin-thumb--product" width="68" height="68" />
+          <dl class="admin-form__fields batch-facts">
+            <div class="admin-detail-card"><dt>Ngày sản xuất</dt><dd>{{ expiryDate(batch.manufacturingDate) }}</dd></div>
+            <div class="admin-detail-card"><dt>Ngày nhập kho</dt><dd>{{ expiryDate(batch.createdAt) }}</dd></div>
+            <div class="admin-detail-card"><dt>Hạn sử dụng</dt><dd>{{ expiryDate(batch.expiryDate) }}</dd></div>
+            <div class="admin-detail-card"><dt>Số lượng nhập</dt><dd>{{ batch.originalQuantity ?? 'Chưa ghi nhận' }} {{ batch.unit }}</dd></div>
+            <div class="admin-detail-card"><dt>Tồn chưa phân bổ</dt><dd>{{ batch.quantity }} {{ batch.unit }}</dd></div>
+            <div class="admin-detail-card"><dt>Giữ riêng chưa trừ kho</dt><dd>{{ batch.reservedQuantity }} {{ batch.unit }}</dd></div>
+          </dl>
+          <p>{{ batch.daysRemaining === null ? 'Chưa rõ số ngày' : batch.daysRemaining + ' ngày còn lại' }} · Trạng thái kho {{ batch.status }}</p>
+        </div>
+      </section>
+
+      <details class="admin-panel admin-disclosure">
+        <summary class="admin-panel__header">Điều chỉnh hạn sử dụng theo chứng từ</summary>
+        <form class="admin-panel__body admin-form--stacked" :aria-busy="correcting" @submit.prevent="correctExpiry">
+          <label class="admin-form__field batch-expiry-field">
+            Hạn sử dụng
+            <input v-model="correctionDate" class="admin-form__control" type="date" required />
+          </label>
+          <label class="admin-form__field">
+            Lý do / chứng từ
+            <textarea v-model="correctionReason" class="admin-form__textarea" maxlength="2000" rows="3" required />
+          </label>
+          <p v-if="correctionError" class="admin-form__error" role="alert">{{ correctionError }}</p>
+          <div class="admin-action-row">
+            <button type="submit" class="admin-btn admin-btn--primary" :disabled="correcting">{{ correcting ? 'Đang lưu…' : 'Lưu điều chỉnh' }}</button>
+          </div>
+        </form>
+      </details>
+
+      <section class="admin-panel" aria-labelledby="batch-proposals-title">
+        <header class="admin-panel__header admin-panel__header--flex">
+          <h2 id="batch-proposals-title">Đề xuất và khuyến mãi liên quan</h2>
+          <div v-if="batch.proposals.length && hasPermission(auth, 'discount:manage')" class="admin-action-row">
+            <RouterLink to="/admin/discounts/proposals" class="admin-btn admin-btn--secondary">Quản lý phê duyệt</RouterLink>
+          </div>
+        </header>
+        <div class="admin-panel__body">
+          <p v-if="!batch.proposals.length" class="admin-empty-state">Chưa có đề xuất.</p>
+          <article v-for="proposal in batch.proposals" :key="proposal._id" class="batch-proposal admin-form--stacked">
+            <p><strong>{{ proposalLabels[proposal.status] }}</strong> · {{ proposal.percent }}% · {{ money(proposal.discountedPrice) }} · {{ proposal.quantity }} {{ batch.unit }}</p>
+            <p>{{ expiryDate(proposal.startDate) }} – {{ expiryDate(proposal.endDate) }} · {{ proposal.discountCode || 'Chưa tạo mã' }}</p>
+            <p v-if="proposal.rejectionReason"><strong>Lý do từ chối:</strong> {{ proposal.rejectionReason }}</p>
+            <div v-if="['draft', 'pending'].includes(proposal.status) && String(proposal.createdBy) === String(auth.userId)" class="admin-action-row">
+              <button type="button" class="admin-btn admin-btn--secondary" @click="propose(proposal)">Chỉnh sửa / gửi duyệt</button>
+            </div>
+            <details class="admin-disclosure">
+              <summary>Lịch sử thay đổi</summary>
+              <ul v-if="proposal.history?.length">
+                <li v-for="(event, index) in proposal.history" :key="index">
+                  {{ expiryDate(event.at) }} · {{ event.action === 'discount_edited' ? 'Sửa mã giảm giá' : event.action }} · {{ event.actorId || 'Hệ thống' }}
+                  <span v-if="event.reason">· {{ event.reason }}</span>
+                </li>
+              </ul>
+              <p v-else>Chưa có lịch sử thay đổi.</p>
+            </details>
+          </article>
+        </div>
+      </section>
+
+      <section class="admin-panel" aria-labelledby="batch-alert-history">
+        <h2 id="batch-alert-history" class="admin-panel__header">Lịch sử cảnh báo</h2>
+        <div class="admin-panel__body">
+          <p v-if="!batch.alerts.length" class="admin-empty-state">Chưa có thông báo được gửi.</p>
+          <ul v-else>
+            <li v-for="alert in batch.alerts" :key="alert._id">{{ expiryDate(alert.created_at) }} · {{ alert.title }} · {{ alert.content }}</li>
+          </ul>
+        </div>
+      </section>
     </template>
-    <PromotionProposalModal :batch-id="selected" :proposal="editing" @close="selected=null" @saved="saved" />
+    <PromotionProposalModal :batch-id="selected" :proposal="editing" @close="selected = null" @saved="saved" />
   </div>
 </template>
-<style scoped>.admin-page{padding:0;min-width:0}.expiry-detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}.expiry-proposal{border-top:1px solid #ddd;padding:16px 0}h2{font-size:1.2rem}dd{overflow-wrap:anywhere}input,textarea{display:block;width:100%;font:inherit;padding:9px;border:1px solid var(--admin-border);border-radius:4px;background:white}</style>
+
+<style scoped>
+.admin-panel > h2,
+.admin-panel__header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.batch-facts {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr));
+  align-items: stretch;
+}
+
+.batch-facts dt {
+  font-size: 13px;
+}
+
+.batch-facts dd {
+  margin: 4px 0 0;
+  color: var(--admin-sidebar);
+  font-weight: 600;
+}
+
+.batch-expiry-field {
+  max-width: 240px;
+}
+
+.batch-proposal + .batch-proposal {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--admin-border);
+}
+</style>

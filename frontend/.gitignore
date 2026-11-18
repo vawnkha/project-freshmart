@@ -1,45 +1,33 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-.DS_Store
-dist
-dist-ssr
-coverage
-*.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.vscode
-.idea
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-*.tsbuildinfo
-
+# Installed dependencies and generated bundles
+node_modules/
+/dist/
+/dist-ssr/
+coverage/
+.vite/
 .eslintcache
+*.tsbuildinfo
+*.timestamp-*-*.mjs
 
-# Cypress
+# Local environment and editor state
+.env
+.env.*
+*.local
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs and generated test artifacts
+logs/
+*.log
 /cypress/videos/
 /cypress/screenshots/
-
-# Vitest
 __screenshots__/
+playwright-report/
+test-results/
 
-# Vite
-*.timestamp-*-*.mjs
-test
-!test/
-test/*
-!test/sage-catalog.test.mjs
-test-support
+# Development scripts and tests are ignored by the root .gitignore
+
+# Configuration templates are safe to version
+.env.example
+

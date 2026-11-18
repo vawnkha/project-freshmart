@@ -1,4 +1,5 @@
 <script setup>
+import { productPath } from "@/utils/product-route.util";
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { storeToRefs } from "pinia";
 import { useAuthStore } from "@/stores/user/auth";
@@ -163,12 +164,12 @@ onBeforeUnmount(() => { disposed = true; ++generation; ++readRequest; });
           <div class="cart-content">
             <div class="cart-lines" :aria-busy="pending">
               <article v-for="item in items" :key="item.product_id" class="cart-line">
-                <RouterLink v-if="normalizeId(item.product_id)" :to="'/products/' + normalizeId(item.product_id)" class="cart-line-image">
+                <RouterLink v-if="normalizeId(item.product_id)" :to="productPath(item)" class="cart-line-image">
                   <ResponsiveImage :src="item.thumbnail || item.image" :alt="item.name || item.productName || 'Sản phẩm'" />
                 </RouterLink>
                 <div v-else class="cart-line-image"><ResponsiveImage :src="item.thumbnail || item.image" :alt="item.name || 'Sản phẩm'" /></div>
                 <div class="cart-line-body">
-                  <h2 class="cart-line-title"><RouterLink v-if="normalizeId(item.product_id)" :to="'/products/' + normalizeId(item.product_id)">{{ item.name || item.productName || 'Sản phẩm' }}</RouterLink><span v-else>{{ item.name || 'Sản phẩm không còn khả dụng' }}</span></h2>
+                  <h2 class="cart-line-title"><RouterLink v-if="normalizeId(item.product_id)" :to="productPath(item)">{{ item.name || item.productName || 'Sản phẩm' }}</RouterLink><span v-else>{{ item.name || 'Sản phẩm không còn khả dụng' }}</span></h2>
                   <BatchPromotionNotice :product-id="normalizeId(item.product_id)" :promotions="item.batchPromotions" />
                   <p v-if="item.packageSize" class="cart-line-package">{{ item.packageSize }}</p>
                   <p class="cart-unit-price">{{ productPrice(item) === null ? 'Chưa có giá' : formatMoney(productPrice(item)) }}<span v-if="item.unit"> / {{ item.unit }}</span></p>

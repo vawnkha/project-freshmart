@@ -1,10 +1,11 @@
 <script setup>
 import ResponsiveImage from "@/components/user/common/ResponsiveImage.vue";
+import ProfileOrderProgress from "@/components/user/profile/ProfileOrderProgress.vue";
 import { orderStatusLabel, orderStatusClass } from "@/utils/storefront.util";
 defineProps({ order: { type: Object, required: true }, saving: Boolean });
 defineEmits(["back-to-orders", "cancel-order", "complete-order"]);
 const money=value=>value===null || value===undefined || String(value).trim()==='' || !Number.isFinite(Number(value)) ? 'Chưa xác định' : Number(value).toLocaleString('vi-VN')+'đ';
-const paymentLabel=status=>({pending:'Chờ thanh toán',completed:'Đã thanh toán',paid:'Đã thanh toán',failed:'Thanh toán chưa hoàn tất',refunded:'Đã hoàn tiền',capture_unknown:'Chưa xác định kết quả thanh toán',created:'Đang khởi tạo thanh toán',canceled:'Đã hủy thanh toán'})[status] || 'Chưa xác định';
+const paymentLabel=status=>({pending:'Chờ thanh toán',completed:'Đã thanh toán',paid:'Đã thanh toán',failed:'Thanh toán chưa hoàn tất',refund_pending:'Đang chờ hoàn tiền',refunded:'Đã hoàn tiền',capture_unknown:'Chưa xác định kết quả thanh toán',created:'Đang khởi tạo thanh toán',canceled:'Đã hủy thanh toán'})[status] || 'Chưa xác định';
 </script>
 <template>
   <section class="profile-content-box approved-order-detail" :aria-busy="saving">
@@ -18,6 +19,7 @@ const paymentLabel=status=>({pending:'Chờ thanh toán',completed:'Đã thanh t
       <div><dt>Thanh toán</dt><dd>{{ order.paymentMethod === 'paypal' ? 'PayPal' : order.paymentMethod === 'cod' ? 'Thanh toán khi nhận hàng' : 'Chưa xác định' }}<br />{{ paymentLabel(order.paymentStatus) }}</dd></div>
       <div><dt>Tổng tiền</dt><dd class="approved-account-money">{{ money(order.total) }}</dd></div>
     </dl>
+    <ProfileOrderProgress :order="order" />
     <section class="approved-recipient" aria-labelledby="order-recipient-title">
       <h3 id="order-recipient-title">Địa chỉ tại thời điểm đặt hàng</h3>
       <p>{{ order.shipping?.fullName || 'Chưa có tên người nhận' }} · {{ order.shipping?.phone || 'Chưa có số điện thoại' }}</p>
@@ -38,9 +40,6 @@ const paymentLabel=status=>({pending:'Chờ thanh toán',completed:'Đã thanh t
       <div v-if="order.discount !== null && order.discount !== undefined"><dt>Giảm giá</dt><dd>{{ money(order.discount) }}</dd></div>
       <div><dt>Tổng cộng</dt><dd><strong>{{ money(order.total) }}</strong></dd></div>
     </dl>
-    <ol v-if="order.timeline?.length" class="approved-order-timeline">
-      <li v-for="(event, index) in order.timeline" :key="index"><strong>{{ event.status_text || event.status || event.title }}</strong><p>{{ event.note }}</p><time v-if="event.created_at">{{ event.created_at }}</time></li>
-    </ol>
     <div class="approved-account-actions">
       <button v-if="order.rawStatus === 'pending'" class="btn" :disabled="saving" @click="$emit('cancel-order', order.id)">Hủy đơn hàng</button>
       <button v-if="order.rawStatus === 'shipping'" class="btn btn-primary" :disabled="saving" @click="$emit('complete-order', order.id)">Đã nhận hàng</button>

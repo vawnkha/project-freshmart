@@ -1,4 +1,5 @@
 <script setup>
+import { productPath } from "@/utils/product-route.util";
 import { ref, watch, onBeforeUnmount, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import productService from '@/services/product.service';
@@ -52,7 +53,7 @@ function resultKeys(event) {
       <p class="shell-search-count" role="status">{{ results.length }} gợi ý cho “{{ state.keyword }}”</p>
       <ul class="shell-search-results">
         <li v-for="product in results" :key="normalizeId(product._id || product.id)">
-          <router-link class="shell-search-result" :to="{ path: '/products/' + normalizeId(product._id || product.id), query: { q: state.keyword } }" @click="emit('navigate')">
+          <router-link class="shell-search-result" :to="{ path: productPath(product), query: { q: state.keyword } }" @click="emit('navigate')">
             <ResponsiveImage :src="product.thumbnail || product.image" :alt="product.name || 'Sản phẩm'" />
             <div><span class="shell-result-name">{{ product.name }}</span><ProductPrice :product="product" /></div>
             <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>

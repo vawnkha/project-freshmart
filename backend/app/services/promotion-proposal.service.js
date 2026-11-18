@@ -33,19 +33,24 @@ class PromotionProposalService {
   }
   async recommendation(id, options = {}) {
     const { batch, product, price, expiry } = await this.context(id, options);
-    const suggestedPercent = Math.min(config.maxDiscount, expiry.expiryStatus === "urgent" ? config.urgentDiscount : config.warningDiscount);
+    const suggestedPercent = expiry.expiryStatus === "urgent" ? config.urgentDiscount : config.warningDiscount;
     return { batchId: batch._id, batchNumber: batch.batchNumber, productId: product._id, productName: product.name,
       expiryDate: batch.expiryDate, ...expiry, originalPrice: price, suggestedPercent, maxPercent: config.maxDiscount,
       discountedPrice: price - Math.floor(price * suggestedPercent / 100), availableQuantity: batch.quantity,
       startDate: options.now || new Date(), endDate: expiry.sellableUntil };
   }
-  validateTerms(payload, context, now = new Date()) {
+  validateTerms(payload, context, now = new Date(), { usedQuantity = 0, checkStock = true } = {}) {
     const percent = Number(payload.percent), quantity = Number(payload.quantity);
     // Require offsets: datetime-local without a zone must never depend on server TZ.
     const zoned = value => value instanceof Date || (typeof value === "string" && /(Z|[+-]\d{2}:\d{2})$/.test(value));
     const startDate = new Date(payload.startDate), endDate = new Date(payload.endDate);
     if (!(percent > 0 && percent <= config.maxDiscount)) throw new ApiError(400, `Mức giảm phải từ trên 0 đến ${config.maxDiscount}%`);
-    if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > Number(context.batch.quantity)) throw new ApiError(409, "Số lượng khuyến mãi vượt tồn khả dụng");
+    if (!Number.isSafeInteger(quantity) || quantity <= usedQuantity) {
+      throw new ApiError(409, "Tổng số suất ưu đãi phải lớn hơn số đã sử dụng");
+    }
+    if (checkStock && quantity - usedQuantity > Number(context.batch.quantity)) {
+      throw new ApiError(409, "Số suất ưu đãi còn lại vượt tồn khả dụng của lô");
+    }
     if (!zoned(payload.startDate) || !zoned(payload.endDate) || !Number.isFinite(startDate.getTime()) || !Number.isFinite(endDate.getTime())
       || endDate <= startDate || endDate <= now || endDate > context.expiry.sellableUntil) {
       throw new ApiError(400, "Thời gian không hợp lệ; kết thúc phải trước hoặc bằng 00:00 ngày hết hạn tại Việt Nam");
@@ -119,6 +124,72 @@ class PromotionProposalService {
         $push: { history: this.history("approved", user, { ...terms, discountId }) },
       }, { session, returnDocument: "after" });
     });
+  }
+  async editDiscount(linkedDiscount, payload, user) {
+    try {
+      return await this.mutate(linkedDiscount.proposalId, user, async (proposal, session) => {
+        const discount = await this.Discount.findOne({
+          _id: linkedDiscount._id, scope: "batch", proposalId: proposal._id, batchId: proposal.batchId,
+        }, { session });
+        if (!discount || String(proposal.discountId) !== String(discount._id) || proposal.approvalStatus !== "approved") {
+          throw new ApiError(409, "Mã giảm giá không khớp với đề xuất đã duyệt");
+        }
+
+        const now = new Date();
+        const changes = { ...payload };
+        if (changes.code !== undefined) changes.code = changes.code.toUpperCase();
+        const previousFields = {};
+        for (const key of Object.keys(changes)) {
+          const previous = key === "description" ? discount.publicDescription ?? "" : discount[key];
+          if (changes[key] === previous || (previous instanceof Date && Date.parse(changes[key]) === +previous)) delete changes[key];
+          else previousFields[key] = previous ?? null;
+        }
+        if (!Object.keys(changes).length) return discount;
+
+        const proposalFields = { updatedAt: now, updatedBy: this.actor(user) };
+        const discountFields = { ...changes, updatedAt: now };
+        // The original description may have come from an internal proposal note.
+        if (changes.description !== undefined) discountFields.publicDescription = changes.description;
+        if (changes.code !== undefined) proposalFields.discountCode = changes.code;
+        if (["value", "batchQuantity", "startDate", "endDate"].some(key => Object.hasOwn(changes, key))) {
+          if (!proposal.open || discount.status !== "active" || new Date(discount.endDate) <= now) {
+            throw new ApiError(409, "Ưu đãi đã kết thúc. Có thể sửa tên, mã và mô tả của ưu đãi.");
+          }
+          const context = await this.context(proposal.batchId, { session, now });
+          if (String(context.product._id) !== String(proposal.productId)) {
+            throw new ApiError(409, "Sản phẩm đang bán không còn khớp với đề xuất đã duyệt");
+          }
+          const terms = this.validateTerms({
+            percent: changes.value ?? discount.value,
+            quantity: changes.batchQuantity ?? discount.batchQuantity,
+            startDate: changes.startDate ?? discount.startDate,
+            endDate: changes.endDate ?? discount.endDate,
+          }, context, now, { usedQuantity: Number(discount.usedQuantity || 0), checkStock: changes.batchQuantity !== undefined });
+          Object.assign(discountFields, {
+            value: terms.percent, batchQuantity: terms.quantity, startDate: terms.startDate, endDate: terms.endDate,
+          });
+          Object.assign(proposalFields, {
+            percent: terms.percent, approvedPercent: terms.percent, quantity: terms.quantity,
+            startDate: terms.startDate, endDate: terms.endDate, originalPrice: context.price,
+            discountedPrice: context.price - Math.floor(context.price * terms.percent / 100),
+            status: terms.startDate > now ? "approved" : "active",
+          });
+        }
+
+        const updated = await this.Discount.findOneAndUpdate({ _id: discount._id }, { $set: discountFields }, { session, returnDocument: "after" });
+        await this.Proposal.updateOne({ _id: proposal._id }, {
+          $set: proposalFields,
+          $push: { history: this.history("discount_edited", user, {
+            before: previousFields,
+            after: Object.fromEntries(Object.keys(changes).map(key => [key, updated[key]])),
+          }) },
+        }, { session });
+        return updated;
+      });
+    } catch (error) {
+      if (error.code === 11000) throw new ApiError(409, "Mã giảm giá đã tồn tại");
+      throw error;
+    }
   }
   async reject(id, payload, user) {
     if (!String(payload.reason || "").trim()) throw new ApiError(400, "Cần nhập lý do từ chối");

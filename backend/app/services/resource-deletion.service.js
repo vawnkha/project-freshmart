@@ -1,6 +1,7 @@
 const { ObjectId } = require("mongodb");
 const ApiError = require("../api-error");
 const InventoryStockService = require("./inventory-stock.service");
+const { protectAdminAccount } = require("./admin-protection.service");
 
 const reference = (collection, fields, message) => ({
   collection,
@@ -29,6 +30,7 @@ const POLICIES = {
     ),
   ],
   products: [
+    reference("subscriptions", ["items.productId"], "đăng ký giao hàng định kỳ liên quan"),
     reference("promotion_proposals", ["productId"], "đề xuất khuyến mãi theo lô"),
     reference(
       "orders",
@@ -165,6 +167,7 @@ const POLICIES = {
     ),
   ],
   shipping_methods: [
+    reference("subscriptions", ["shippingMethodId"], "đăng ký giao hàng định kỳ liên quan"),
     reference(
       "orders",
       ["shipping_method_id", "shippingMethodId", "shipping_method._id"],
@@ -181,6 +184,7 @@ const POLICIES = {
   ],
   news: [reference("article_comments", ["article_id"], "bình luận bài viết liên quan")],
   addresses: [
+    reference("subscriptions", ["addressId"], "đăng ký giao hàng định kỳ liên quan"),
     reference("orders", ["address_id", "addressId"], "đơn hàng liên quan"),
     reference(
       "payment_intents",
@@ -189,6 +193,9 @@ const POLICIES = {
     ),
   ],
   users: [
+    reference("chat_conversations", ["customerId", "assignedAdminId", "audit.actorId"], "hội thoại hỗ trợ cần lưu lịch sử"),
+    reference("chat_messages", ["senderId"], "tin nhắn hỗ trợ cần lưu lịch sử"),
+    reference("subscriptions", ["userId"], "đăng ký giao hàng định kỳ liên quan"),
     reference("promotion_proposals", ["createdBy", "approvedBy", "rejectedBy", "updatedBy", "history.actorId"], "lịch sử đề xuất giảm giá"),
     reference("orders", ["user_id", "userId"], "đơn hàng liên quan"),
     reference("payments", ["user_id", "userId"], "thanh toán liên quan"),
@@ -444,7 +451,7 @@ class ResourceDeletionService {
       if (found) throw this.conflict(collection, rule.message);
     }
     if (collection === "roles") {
-      if (document.is_system)
+      if (document.is_system || document.code === "admin")
         throw new ApiError(
           409,
           "Không thể xóa role hệ thống.",
@@ -582,6 +589,11 @@ class ResourceDeletionService {
           "Không thể xóa tài khoản đang đăng nhập.",
           "RESOURCE_PROTECTED",
         );
+      if (collection === "users") {
+        await protectAdminAccount(this.db, session, options.actorId, document, {
+          action: "user:delete", delete: true,
+        });
+      }
       // Share the inventory serialization lock with import/export/checkout.
       // A rejected deletion rolls back the version write as well as cleanup.
       if (collection === "inventory_items")

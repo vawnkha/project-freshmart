@@ -1,5 +1,6 @@
 const { ObjectId } = require("mongodb");
 const ResourceDeletionService = require("./resource-deletion.service");
+const { insertWithSlug } = require("../utils/slug.util");
 
 class CategoriesService {
   constructor(client) {
@@ -38,9 +39,17 @@ class CategoriesService {
   }
 
   async create(payload) {
-    const data = this.extractCreate(payload);
-    const result = await this.Category.insertOne(data);
-    return { insertedId: result.insertedId, ...data };
+    return insertWithSlug({
+      requested: payload.slug,
+      name: payload.name,
+      fallback: "danh-muc",
+      find: (slug) => this.findBySlug(slug),
+      insert: async (slug) => {
+        const data = this.extractCreate({ ...payload, slug });
+        const result = await this.Category.insertOne(data);
+        return { insertedId: result.insertedId, ...data };
+      },
+    });
   }
 
   async find(filter = {}, options = {}) {

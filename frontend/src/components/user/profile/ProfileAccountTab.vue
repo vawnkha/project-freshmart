@@ -78,9 +78,6 @@ function handleAvatarChange(event) {
           :aria-invalid="!!errors.name"
           :aria-describedby="errors.name ? 'profileaccounttab-field-1-error' : undefined"
         />
-            <p id="profileaccounttab-field-1-error" class="form-error form-error--field" role="alert">
-              {{ errors.name }}
-            </p>
       </div>
 
       <div class="col-md-6">
@@ -94,9 +91,6 @@ function handleAvatarChange(event) {
           :aria-invalid="!!errors.phone"
           :aria-describedby="errors.phone ? 'profileaccounttab-field-2-error' : undefined"
         />
-            <p id="profileaccounttab-field-2-error" class="form-error form-error--field" role="alert">
-              {{ errors.phone }}
-            </p>
       </div>
     </div>
     <div class="row account-fields">
@@ -123,9 +117,6 @@ function handleAvatarChange(event) {
           :aria-invalid="!!errors.address"
           :aria-describedby="errors.address ? 'profileaccounttab-field-4-error' : undefined"
         />
-            <p id="profileaccounttab-field-4-error" class="form-error form-error--field" role="alert">
-              {{ errors.address }}
-            </p>
       </div>
     </div>
     </fieldset>

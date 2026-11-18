@@ -1,8 +1,9 @@
 import { onBeforeUnmount, ref, shallowRef, watch } from 'vue';
 import productService from '@/services/product.service';
 import { validDetailId, detailProduct, detailId, categoryProducts } from '@/utils/product-detail.util';
+import { validSlug } from '@/utils/slug.util';
 
-export function useProductDetail(id) {
+export function useProductDetail(identifier) {
   const product = shallowRef(null), loading = ref(true), error = ref(''), notFound = ref(false), unavailable = ref(false);
   const related = shallowRef([]), relatedLoading = ref(false), relatedError = ref('');
   let version = 0, relatedVersion = 0, disposed = false;
@@ -20,12 +21,14 @@ export function useProductDetail(id) {
     } finally { if (current(run) && request === relatedVersion) relatedLoading.value = false; }
   }
   async function load() {
-    const run = ++version, requested = detailId(id()); ++relatedVersion;
+    const run = ++version, requested = identifier(); ++relatedVersion;
     loading.value = true; product.value = null; error.value = ''; notFound.value = false; unavailable.value = false;
     related.value = []; relatedError.value = ''; relatedLoading.value = false;
-    if (!validDetailId(requested)) { notFound.value = true; loading.value = false; return; }
+    const byId = validDetailId(requested);
+    if (!byId && !validSlug(requested)) { notFound.value = true; loading.value = false; return; }
     try {
-      const data = detailProduct(await productService.getById(requested), requested);
+      const response = await (byId ? productService.getById(requested) : productService.getBySlug(requested));
+      const data = detailProduct(response, requested);
       if (!current(run)) return;
       if (!data) unavailable.value = true;
       else { product.value = data; void loadRelated(); }
@@ -40,7 +43,7 @@ export function useProductDetail(id) {
       }
     } finally { if (current(run)) loading.value = false; }
   }
-  watch(id, load, { immediate: true });
+  watch(identifier, load, { immediate: true });
   onBeforeUnmount(() => { disposed = true; ++version; ++relatedVersion; });
   return { product, loading, error, notFound, unavailable, related, relatedLoading, relatedError, load, loadRelated };
 }

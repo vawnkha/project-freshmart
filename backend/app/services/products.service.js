@@ -9,6 +9,10 @@ const {
   PUBLIC_PRODUCT_FILTER,
 } = require("../utils/inventory-query.util");
 const validator = require("../validators/product.validator");
+const { OWNED_FIELDS, transferConflicts, normalizedPrice } = require("../utils/product-comparison.util");
+const { availableDosagesExpression, withDosageIds } = require('../utils/dosage-instruction.util');
+const { publicTechnicalSpecs, publicProductDetail } = require('../utils/public-product.util');
+const { insertWithSlug } = require("../utils/slug.util");
 
 function hasValue(value) {
   return value !== undefined && value !== null && String(value).trim() !== "";
@@ -72,11 +76,6 @@ class ProductsService {
     );
     const noSpace = base.replace(/\s/g, "");
     return `${base} ${noSpace}`.trim();
-  }
-
-  slugify(value = "") {
-    const slug = this.normalizeText(value).replace(/\s+/g, "-");
-    return slug || `product-${Date.now()}`;
   }
 
   escapeRegex(s = "") {
@@ -175,6 +174,7 @@ class ProductsService {
       : Number(payload.stock || 0);
 
     const product = {
+      ...this.extractMetadata(payload, hasInventoryLink),
       ...this.pickExtendedFields(payload),
       name: payload.name,
       inventoryItemId: hasInventoryLink
@@ -216,6 +216,7 @@ class ProductsService {
     const current = context.current || {};
     const inventoryItem = context.inventoryItem || null;
     const product = {
+      ...this.extractMetadata(payload, Boolean(inventoryItem)),
       ...this.pickExtendedFields(payload),
       name: payload.name,
       inventoryItemId:
@@ -273,8 +274,7 @@ class ProductsService {
       : {};
 
     const product = this.extractCreateData(payload, inventoryContext);
-    const result = await this.deletion.withReferences(this.deletion.referencesFor("products", product),
-      (session) => this.Product.insertOne(product, { session }));
+    const result = await this.insertProduct(product);
     return {
       insertedId: result.insertedId,
       ...(await this.findById(result.insertedId)),
@@ -299,7 +299,6 @@ class ProductsService {
         ...payload,
         inventoryItemId: inventoryItem._id,
         name,
-        slug: hasValue(payload.slug) ? payload.slug : this.slugify(name),
         productCode,
         sellingPrice,
         price: sellingPrice,
@@ -314,12 +313,30 @@ class ProductsService {
       },
     );
 
-    const result = await this.deletion.withReferences(this.deletion.referencesFor("products", product),
-      (session) => this.Product.insertOne(product, { session }));
+    const result = await this.insertProduct(product);
     return {
       insertedId: result.insertedId,
       ...(await this.findById(result.insertedId)),
     };
+  }
+
+  async insertProduct(product) {
+    try {
+      return await insertWithSlug({
+        requested: product.slug,
+        name: product.name,
+        fallback: "san-pham",
+        find: (slug) => this.Product.findOne({ slug }, { projection: { _id: 1 } }),
+        insert: (slug) => {
+          const document = { ...product, slug };
+          return this.deletion.withReferences(this.deletion.referencesFor("products", document),
+            (session) => this.Product.insertOne(document, { session }));
+        },
+      });
+    } catch (error) {
+      if (error.code === 11000 && error.keyPattern?.slug) throw new ApiError(409, "Slug sản phẩm đã tồn tại");
+      throw error;
+    }
   }
 
   async find(filter = {}, options = {}) {
@@ -392,6 +409,7 @@ class ProductsService {
           from: "inventory_items",
           localField: "inventoryItemId",
           foreignField: "_id",
+          pipeline: [{ $project: { technicalSpecs: 0 } }],
           as: "inventoryItem",
         },
       },
@@ -410,6 +428,15 @@ class ProductsService {
       },
       {
         $addFields: {
+          ...Object.fromEntries(OWNED_FIELDS.map(field => [field, {
+            $cond: [
+              { $ne: [{ $ifNull: ["$inventoryItemId", null] }, null] },
+              { $ifNull: [`$inventoryItem.${field}`, null] },
+              { $ifNull: [`$${field}`, null] },
+            ],
+          }])),
+          technicalSpecs: { $ifNull: ["$technicalSpecs", {}] },
+          technicalSpecsSource: "product",
           category_id: {
             $ifNull: ["$category_id", "$inventoryItem.categoryId"],
           },
@@ -475,7 +502,7 @@ class ProductsService {
           },
         },
       },
-      { $addFields: { outOfStock: { $not: ["$inStock"] } } },
+      { $addFields: { outOfStock: { $not: ["$inStock"] }, dosageCalculatorAvailable: { $gt: [{ $size: availableDosagesExpression() },0] } } },
     ];
   }
 
@@ -621,15 +648,27 @@ class ProductsService {
 
   async findById(id, { publicOnly = false } = {}) {
     const _id = ObjectId.isValid(id) ? new ObjectId(id) : null;
+    return this.findDetail({ _id }, { publicOnly });
+  }
 
+  async findPublicBySlug(slug) {
+    return this.findDetail({ slug }, { publicOnly: true });
+  }
+
+  async findDetail(filter, { publicOnly }) {
     const result = await this.Product.aggregate([
       {
         $match: publicOnly
-          ? { $and: [{ _id }, PUBLIC_PRODUCT_FILTER] }
-          : { _id },
+          ? { $and: [filter, PUBLIC_PRODUCT_FILTER] }
+          : filter,
       },
 
       ...this.buildInventoryLookupStages(),
+
+      ...(publicOnly ? [["brands", "brandId", "brand"], ["manufacturers", "manufacturerId", "manufacturer"]].flatMap(([from,localField,as])=>[
+        {$lookup:{from,localField,foreignField:'_id',pipeline:[{$project:{name:1}}],as}},
+        {$set:{[as]:{$arrayElemAt:[`$${as}`,0]}}},
+      ]) : []),
 
       {
         $lookup: {
@@ -725,11 +764,11 @@ class ProductsService {
     ]).toArray();
 
     if (publicOnly) await this.attachBatchOffers(result);
-    return result[0] || null;
+    return result[0] ? (publicOnly ? publicProductDetail(result[0]) : result[0]) : null;
   }
 
-  async attachBatchOffers(products) {
-    const offers = await new (require("./discount.service"))(this.client).publicBatchOffers();
+  async attachBatchOffers(products, { scoped = false } = {}) {
+    const offers = await new (require("./discount.service"))(this.client).publicBatchOffers(new Date(), scoped ? { productIds: products.map(product => product._id) } : {});
     for (const product of products) product.batchPromotions = offers.filter(offer => String(offer.productId) === String(product._id));
     return products;
   }
@@ -772,20 +811,79 @@ class ProductsService {
     }
 
     const result = await this.deletion.withReferences(this.deletion.referencesFor("products", update),
-      (session) => this.Product.findOneAndUpdate(
+      async (session) => {
+        if (inventoryContext.inventoryItem) {
+          const latest = await this.Product.findOne(filter, { session });
+          const target = await this.inventoryItemRepository.findById(inventoryContext.inventoryItem._id, { session });
+          if (!target || (target.status && target.status !== "active")) throw new ApiError(409, "Hàng kho không còn hoạt động");
+          const conflicts = latest && !latest.inventoryItemId ? transferConflicts(latest, target) : [];
+          if (conflicts.length) throw new ApiError(409,
+            `Cần chuyển các trường ${conflicts.join(", ")} sang hồ sơ hàng kho và xác nhận dữ liệu giống nhau trước khi liên kết. Thông số hiện tại được giữ nguyên.`, "TECHNICAL_SPECS_TRANSFER_REQUIRED");
+        }
+        return this.Product.findOneAndUpdate(
       filter,
       {
         $set: update,
-        ...(inventoryContext.inventoryItem ? { $unset: { stock: "" } } : {}),
+        ...(inventoryContext.inventoryItem ? { $unset: { stock: "", ...Object.fromEntries(OWNED_FIELDS.map(field => [field, ""])) } } : {}),
       },
       { returnDocument: "after", session },
-    ));
+    ); });
 
     return result ? this.findById(id) : null;
   }
 
   async delete(id) {
     return this.deletion.remove("products", id);
+  }
+
+  extractMetadata(payload, linked) {
+    if (linked && OWNED_FIELDS.some(field => payload[field] !== undefined))
+      throw new ApiError(400, "Quy cách, bảo quản và thông tin định danh kho phải được cập nhật tại hồ sơ hàng kho", "INVENTORY_SPECS_OWNED");
+    const parsed = validator.productMetadataSchema.safeParse(payload);
+    if (!parsed.success) throw new ApiError(400, parsed.error.issues[0].message);
+    if(parsed.data.technicalSpecs)parsed.data.technicalSpecs=withDosageIds(parsed.data.technicalSpecs);
+    return linked ? deleteUndefined({ technicalSpecs: parsed.data.technicalSpecs }) : deleteUndefined({ ...parsed.data,
+      brandId: payload.brandId !== undefined ? toObjectId(payload.brandId) : undefined,
+      manufacturerId: payload.manufacturerId !== undefined ? toObjectId(payload.manufacturerId) : undefined,
+    });
+  }
+
+  async compare(ids) {
+    // Validate here as well as at the HTTP boundary for internal callers.
+    const parsed = validator.compareQuerySchema.safeParse({ ids: Array.isArray(ids) ? ids.join(",") : ids });
+    if (!parsed.success) throw new ApiError(400, parsed.error.issues[0].message);
+    ids = parsed.data.ids;
+    const rows = await this.repository.aggregate([
+      { $match: { _id: { $in: ids.map(id => new ObjectId(id)) }, status: "active", ...PUBLIC_PRODUCT_FILTER } },
+      { $set: { comparisonPrice: { $ifNull: ["$sellingPrice", { $ifNull: ["$price", null] }] } } },
+      ...this.buildInventoryLookupStages(),
+      ...[["brands", "brandId", "brand"], ["manufacturers", "manufacturerId", "manufacturer"], ["categories", "category_id", "category"]]
+        .flatMap(([from, localField, as]) => [
+          { $lookup: { from, localField, foreignField: "_id", pipeline: [{ $project: { name: 1 } }], as } },
+          { $set: { [as]: { $arrayElemAt: [`$${as}`, 0] } } },
+        ]),
+    ]);
+    if (rows.length !== ids.length) throw new ApiError(404, "Một hoặc nhiều sản phẩm không tồn tại hoặc chưa được xuất bản", "COMPARISON_PRODUCT_UNAVAILABLE");
+    // Reuse public offers, never spread internal batch or receipt documents.
+    await this.attachBatchOffers(rows, { scoped: true });
+    const byId = new Map(rows.map(row => [String(row._id), row]));
+    return ids.map(id => {
+      const row = byId.get(id), rawPrice = row.comparisonPrice;
+      const price = rawPrice !== null && rawPrice !== undefined && Number.isFinite(Number(rawPrice)) && Number(rawPrice) >= 0 ? Number(rawPrice) : null;
+      const stock = Number(row.availableStock || 0);
+      return {
+        _id: row._id, name: row.name, slug: row.slug, thumbnail: row.thumbnail || row.images?.[0] || "", status: row.status,
+        inventoryItemId: row.inventoryItemId || null, technicalSpecsSource: row.technicalSpecsSource,
+        dosageCalculatorAvailable: Boolean(row.dosageCalculatorAvailable),
+        brand: row.brand || null, manufacturer: row.manufacturer || null, category: row.category || null,
+        technicalSpecs: publicTechnicalSpecs(row.technicalSpecs), unit: row.unit || null, packageSize: row.packageSize || null,
+        packageMeasure: row.packageMeasure || null, price, sellingPrice: price,
+        normalizedPrice: price === null ? null : normalizedPrice(price, row.packageMeasure),
+        stock, availableStock: stock, inStock: Boolean(row.inStock),
+        expiryMonths: row.expiryMonths ?? null, storageInstruction: row.storageInstruction || null,
+        batchPromotions: row.batchPromotions || [],
+      };
+    });
   }
 }
 

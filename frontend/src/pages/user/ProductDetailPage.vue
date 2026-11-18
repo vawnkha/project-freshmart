@@ -1,6 +1,8 @@
 <script setup>
+import SubscriptionPurchaseLink from "@/components/user/subscriptions/SubscriptionPurchaseLink.vue";
 import { computed, nextTick, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
+import { productPath } from '@/utils/product-route.util';
 import { useProductDetail } from '@/composables/useProductDetail';
 import { useProductPurchase } from '@/composables/useProductPurchase';
 import { useProductReviews } from '@/composables/useProductReviews';
@@ -14,12 +16,23 @@ import ProductInformation from '@/components/user/product/ProductInformation.vue
 import ProductReviews from '@/components/user/product/ProductReviews.vue';
 import QuantityControl from '@/components/user/product/QuantityControl.vue';
 import CatalogProductCard from '@/components/user/catalog/CatalogProductCard.vue';
+import CompareButton from '@/components/user/product/CompareButton.vue';
+import DosageCalculatorLink from '@/components/user/product/DosageCalculatorLink.vue';
 import SageButton from '@/components/user/sage/SageButton.vue';
 import SageSkeleton from '@/components/user/sage/SageSkeleton.vue';
 import SageErrorState from '@/components/user/sage/SageErrorState.vue';
 import SageEmptyState from '@/components/user/sage/SageEmptyState.vue';
 const route = useRoute();
+const router = useRouter();
 const { product, loading, error, notFound, unavailable, related, relatedLoading, relatedError, load, loadRelated } = useProductDetail(() => route.params.id);
+watch(product, (item) => {
+  if (item && detailId(route.params.id) && item.slug && !detailId(item.slug)) {
+    const path = productPath(item);
+    if (path !== `/products/${route.params.id}`) {
+      void router.replace({ path, query: route.query, hash: route.hash });
+    }
+  }
+});
 const purchase = useProductPurchase();
 const reviews = useProductReviews(computed(() => detailId(product.value?._id || product.value?.id)));
 const quantity = ref(1), touched = ref(false), feedback = ref(null);
@@ -68,10 +81,20 @@ watch(() => route.params.id, () => { quantity.value = 1; touched.value = false; 
             <h1>{{ product.name || 'Chi tiết sản phẩm' }}</h1>
             <p v-if="product.productCode" class="pdp-product-code">Mã sản phẩm: {{ product.productCode }}</p>
             <ProductPrice :product="product" />
+            <div class="pdp-secondary-actions">
+              <CompareButton :product="product" detail />
+              <DosageCalculatorLink :product="product" />
+            </div>
             <BatchPromotionNotice :product-id="detailId(product._id || product.id)" :promotions="product.batchPromotions" />
             <p v-if="product.shortDescription" class="pdp-short-description">{{ product.shortDescription }}</p>
             <dl class="pdp-facts">
+              <div v-if="product.brand?.name" class="pdp-fact"><dt>Thương hiệu</dt><dd>{{product.brand.name}}</dd></div>
+              <div v-if="product.manufacturer?.name" class="pdp-fact"><dt>Nhà sản xuất</dt><dd>{{product.manufacturer.name}}</dd></div>
+              <div v-if="product.origin" class="pdp-fact"><dt>Xuất xứ</dt><dd>{{product.origin}}</dd></div>
               <div v-if="packageSize" class="pdp-fact"><dt>Quy cách đóng gói</dt><dd>{{ packageSize }}</dd></div>
+              <div v-if="product.packageMeasure?.value&&product.packageMeasure?.unit" class="pdp-fact"><dt>Dung lượng mỗi {{product.unit||'đơn vị bán'}}</dt><dd>{{product.packageMeasure.value}} {{product.packageMeasure.unit}}</dd></div>
+              <div v-if="product.unit" class="pdp-fact"><dt>Đơn vị bán</dt><dd>{{product.unit}}</dd></div>
+              <div v-if="product.normalizedPrice" class="pdp-fact"><dt>Giá quy đổi</dt><dd>{{product.normalizedPrice.value.toLocaleString('vi-VN')}} đ/{{product.normalizedPrice.unit==='VND/kg'?'kg':'L'}}</dd></div>
               <div class="pdp-fact"><dt>Tình trạng</dt><dd><p class="stock-label pdp-stock" :class="stock === null ? 'unknown-stock' : stock >= 1 ? 'in-stock' : 'out-stock'"><i class="fa-solid fa-circle" aria-hidden="true"></i>{{ stockLabel }}</p></dd></div>
             </dl>
             <SageButton v-if="stock === null" variant="secondary" @click="load">Tải lại sản phẩm</SageButton>
@@ -84,6 +107,7 @@ watch(() => route.params.id, () => { quantity.value = 1; touched.value = false; 
                 <SageButton variant="secondary" class="pdp-save sage-icon-button" :aria-label="purchase.isSaved(product) ? 'Bỏ yêu thích sản phẩm' : 'Lưu sản phẩm yêu thích'"
                   :aria-pressed="purchase.isSaved(product)" :disabled="purchase.locked()" @click="purchase.toggle(product)"><i class="fa-regular fa-heart" aria-hidden="true"></i></SageButton>
               </div>
+              <SubscriptionPurchaseLink :product-id="detailId(product._id || product.id)" :quantity="Number(quantity)" />
               <p class="pdp-cart-note">Giỏ hàng không giữ chỗ tồn kho. Số lượng được kiểm tra lại khi thao tác.</p>
             </div>
             <div v-if="purchase.state.error || purchase.state.success" ref="feedback" tabindex="-1" class="pdp-feedback" :class="{ 'pdp-feedback--error': purchase.state.error }" :role="purchase.state.error ? 'alert' : 'status'">

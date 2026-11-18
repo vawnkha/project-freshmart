@@ -16,7 +16,6 @@ router.get(
   validate({ params: reviewUserProductParamSchema }),
   authMiddleware.authorizeOwnerOrPermissions(
     (req) => req.params.userId,
-    "review:check:any",
   ),
   reviews.canReview,
 );
@@ -26,7 +25,6 @@ router.post(
   validate({ body: createReviewSchema }),
   authMiddleware.authorizeOwnerOrPermissions(
     (req) => req.body.user_id,
-    "review:create:any",
   ),
   reviews.create,
 );

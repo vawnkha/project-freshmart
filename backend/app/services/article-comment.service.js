@@ -40,6 +40,10 @@ class ArticleCommentService {
     return this.repository.paginate(query.article_id ? { article_id: this.id(query.article_id) } : {}, { ...query, admin: true });
   }
 
+  articleOptions() {
+    return this.repository.articleOptions();
+  }
+
   async create(articleId, payload, user) {
     await this.publicArticle(articleId);
     const now = new Date();
@@ -55,7 +59,7 @@ class ArticleCommentService {
     const comment = await this.repository.findById(this.id(commentId));
     if (!comment) throw new ApiError(404, "Bình luận không tồn tại.");
     const owner = String(comment.user_id) === String(user.id);
-    const moderator = allowModerator && hasPermission(user, ["admin:access", "news:manage"]);
+    const moderator = allowModerator && hasPermission(user, ["admin:access", "news-comment:moderate"]);
     if (!owner && !moderator) throw new ApiError(403, "Bạn không có quyền thao tác bình luận này.");
     return { comment, owner };
   }

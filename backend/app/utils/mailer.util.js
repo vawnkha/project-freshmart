@@ -1,3 +1,4 @@
+const { read } = require("../config/environment");
 const nodemailer = require("nodemailer");
 
 function escapeHtml(value) {
@@ -15,12 +16,12 @@ function escapeHtml(value) {
 }
 
 function createTransporter() {
-  const user = process.env.MAIL_USER;
-  const pass = process.env.MAIL_APP_PASSWORD;
+  const user = read("MAIL_USER");
+  const pass = read("MAIL_APP_PASSWORD");
 
   if (!user || !pass) {
     throw new Error(
-      "Mail user or app password is not defined in environment variables.",
+      "MAIL_USER and MAIL_APP_PASSWORD are required to send email.",
     );
   }
 
@@ -32,7 +33,7 @@ function createTransporter() {
 async function sendActivationEmail({ to, name, activationLink, messageId }) {
   const transporter = createTransporter();
 
-  const from = `Fresh Mart <${process.env.MAIL_USER}>`;
+  const from = `Fresh Mart <${read("MAIL_USER")}>`;
   const subject = "Kích hoạt tài khoản của bạn";
 
   const html = `
@@ -61,7 +62,7 @@ async function sendResetPasswordEmail({
 }) {
   const transporter = createTransporter();
 
-  const from = `Fresh Mart <${process.env.MAIL_USER}>`;
+  const from = `Fresh Mart <${read("MAIL_USER")}>`;
   const subject = "Đặt lại mật khẩu";
 
   const html = `
@@ -92,7 +93,7 @@ async function sendContactReplyEmail({
 }) {
   const transporter = createTransporter();
 
-  const from = `Fresh Mart <${process.env.MAIL_USER}>`;
+  const from = `Fresh Mart <${read("MAIL_USER")}>`;
   const mailSubject = `Phản hồi liên hệ: ${subject}`;
 
   const html = `
@@ -127,7 +128,7 @@ async function sendContactReplyEmail({
 async function sendInvoiceEmail({ to, customerName, order, messageId }) {
   const transporter = createTransporter();
 
-  const from = `Fresh Mart <${process.env.MAIL_USER}>`;
+  const from = `Fresh Mart <${read("MAIL_USER")}>`;
   const subject = `Hóa đơn đơn hàng #${order._id}`;
 
   const itemsHtml = (order.items || [])

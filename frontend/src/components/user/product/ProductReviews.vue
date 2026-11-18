@@ -1,7 +1,6 @@
 <script setup>
 import { nextTick, ref } from 'vue';
 import { useAuthStore } from '@/stores/user/auth';
-import SageSelect from '@/components/user/sage/SageSelect.vue';
 import SageTextarea from '@/components/user/sage/SageTextarea.vue';
 import SageButton from '@/components/user/sage/SageButton.vue';
 import SageLoading from '@/components/user/sage/SageLoading.vue';
@@ -9,7 +8,6 @@ import SageErrorState from '@/components/user/sage/SageErrorState.vue';
 const props = defineProps({ resource: { type: Object, required: true } });
 const auth = useAuthStore(), form = ref(null);
 async function submit() { await props.resource.submit(); await nextTick(); form.value?.querySelector('[aria-invalid="true"]')?.focus(); }
-const ratings = [1, 2, 3, 4, 5].map(value => ({ value, label: value + ' sao' }));
 </script>
 <template>
   <div class="pdp-reviews" :aria-busy="resource.state.loading">
@@ -44,9 +42,96 @@ const ratings = [1, 2, 3, 4, 5].map(value => ({ value, label: value + ' sao' }))
     <p v-if="resource.state.success" class="pdp-feedback" role="status">{{ resource.state.success }}</p>
     <form v-if="resource.state.canReview" ref="form" class="pdp-review-form" @submit.prevent="submit">
       <h3>Chia sẻ trải nghiệm của bạn</h3>
-      <SageSelect id="pdp-review-rating" v-model="resource.form.rating" label="Đánh giá" :options="ratings" :error="resource.errors.rating" :disabled="resource.state.busy || resource.state.uncertain" />
+      <fieldset class="pdp-rating" :disabled="resource.state.busy || resource.state.uncertain">
+        <legend>Đánh giá</legend>
+        <div class="pdp-rating-options">
+          <label v-for="star in 5" :key="star" class="pdp-rating-option">
+            <input
+              v-model="resource.form.rating"
+              type="radio"
+              name="rating"
+              :value="star"
+              :aria-label="`${star} sao`"
+              :aria-invalid="resource.errors.rating ? true : undefined"
+              :aria-describedby="resource.errors.rating ? 'pdp-review-rating-error' : undefined"
+            />
+            <span class="pdp-rating-star" aria-hidden="true">
+              <i :class="star <= Number(resource.form.rating) ? 'fa-solid fa-star' : 'fa-regular fa-star'"></i>
+            </span>
+          </label>
+        </div>
+        <p v-if="resource.errors.rating" id="pdp-review-rating-error" class="sage-field-error" role="alert">
+          {{ resource.errors.rating }}
+        </p>
+      </fieldset>
       <SageTextarea id="pdp-review-comment" v-model="resource.form.comment" label="Nội dung đánh giá" rows="4" maxlength="5000" :error="resource.errors.comment" :disabled="resource.state.busy || resource.state.uncertain" />
       <SageButton type="submit" :loading="resource.state.busy" :disabled="resource.state.uncertain || resource.state.eligibilityLoading">Gửi đánh giá</SageButton>
     </form>
   </div>
 </template>
+
+<style scoped>
+.pdp-rating {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.pdp-rating legend {
+  width: auto;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  border: 0;
+  color: var(--text-primary);
+  font: var(--weight-control) var(--text-body)/var(--leading-body) var(--font-body);
+}
+
+.pdp-rating-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.pdp-rating-option {
+  position: relative;
+  margin: 0;
+}
+
+.pdp-rating-option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  clip-path: inset(50%);
+}
+
+.pdp-rating-star {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.pdp-rating-star .fa-solid {
+  color: #c5c732;
+}
+
+.pdp-rating-option input:enabled + .pdp-rating-star:hover {
+  background: var(--warning-soft);
+}
+
+.pdp-rating-option input:focus-visible + .pdp-rating-star {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.pdp-rating-option input:disabled + .pdp-rating-star {
+  opacity: 0.6;
+  cursor: default;
+}
+</style>

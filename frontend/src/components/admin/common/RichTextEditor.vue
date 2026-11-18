@@ -1,8 +1,11 @@
 <script setup>
 import { nextTick, onMounted, ref, watch } from "vue";
 import uploadService from "@/services/upload.service";
+import { productDescriptionHtml, sanitizeProductHtml } from '@/utils/product-description.util';
 
 const props = defineProps({
+  contentType: { type: String, default: 'news' },
+  label: { type: String, default: 'Nội dung bài viết' },
   modelValue: {
     type: String,
     default: "",
@@ -26,13 +29,15 @@ const lastRange = ref(null);
 
 function syncFromModel(value = "") {
   if (!editorRef.value) return;
-  if (editorRef.value.innerHTML !== value) {
-    editorRef.value.innerHTML = value || "";
+  const html = props.contentType === 'product' ? productDescriptionHtml(value) : value;
+  if (editorRef.value.innerHTML !== html) {
+    editorRef.value.innerHTML = html || "";
   }
 }
 
 function emitContent() {
-  emit("update:modelValue", editorRef.value?.innerHTML || "");
+  const html = editorRef.value?.innerHTML || '';
+  emit("update:modelValue", props.contentType === 'product' ? sanitizeProductHtml(html) : html);
 }
 
 function focusEditor() {
@@ -74,6 +79,7 @@ function setColor(event) {
 function insertLink() {
   const url = window.prompt("Nhập URL liên kết");
   if (!url) return;
+  if (props.contentType === 'product' && !/^(?:https?:\/\/|\/(?!\/)|#)/i.test(url.trim())) return;
   runCommand("createLink", url.trim());
 }
 
@@ -111,10 +117,21 @@ async function handleImageChange(event) {
 
   uploadingImage.value = true;
   try {
-    const res = await uploadService.uploadNewsImage(file);
-    const url = res.url || res.data?.url;
+    let url;
+    if (props.contentType === 'product') {
+      const data = new FormData();
+      data.append('images', file);
+      const res = await uploadService.uploadProductImages(data);
+      url = res.images?.[0] || res.data?.images?.[0];
+    } else {
+      const res = await uploadService.uploadNewsImage(file);
+      url = res.url || res.data?.url;
+    }
     if (!url) throw new Error("Upload ảnh không trả về URL");
-    runCommand("insertHTML", `<img src="${url}" alt="" />`);
+    const image = document.createElement('img');
+    image.setAttribute('src', url);
+    image.setAttribute('alt', '');
+    runCommand("insertHTML", props.contentType === 'product' ? sanitizeProductHtml(image.outerHTML) : image.outerHTML);
   } catch (error) {
     console.error(error);
     alert(error?.response?.data?.message || "Không thể upload ảnh nội dung");
@@ -123,8 +140,19 @@ async function handleImageChange(event) {
   }
 }
 
-function handlePaste() {
+function handlePaste(event) {
+  if (props.contentType === 'product') {
+    event.preventDefault();
+    const html = event.clipboardData?.getData('text/html');
+    const text = event.clipboardData?.getData('text/plain') || '';
+    runCommand('insertHTML', html ? sanitizeProductHtml(html) : productDescriptionHtml(text));
+    return;
+  }
   nextTick(emitContent);
+}
+
+function handleDrop(event) {
+  if (props.contentType === 'product') event.preventDefault();
 }
 
 watch(
@@ -141,10 +169,10 @@ onMounted(() => syncFromModel(props.modelValue));
 <template>
   <div class="rich-editor">
     <div class="rich-editor__toolbar">
-      <select class="rich-editor__select" @change="setBlock">
+      <select class="rich-editor__select" aria-label="Định dạng văn bản" @change="setBlock">
         <option value="">Định dạng</option>
         <option value="p">Đoạn văn</option>
-        <option value="h1">Heading 1</option>
+        <option v-if="contentType !== 'product'" value="h1">Heading 1</option>
         <option value="h2">Heading 2</option>
         <option value="h3">Heading 3</option>
       </select>
@@ -153,10 +181,12 @@ onMounted(() => syncFromModel(props.modelValue));
       <button type="button" title="Italic" @click="runCommand('italic')"><em>I</em></button>
       <button type="button" title="Underline" @click="runCommand('underline')"><u>U</u></button>
       <button type="button" title="Strike" @click="runCommand('strikeThrough')"><s>S</s></button>
-      <input class="rich-editor__color" type="color" title="Màu chữ" @input="setColor" />
-      <button type="button" title="Căn trái" @click="runCommand('justifyLeft')">Trái</button>
-      <button type="button" title="Căn giữa" @click="runCommand('justifyCenter')">Giữa</button>
-      <button type="button" title="Căn phải" @click="runCommand('justifyRight')">Phải</button>
+      <template v-if="contentType !== 'product'">
+        <input class="rich-editor__color" type="color" title="Màu chữ" @input="setColor" />
+        <button type="button" title="Căn trái" @click="runCommand('justifyLeft')">Trái</button>
+        <button type="button" title="Căn giữa" @click="runCommand('justifyCenter')">Giữa</button>
+        <button type="button" title="Căn phải" @click="runCommand('justifyRight')">Phải</button>
+      </template>
       <button type="button" title="Bullet list" @click="runCommand('insertUnorderedList')">• List</button>
       <button type="button" title="Ordered list" @click="runCommand('insertOrderedList')">1. List</button>
       <button type="button" title="Quote" @click="runCommand('formatBlock', 'blockquote')">Quote</button>
@@ -174,12 +204,16 @@ onMounted(() => syncFromModel(props.modelValue));
       ref="editorRef"
       class="rich-editor__body"
       contenteditable="true"
+      role="textbox"
+      aria-multiline="true"
+      :aria-label="label"
       :data-placeholder="placeholder"
       :style="{ minHeight }"
       @input="emitContent"
       @keyup="saveSelection"
       @mouseup="saveSelection"
       @paste="handlePaste"
+      @drop="handleDrop"
       @blur="emitContent"
     ></div>
 

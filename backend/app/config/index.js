@@ -1,10 +1,2 @@
-const config = {
-  app: {
-    port: process.env.PORT || 3000,
-  },
-  db: {
-    uri: process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/myshop?replicaSet=rs0",
-  },
-};
-
-module.exports = config;
+const { read } = require("./environment");
+module.exports = { app: { port: read("PORT") }, db: { uri: read("MONGODB_URI") } };

@@ -1,4 +1,5 @@
 const { z } = require("zod");
+const { packageMeasureSchema } = require("./technical-specs.validator");
 const {
   nonEmptyString,
   optionalNonNegativeNumberSchema,
@@ -37,6 +38,8 @@ module.exports = {
     keyword: optionalString,
   }),
   createInventoryItemSchema: z.object({
+    technicalSpecs: z.never({ message: "Thông số kỹ thuật được quản lý tại sản phẩm website" }).optional(),
+    packageMeasure: packageMeasureSchema.nullable().optional(),
     categoryId: optionalObjectIdSchema,
     brandId: optionalObjectIdSchema,
     manufacturerId: optionalObjectIdSchema,
@@ -46,13 +49,15 @@ module.exports = {
     barcode: optionalString,
     packageSize: optionalString,
     unit: nonEmptyString,
-    storageInstruction: optionalString,
+    storageInstruction: z.string().trim().max(2000).optional(),
     expiryMonths: optionalNonNegativeNumberSchema,
     note: optionalString,
     status: inventoryItemStatusSchema.optional(),
   }),
   updateInventoryItemSchema: z
     .object({
+      technicalSpecs: z.never({ message: "Thông số kỹ thuật được quản lý tại sản phẩm website" }).optional(),
+      packageMeasure: packageMeasureSchema.nullable().optional(),
       categoryId: clearableObjectIdSchema,
       brandId: clearableObjectIdSchema,
       manufacturerId: clearableObjectIdSchema,
@@ -62,7 +67,7 @@ module.exports = {
       barcode: optionalString,
       packageSize: optionalString,
       unit: nonEmptyString.optional(),
-      storageInstruction: optionalString,
+      storageInstruction: z.string().trim().max(2000).optional(),
       expiryMonths: clearableExpiryMonthsSchema,
       note: optionalString,
       status: inventoryItemStatusSchema.optional(),

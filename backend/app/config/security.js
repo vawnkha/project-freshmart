@@ -1,41 +1,25 @@
-const MIN_JWT_SECRET_LENGTH = 32;
-
-function getRequiredSecret(name, minLength = 1) {
-  const value = String(process.env[name] || "").trim();
-  if (value.length < minLength) {
-    throw new Error(
-      `${name} is required and must contain at least ${minLength} characters`,
-    );
-  }
-  return value;
-}
+const { read, validateEnvironment } = require("./environment");
+const MIN_JWT_SECRET_LENGTH = require("./environment").catalog.JWT_SECRET.minLength;
 
 function getJwtConfig() {
   return {
-    secret: getRequiredSecret("JWT_SECRET", MIN_JWT_SECRET_LENGTH),
+    secret: read("JWT_SECRET"),
     algorithm: "HS256",
-    expiresIn: process.env.JWT_EXPIRES_IN || "1d",
-    issuer: process.env.JWT_ISSUER || "lv-ecommerce-api",
-    audience: process.env.JWT_AUDIENCE || "lv-ecommerce-web",
+    expiresIn: read("JWT_EXPIRES_IN"),
+    issuer: read("JWT_ISSUER"),
+    audience: read("JWT_AUDIENCE"),
   };
 }
 
 function getOutboxEncryptionSecret() {
-  return getRequiredSecret("OUTBOX_ENCRYPTION_KEY", 32);
+  return read("OUTBOX_ENCRYPTION_KEY");
 }
 
 function getAllowedOrigins() {
-  const configured = String(process.env.CORS_ORIGINS || "")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-
-  if (configured.length) return configured;
-  if (process.env.NODE_ENV === "production") {
+  if (read("NODE_ENV") === "production" && !process.env.CORS_ORIGINS) {
     throw new Error("CORS_ORIGINS is required in production");
   }
-
-  return ["http://localhost:3001", "http://127.0.0.1:3001"];
+  return read("CORS_ORIGINS").split(",");
 }
 
 function buildCorsOptions() {
@@ -50,6 +34,8 @@ function buildCorsOptions() {
 }
 
 function validateRuntimeConfig() {
+  validateEnvironment();
+  require("./shrimp-diagnosis").diagnosisConfig();
   getJwtConfig();
   getOutboxEncryptionSecret();
   getAllowedOrigins();

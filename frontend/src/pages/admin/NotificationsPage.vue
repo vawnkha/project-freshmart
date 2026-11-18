@@ -19,6 +19,7 @@ function formatTime(value) {
 }
 
 function iconByType(type) {
+  if (type === "subscription") return "fa-calendar-days";
   if (type === "order") return "fa-cart-shopping";
   if (type === "contact") return "fa-envelope";
   return "fa-bell";
@@ -66,6 +67,10 @@ function toggleSelectAll() {
 }
 
 async function handleClick(item) {
+  if (item.type === "subscription" && /^[a-f\d]{24}$/i.test(item.data?.subscriptionId || "")) {
+    await notificationStore.markOneAsRead(item._id || item.id);
+    return router.push(`/admin/subscriptions/${item.data.subscriptionId}`);
+  }
   if (item.type === "inventory_expiry" && /^[a-f\d]{24}$/i.test(item.data?.batchId || "")) {
     await notificationStore.markOneAsRead(item._id || item.id);
     return router.push(`/admin/inventory-expiry/${item.data.batchId}`);
@@ -143,6 +148,7 @@ onMounted(async () => {
             <option value="">Tất cả loại</option>
             <option value="order">Đơn hàng</option>
             <option value="contact">Liên hệ</option>
+            <option value="subscription">Đơn hàng định kỳ</option>
           </select>
 
           <select

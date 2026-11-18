@@ -1,4 +1,36 @@
 const INDEX_DEFINITIONS = [
+  { collection: "shrimp_diagnoses", indexes: [{ key: { userId: 1, createdAt: -1 } }] },
+  {
+    collection: "subscriptions",
+    indexes: [
+      { key: { userId: 1, createdAt: -1 } },
+      { key: { code: 1 }, options: { unique: true } },
+      { key: { status: 1, nextScheduledDate: 1 } },
+      { key: { "items.productId": 1 } },
+      { key: { addressId: 1 } },
+    ],
+  },
+  {
+    collection: "subscription_runs",
+    indexes: [
+      { key: { subscriptionId: 1, occurrenceNumber: 1 }, options: { unique: true } },
+      { key: { idempotencyKey: 1 }, options: { unique: true } },
+      { key: { status: 1, processAt: 1 } },
+      { key: { status: 1, nextRetryAt: 1 } },
+      { key: { status: 1, leaseUntil: 1 } },
+      { key: { orderId: 1 }, options: { sparse: true } },
+    ],
+  },
+  {
+    collection: "orders",
+    indexes: [{ key: { subscriptionRunId: 1 }, options: { unique: true, partialFilterExpression: { subscriptionRunId: { $type: "objectId" } } } },
+      { key: { subscriptionId: 1, created_at: -1 } }],
+  },
+  {
+    collection: "notifications",
+    indexes: [{ key: { deduplicationKey: 1 }, options: { unique: true, partialFilterExpression: { deduplicationKey: { $type: "string" } } } },
+      { key: { "data.userId": 1, "data.subscriptionId": 1, created_at: -1 } }],
+  },
   {
     collection: "article_comments",
     indexes: [
@@ -25,6 +57,7 @@ const INDEX_DEFINITIONS = [
   {
     collection: "products",
     indexes: [
+      { key: { slug: 1 }, options: { unique: true, partialFilterExpression: { slug: { $type: "string", $gt: "" } } } },
       { key: { created_at: -1 } },
       { key: { category_id: 1 } },
       {

@@ -12,8 +12,8 @@ exports.create = async (req, res, next) => {
   try {
     const { name, slug, description, status } = req.body;
 
-    if (!name || !slug) {
-      return next(new ApiError(400, "name và slug là bắt buộc"));
+  if (!name) {
+    return next(new ApiError(400, "Tên danh mục là bắt buộc"));
     }
 
     if (!req.file) {
@@ -24,7 +24,7 @@ exports.create = async (req, res, next) => {
 
     const service = new CategoryService(MongoDB.client);
 
-    const existedSlug = await service.findBySlug(slug);
+    const existedSlug = slug && await service.findBySlug(slug);
     if (existedSlug) {
       await safeDeleteLocalImage(`/uploads/categories/${req.file.filename}`);
       return next(new ApiError(400, "Slug đã tồn tại"));

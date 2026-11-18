@@ -35,6 +35,9 @@ const paypalCreateOrderSchema = z
   .passthrough()
   .transform(normalizeCheckoutAliases)
   .superRefine((value, ctx) => {
+    if (value.userId && value.user_id !== value.userId) {
+      ctx.addIssue({ code: "custom", path: ["user_id"], message: "user_id va userId khong khop" });
+    }
     if (!value.user_id) {
       ctx.addIssue({
         code: "custom",
@@ -86,8 +89,12 @@ const paypalCaptureOrderSchema = z
   .transform((value) => ({
     ...value,
     paypalOrderId: value.paypalOrderId || value.orderID,
+    user_id: value.user_id ?? value.userId,
   }))
   .superRefine((value, ctx) => {
+    if (value.userId && value.user_id !== value.userId) {
+      ctx.addIssue({ code: "custom", path: ["user_id"], message: "user_id va userId khong khop" });
+    }
     if (!value.paypalOrderId) {
       ctx.addIssue({
         code: "custom",

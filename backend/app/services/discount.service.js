@@ -3,6 +3,7 @@ const { ObjectId } = require("mongodb");
 const ApiError = require("../api-error");
 const DiscountRepository = require("../repositories/discount.repository");
 const validator = require("../validators/discount.validator");
+const BATCH_DISCOUNT_DESCRIPTION = "Nhập mã tại thanh toán. Chỉ giảm trên số lượng được phân bổ từ lô này; không cộng dồn mã khác.";
 
 function hasValue(value) {
   return value !== undefined && value !== null && String(value).trim() !== "";
@@ -216,13 +217,30 @@ class DiscountService {
     });
   }
 
-  findById(id) {
-    return this.repository.findById(id);
+  async findById(id) {
+    const discount = await this.repository.findById(id);
+    if (discount?.scope !== "batch") return discount;
+    const offer = await this.getBatchOffer(discount);
+    const productId = offer?.productId || toObjectId(discount.applicable?.productIds?.[0]);
+    const [batch, product] = offer ? [null, null] : await Promise.all([
+      this.Batch.findOne({ _id: discount.batchId }, { projection: { batchNumber: 1, expiryDate: 1 } }),
+      productId ? this.Product.findOne({ _id: productId }, { projection: { name: 1 } }) : null,
+    ]);
+    return {
+      ...discount,
+      batchDetails: {
+        batchNumber: offer?.batchNumber ?? batch?.batchNumber ?? null,
+        expiryDate: offer?.expiryDate ?? batch?.expiryDate ?? null,
+        productName: offer?.productName ?? product?.name ?? null,
+        availableQuantity: offer?.availableQuantity ?? 0,
+        defaultDescription: BATCH_DISCOUNT_DESCRIPTION,
+      },
+    };
   }
 
   // Public display is opt-in. Legacy/private codes and internal usage/rules stay private.
-  async findPublic(now = new Date()) {
-    const filter = {
+  publicRegularFilter(now) {
+    return {
       isPublic: true,
       status: "active",
       scope: { $in: ["order", "product", "category"] },
@@ -259,7 +277,10 @@ class DiscountService {
         },
       ],
     };
-    const regular = await this.repository.findList(filter, {
+  }
+
+  async findPublic(now = new Date()) {
+    const regular = await this.repository.findList(this.publicRegularFilter(now), {
       projection: {
         _id: 1, code: 1, name: 1, description: 1, scope: 1, type: 1, value: 1,
         minOrderValue: 1, maxDiscountAmount: 1, startDate: 1, endDate: 1,
@@ -268,6 +289,36 @@ class DiscountService {
       limit: 12,
     });
     return [...regular, ...await this.publicBatchOffers(now)];
+  }
+
+  async findAvailable(payload, now = new Date()) {
+    const cart = await this.normalizeValidatePayload(payload);
+    if (!cart.items.length) return [];
+    const available = [];
+    const append = (discount, quote) => {
+      if (!quote.valid || quote.discountAmount <= 0) return;
+      available.push({
+        ...quote.discount,
+        discountAmount: quote.discountAmount,
+        minOrderValue: discount.minOrderValue,
+        endDate: discount.endDate,
+        ...(quote.batchOffer ? { batchOffer: quote.batchOffer } : {}),
+      });
+    };
+    const regular = await this.repository.findList(this.publicRegularFilter(now));
+    for (const discount of regular) {
+      append(discount, await this.quoteDiscount(discount, cart, { now, trustedItems: true }));
+    }
+    const productIds = normalizeIdList(cart.items.map(item => item.productId));
+    for await (const discount of this.publicBatchDiscounts(now, { productIds })) {
+      try {
+        append(discount, await this.quoteDiscount(discount, payload, { now }));
+      } catch (error) {
+        // A batch may have sold out while the cart was being checked.
+        if (error.statusCode !== 409) throw error;
+      }
+    }
+    return available.sort((a, b) => b.discountAmount - a.discountAmount || a.code.localeCompare(b.code));
   }
 
   async create(payload = {}) {
@@ -281,13 +332,19 @@ class DiscountService {
       (session) => this.repository.create(data, { session }));
   }
 
-  async update(id, payload = {}) {
+  async update(id, payload = {}, user) {
     const message = validator.validateUpdate(payload);
     if (message) throw new ApiError(400, message);
 
     const current = await this.repository.findById(id);
     if (!current) return null;
-    if (current.scope === "batch" || payload.scope === "batch") throw new ApiError(409, "Hãy quản lý khuyến mãi theo lô tại Đề xuất giảm giá");
+    if (current.scope === "batch") {
+      const parsed = validator.batchDiscountUpdateSchema.safeParse(payload);
+      if (!parsed.success) throw new ApiError(400, "Nội dung chỉnh sửa mã theo lô không hợp lệ.");
+      const PromotionProposalService = require("./promotion-proposal.service");
+      return new PromotionProposalService(this.client).editDiscount(current, parsed.data, user);
+    }
+    if (payload.scope === "batch") throw new ApiError(409, "Hãy tạo ưu đãi theo lô từ đề xuất giảm giá");
 
     const data = this.extractData(payload, false);
     await this.ensureUniqueCode(data, current._id);
@@ -376,11 +433,17 @@ class DiscountService {
       batchId: batch._id, batchNumber: batch.batchNumber, productId: product._id, productName: product.name, expiryDate: batch.expiryDate,
       ...classifyExpiry(batch.expiryDate, now), availableQuantity, originalPrice,
       discountedPrice: originalPrice - Math.floor(originalPrice * discount.value / 100), startDate: discount.startDate, endDate: discount.endDate,
-      description: "Nhập mã tại thanh toán. Chỉ giảm trên số lượng được phân bổ từ lô này; không cộng dồn mã khác." };
+      publicDescription: discount.publicDescription,
+      description: discount.publicDescription || BATCH_DISCOUNT_DESCRIPTION };
   }
-  async publicBatchOffers(now = new Date()) {
+  publicBatchDiscounts(now, { productIds } = {}) {
+    const filter = { scope: "batch", isPublic: true, status: "active", startDate: { $lte: now }, endDate: { $gt: now } };
+    if (productIds) filter["applicable.productIds"] = { $in: productIds };
+    return this.repository.collection().find(filter);
+  }
+  async publicBatchOffers(now = new Date(), options = {}) {
     const offers = [];
-    for await (const discount of this.repository.collection().find({ scope: "batch", isPublic: true, status: "active", startDate: { $lte: now }, endDate: { $gt: now } })) {
+    for await (const discount of this.publicBatchDiscounts(now, options)) {
       const offer = await this.getBatchOffer(discount, { now });
       if (offer) offers.push(offer);
     }
@@ -393,7 +456,11 @@ class DiscountService {
     const code = normalizeCode(payload.code);
     const discount = await this.repository.collection().findOne({ code }, { session: options.session });
     if (!discount) return this.inactiveResult("Ma giam gia khong ton tai");
-    const now = new Date();
+    return this.quoteDiscount(discount, payload, options);
+  }
+
+  async quoteDiscount(discount, payload, options = {}) {
+    const now = options.now || new Date();
     if (discount.status !== "active") {
       return this.inactiveResult("Ma giam gia khong hoat dong");
     }

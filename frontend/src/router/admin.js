@@ -1,6 +1,7 @@
 const adminRoutes = [
   {
     path: "/admin-login",
+    meta: { layout: "admin" },
     component: () => import("@/layouts/AdminLayout.vue"),
     children: [
       {
@@ -13,13 +14,14 @@ const adminRoutes = [
   {
     path: "/admin",
     component: () => import("@/layouts/AdminLayout.vue"),
-    meta: { requiresAuth: true, requiredPermission: "admin:access" },
+    meta: { layout: "admin", requiresAuth: true, requiredPermission: "admin:access" },
     children: [
       {
         path: "",
         name: "admin-dashboard",
         component: () => import("@/pages/admin/DashboardPage.vue"),
       },
+      { path: 'chat', name: 'admin-live-chat', component: () => import('@/pages/admin/LiveChatPage.vue'), meta: { requiredPermission: 'chat:read' } },
       {
         path: "products",
         name: "admin-products",
@@ -146,7 +148,7 @@ const adminRoutes = [
         path: "news-comments",
         name: "admin-news-comments",
         component: () => import("@/pages/admin/content/ArticleCommentListPage.vue"),
-        meta: { requiredPermission: "news:manage" },
+        meta: { requiredPermission: "news-comment:read" },
       },
       {
         path: "news",
@@ -173,6 +175,8 @@ const adminRoutes = [
         meta: { requiredPermission: "banner:manage" },
       },
 
+      { path: 'subscriptions', name: 'admin-subscriptions', component: () => import('@/pages/admin/SubscriptionManagementPage.vue'), meta: { requiredPermission: 'order:read:any' } },
+      { path: 'subscriptions/:id', name: 'admin-subscription-detail', component: () => import('@/pages/admin/SubscriptionManagementPage.vue'), meta: { requiredPermission: 'order:read:any' } },
       {
         path: "orders",
         name: "admin-orders",

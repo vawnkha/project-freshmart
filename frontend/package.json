@@ -5,10 +5,13 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
+    "test:diagnosis:e2e": "node scripts/shrimp-diagnosis-e2e.cjs",
     "lint": "node scripts/check-source.mjs",
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:subscriptions:e2e": "node scripts/subscriptions-e2e.cjs",
+    "test:subscriptions:paypal": "node scripts/subscription-paypal-e2e.cjs"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.1.0",

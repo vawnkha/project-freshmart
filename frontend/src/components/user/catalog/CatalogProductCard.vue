@@ -1,16 +1,19 @@
 <script setup>
+import { productPath } from "@/utils/product-route.util";
 import { computed } from 'vue';
+import CompareButton from '@/components/user/product/CompareButton.vue';
 import { normalizeId } from '@/utils/id.util';
 import { productPrice, productComparePrice } from '@/utils/storefront.util';
 import { catalogStock } from '@/utils/catalog-query.util';
 import ResponsiveImage from '@/components/user/common/ResponsiveImage.vue';
+import ProductCardRating from '@/components/user/product/ProductCardRating.vue';
 import ProductPrice from '@/components/user/product/ProductPrice.vue';
 import BatchPromotionNotice from '@/components/user/product/BatchPromotionNotice.vue';
 import SageButton from '@/components/user/sage/SageButton.vue';
 import SageIcon from '@/components/user/sage/SageIcon.vue';
 const props = defineProps({ product: { type: Object, required: true }, actions: { type: Object, required: true } });
 const id = computed(() => normalizeId(props.product._id || props.product.id));
-const link = computed(() => '/products/' + id.value);
+const link = computed(() => productPath(props.product));
 const stock = computed(() => catalogStock(props.product));
 const price = computed(() => productPrice(props.product));
 const discount = computed(() => { const compare = productComparePrice(props.product); return compare ? Math.round((1 - price.value / compare) * 100) : 0; });
@@ -30,7 +33,9 @@ const label = computed(() => stock.value === null ? 'Chưa xác định tồn kh
     <div class="card-content">
       <span v-if="product.category_name || product.category?.name" class="card-category">{{ product.category_name || product.category.name }}</span>
       <h3 class="card-title"><RouterLink :to="link" :title="product.name">{{ product.name }}</RouterLink></h3>
+      <ProductCardRating :product="product" />
       <ProductPrice :product="product" />
+      <CompareButton :product="product" />
       <BatchPromotionNotice :product-id="id" :promotions="product.batchPromotions" compact />
       <span class="stock-label" :class="stock >= 1 ? 'in-stock' : 'out-stock'"><i class="fa-solid fa-circle" aria-hidden="true"></i>{{ stock === null ? 'Chưa xác định tồn kho' : stock >= 1 ? 'Còn hàng' : 'Hết hàng' }}</span>
       

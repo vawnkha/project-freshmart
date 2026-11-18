@@ -3,6 +3,7 @@ const controller = require("../controllers/discounts.controller");
 const authMiddleware = require("../middlewares/auth.middleware");
 const validate = require("../middlewares/validate.middleware");
 const {
+  availableDiscountSchema,
   createDiscountSchema,
   discountIdParamSchema,
   discountQuerySchema,
@@ -14,6 +15,7 @@ const router = express.Router();
 const canManageDiscounts = authMiddleware.authorizePermissions("discount:manage");
 
 router.get("/public", controller.findPublic);
+router.post("/available", authMiddleware, validate({ body: availableDiscountSchema }), controller.findAvailable);
 
 router.post("/validate", validate({ body: validateDiscountSchema }), controller.validate);
 

@@ -19,6 +19,7 @@ class InventoryItemService {
     const includeCreatedAt = options.includeCreatedAt !== false;
     const now = new Date();
     const data = {
+      packageMeasure: payload.packageMeasure,
       categoryId:
         payload.categoryId !== undefined ? toObjectId(payload.categoryId) : undefined,
       brandId: payload.brandId !== undefined ? toObjectId(payload.brandId) : undefined,
@@ -89,6 +90,7 @@ class InventoryItemService {
   }
 
   async create(payload) {
+    this.validateTechnicalData(payload);
     const message = validator.validateCreate(payload);
     if (message) throw new ApiError(400, message);
 
@@ -103,6 +105,7 @@ class InventoryItemService {
   }
 
   async update(id, payload) {
+    this.validateTechnicalData(payload);
     const message = validator.validateUpdate(payload);
     if (message) throw new ApiError(400, message);
 
@@ -124,6 +127,17 @@ class InventoryItemService {
 
   async delete(id) {
     return this.deletion.remove("inventory_items", id);
+  }
+
+  validateTechnicalData(payload) {
+    if (payload.technicalSpecs !== undefined) throw new ApiError(400, "Thông số kỹ thuật được quản lý tại sản phẩm website", "PRODUCT_TECHNICAL_SPECS_OWNED");
+    const { packageMeasureSchema } = require("../validators/technical-specs.validator");
+    for (const [field, schema] of [["packageMeasure", packageMeasureSchema.nullable()]]) {
+      if (payload[field] === undefined) continue;
+      const parsed = schema.safeParse(payload[field]);
+      if (!parsed.success) throw new ApiError(400, `${field}: ${parsed.error.issues[0].message}`);
+      payload[field] = parsed.data;
+    }
   }
 }
 

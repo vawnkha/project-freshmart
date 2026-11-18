@@ -3,6 +3,7 @@ import PageHeading from "@/components/user/common/PageHeading.vue";
 import { notify } from "@/composables/useStorefrontNotice";
 import AppState from "@/components/user/common/AppState.vue";
 import ResponsiveImage from "@/components/user/common/ResponsiveImage.vue";
+import CheckoutVoucherDialog from "@/components/user/checkout/CheckoutVoucherDialog.vue";
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch, nextTick } from "vue";
 import { storeToRefs } from "pinia";
 import { useRouter } from "vue-router";
@@ -55,6 +56,9 @@ const discountLoading = ref(false);
 const discountError = ref("");
 const appliedDiscount = ref(null);
 const voucherState = ref("idle");
+const voucherPickerOpen = ref(false), voucherOffers = ref([]);
+const voucherOffersLoading = ref(false), voucherOffersError = ref("");
+let voucherOffersRequest = null;
 let voucherVersion = 0;
 let voucherRequest = null;
 let voucherReceipt = null;
@@ -324,6 +328,53 @@ function ownsVoucherRequest(request) {
 function currentVoucherContext(context, key) {
   return currentCartContext(context) && key === voucherCartKey.value && !cartProblem(context);
 }
+
+function closeVoucherPicker() {
+  voucherPickerOpen.value = false;
+  voucherOffersRequest = null;
+  voucherOffers.value = [];
+  voucherOffersLoading.value = false;
+  voucherOffersError.value = "";
+}
+
+function ownsVoucherOffers(request) {
+  return voucherPickerOpen.value && voucherOffersRequest === request &&
+    currentVoucherContext(request.context, request.key);
+}
+
+async function openVoucherPicker() {
+  if (checkoutCartProblem.value || discountLoading.value || submitting.value) return;
+  const request = { context: cartContext(), key: voucherCartKey.value };
+  voucherOffersRequest = request;
+  voucherPickerOpen.value = true;
+  voucherOffers.value = [];
+  voucherOffersError.value = "";
+  voucherOffersLoading.value = true;
+  try {
+    const result = await discountService.getAvailable(buildDiscountCartItems().map(item => ({
+      productId: normalizeId(item.productId), quantity: item.quantity,
+    })));
+    if (!Array.isArray(result?.data)) throw new Error("Dữ liệu mã giảm giá không hợp lệ.");
+    if (ownsVoucherOffers(request)) voucherOffers.value = result.data;
+  } catch (error) {
+    if (ownsVoucherOffers(request)) voucherOffersError.value = userError(error, "Chưa thể tải mã giảm giá. Vui lòng thử lại.");
+  } finally {
+    if (ownsVoucherOffers(request)) voucherOffersLoading.value = false;
+  }
+}
+
+function selectVoucher(code) {
+  if (!voucherOffersRequest || !ownsVoucherOffers(voucherOffersRequest) ||
+      !voucherOffers.value.some(offer => offer.code === code) ||
+      discountLoading.value || submitting.value) return;
+  closeVoucherPicker();
+  writeVoucherCode(code);
+  void applyDiscount();
+}
+
+watch([voucherCartKey, checkoutCartProblem], () => {
+  if (voucherPickerOpen.value) closeVoucherPicker();
+}, { flush: "sync" });
 function voucherProblem() {
   if (discountLoading.value) return "Đang kiểm tra mã giảm giá. Vui lòng chờ trước khi thanh toán.";
   if (voucherState.value === "stale") return discountError.value;
@@ -755,6 +806,7 @@ async function loadCheckout() {
   }
 }
 watch(() => cartStore.ownerVersion, () => {
+  closeVoucherPicker();
   invalidateVoucher({ clearCode: true });
   const version = ++checkoutLoadVersion;
   // Release only an old owner's pre-submit validation lease, never an already-sent payment/order.
@@ -774,6 +826,7 @@ watch(() => cartStore.ownerVersion, () => {
 onMounted(loadCheckout);
 onBeforeUnmount(() => {
   disposed = true;
+  closeVoucherPicker();
   invalidateVoucher({ clearCode: true });
   ++paypalRenderVersion;
   if (paypalButtons) Promise.resolve(paypalButtons.close()).catch((error) => console.error("Không thể đóng nút PayPal", error));
@@ -977,9 +1030,15 @@ function checkoutMoney(value) {
                 </div>
               </fieldset>
 
-<section class="block discount-box" aria-labelledby="checkout-discount-title">
-                  <h2 id="checkout-discount-title" class="block-title">Mã giảm giá</h2>
-                  <label for="checkout-discount" class="discount-box__label">Mã giảm giá</label>
+                <section class="block discount-box" aria-labelledby="checkout-discount-title">
+                  <div class="discount-box__heading">
+                    <h2 id="checkout-discount-title" class="block-title">Mã giảm giá</h2>
+                    <button type="button" class="btn btn-default" aria-haspopup="dialog"
+                      :disabled="!!checkoutCartProblem || discountLoading || submitting" @click="openVoucherPicker">
+                      Chọn mã giảm giá
+                    </button>
+                  </div>
+                  <label for="checkout-discount" class="discount-box__label">Nhập mã giảm giá</label>
                   <div class="discount-box__input-row">
                     <input
                       id="checkout-discount"
@@ -1020,7 +1079,7 @@ function checkoutMoney(value) {
                       </small>
                     </span>
                     <strong>-{{ checkoutMoney(discountAmount) }}</strong>
-                    <p v-if="appliedDiscount.batchOffer">Lô {{ appliedDiscount.batchOffer.batchNumber }} · HSD {{ new Date(appliedDiscount.batchOffer.expiryDate).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) }}. Giảm {{ appliedDiscount.discount.value }}% trên {{ appliedDiscount.discount.eligibleQuantity }} sản phẩm thuộc lô này; phần hàng khác giữ giá thường.</p>
+                    <p v-if="appliedDiscount.batchOffer">Giảm {{ appliedDiscount.discount.value }}% cho {{ appliedDiscount.discount.eligibleQuantity }} sản phẩm {{ appliedDiscount.batchOffer.productName }} thuộc lô ưu đãi.</p>
                   </div>
 
                   <div
@@ -1030,6 +1089,11 @@ function checkoutMoney(value) {
                   >
                     {{ discountError || (checkoutSubmitted ? checkoutErrors.discountCode : '') }}
                   </div>
+                  <CheckoutVoucherDialog
+                    :open="voucherPickerOpen" :loading="voucherOffersLoading" :error="voucherOffersError"
+                    :offers="voucherOffers" :applied-code="appliedDiscount?.discount?.code"
+                    @close="closeVoucherPicker" @retry="openVoucherPicker" @select="selectVoucher"
+                  />
                 </section>
 
               <fieldset class="block block-payment">

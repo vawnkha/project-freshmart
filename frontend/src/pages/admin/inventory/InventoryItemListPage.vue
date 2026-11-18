@@ -1,9 +1,14 @@
 <script setup>
 import { normalizeId } from "@/utils/id.util";
+import { slugFromName } from "@/utils/slug.util";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useSchemaForm } from "@/composables/useSchemaForm";
 import { toTypedSchema } from "@vee-validate/zod";
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
+import TechnicalSpecsEditor from '@/components/admin/common/TechnicalSpecsEditor.vue';
+import PackageMeasureFields from '@/components/admin/common/PackageMeasureFields.vue';
+import RichTextEditor from '@/components/admin/common/RichTextEditor.vue';
+import { cleanSpecs } from '@/validators/technical-specs.validator';
 import inventoryItemService from "@/services/inventory-item.service";
 import adminProductService from "@/services/admin-product.service";
 import uploadService from "@/services/upload.service";
@@ -29,6 +34,10 @@ const PRODUCT_IMAGE_MAX_SIZE = 10 * 1024 * 1024;
 const PRODUCT_DETAIL_IMAGE_LIMIT = 4;
 
 const router = useRouter();
+const route = useRoute();
+const technicalEditor = ref(null);
+const packageEditor = ref(null);
+const legacyTechnicalPrefill = ref(false);
 const authStore = useAuthStore();
 const inventoryItems = ref([]);
 const products = ref([]);
@@ -56,18 +65,17 @@ const createdProduct = ref(null);
 
 const filters = reactive({
   keyword: "",
-  itemType: "",
+  categoryId: "",
   status: "",
 });
 
 const itemForm = reactive({
+  packageMeasure: null,
   categoryId: "",
   brandId: "",
   manufacturerId: "",
   itemCode: "",
   itemName: "",
-  itemType: "",
-  barcode: "",
   packageSize: "",
   unit: "",
   storageInstruction: "",
@@ -83,8 +91,6 @@ const inventoryItemSchema = toTypedSchema(
     manufacturerId: optionalObjectIdSchema,
     itemCode: requiredString("Ma hang kho la bat buoc"),
     itemName: requiredString("Ten hang kho la bat buoc"),
-    itemType: optionalString,
-    barcode: optionalString,
     packageSize: optionalString,
     unit: requiredString("Don vi tinh la bat buoc"),
     storageInstruction: optionalString,
@@ -108,6 +114,7 @@ const {
 });
 
 const productForm = reactive({
+  technicalSpecs: {}, productCode: '',
   name: "",
   slug: "",
   sellingPrice: "",
@@ -118,6 +125,7 @@ const productForm = reactive({
 
 const productFromInventorySchema = toTypedSchema(
   z.object({
+    productCode: optionalString,
     name: optionalString,
     slug: optionalSlugSchema,
     sellingPrice: optionalNonNegativeNumberSchema,
@@ -162,16 +170,6 @@ const productByInventoryItemId = computed(() => {
   return map;
 });
 
-const itemTypes = computed(() => {
-  return [
-    ...new Set(
-      inventoryItems.value
-        .map((item) => String(item.itemType || "").trim())
-        .filter(Boolean),
-    ),
-  ];
-});
-
 const filteredItems = computed(() => {
   const keyword = filters.keyword.trim().toLowerCase();
 
@@ -181,8 +179,7 @@ const filteredItems = computed(() => {
       [
         item.itemCode,
         item.itemName,
-        item.itemType,
-        item.barcode,
+        findCatalogItem(categories.value, item.categoryId)?.name,
         item.packageSize,
         item.unit,
         item.note,
@@ -190,10 +187,11 @@ const filteredItems = computed(() => {
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(keyword));
 
-    const matchType = !filters.itemType || item.itemType === filters.itemType;
+    const matchCategory =
+      !filters.categoryId || normalizeId(item.categoryId) === filters.categoryId;
     const matchStatus = !filters.status || item.status === filters.status;
 
-    return matchKeyword && matchType && matchStatus;
+    return matchKeyword && matchCategory && matchStatus;
   });
 });
 
@@ -243,13 +241,12 @@ function linkedProductLabel(item) {
 
 function resetItemForm() {
   Object.assign(itemForm, {
+    packageMeasure: null,
     categoryId: "",
     brandId: "",
     manufacturerId: "",
     itemCode: "",
     itemName: "",
-    itemType: "",
-    barcode: "",
     packageSize: "",
     unit: "",
     storageInstruction: "",
@@ -264,6 +261,7 @@ function resetProductForm() {
   createdProduct.value = null;
   resetProductValidation();
   Object.assign(productForm, {
+    technicalSpecs: JSON.parse(JSON.stringify(selectedItem.value?.technicalSpecs || {})), productCode: '',
     name: selectedItem.value?.itemName || "",
     slug: "",
     sellingPrice: "",
@@ -271,6 +269,7 @@ function resetProductForm() {
     description: "",
     status: "draft",
   });
+  legacyTechnicalPrefill.value = Boolean(selectedItem.value?.technicalSpecs && Object.keys(cleanSpecs(selectedItem.value.technicalSpecs) || {}).length);
   clearSelectedProductImages();
 }
 
@@ -285,6 +284,7 @@ function appendIfValue(payload, key, value) {
 
 function buildItemPayload() {
   const payload = {
+    packageMeasure: itemForm.packageMeasure?.value ? itemForm.packageMeasure : null,
     itemCode: trimValue(itemForm.itemCode),
     itemName: trimValue(itemForm.itemName),
     unit: trimValue(itemForm.unit),
@@ -295,8 +295,6 @@ function buildItemPayload() {
     "categoryId",
     "brandId",
     "manufacturerId",
-    "itemType",
-    "barcode",
     "packageSize",
     "storageInstruction",
     "note",
@@ -310,7 +308,7 @@ function buildItemPayload() {
     for (const key of ["categoryId", "brandId", "manufacturerId"]) {
       payload[key] = normalizeId(itemForm[key]) || null;
     }
-    for (const key of ["itemType", "barcode", "packageSize", "storageInstruction", "note"]) {
+    for (const key of ["packageSize", "storageInstruction", "note"]) {
       payload[key] = trimValue(itemForm[key]);
     }
     if (!trimValue(itemForm.expiryMonths)) payload.expiryMonths = null;
@@ -321,10 +319,12 @@ function buildItemPayload() {
 
 function buildProductPayload(uploadedImages = {}) {
   const payload = {
+    technicalSpecs: cleanSpecs(productForm.technicalSpecs),
     status: productForm.status || "draft",
   };
 
   appendIfValue(payload, "name", productForm.name);
+  appendIfValue(payload, "productCode", productForm.productCode);
   appendIfValue(payload, "slug", productForm.slug);
   appendIfValue(payload, "shortDescription", productForm.shortDescription);
   appendIfValue(payload, "description", productForm.description);
@@ -569,13 +569,12 @@ function openEditModal(item) {
   itemModalMode.value = "edit";
   currentItemId.value = getItemId(item);
   Object.assign(itemForm, {
+    packageMeasure: item.packageMeasure ? { ...item.packageMeasure } : null,
     categoryId: normalizeId(item.categoryId),
     brandId: normalizeId(item.brandId),
     manufacturerId: normalizeId(item.manufacturerId),
     itemCode: item.itemCode || "",
     itemName: item.itemName || "",
-    itemType: item.itemType || "",
-    barcode: item.barcode || "",
     packageSize: item.packageSize || "",
     unit: item.unit || "",
     storageInstruction: item.storageInstruction || "",
@@ -591,6 +590,7 @@ function closeItemModal() {
 }
 
 async function submitItemForm() {
+  if (!packageEditor.value?.validate()) return;
   const valid = await validateItemForm();
   if (!valid) return;
 
@@ -655,6 +655,7 @@ function closeProductModal() {
 }
 
 async function submitProductForm() {
+  if (productSaving.value) return;
   if (!canCreateProductFromInventory.value) {
     alert("Bạn không có quyền tạo sản phẩm từ hàng kho");
     return;
@@ -665,8 +666,10 @@ async function submitProductForm() {
     return;
   }
 
+  if (!technicalEditor.value?.validate()) return;
   const valid = await validateProductForm();
   if (!valid) return;
+  if (productSaving.value || createdProduct.value || hasLinkedProduct(selectedItem.value)) return;
 
   productSaving.value = true;
   try {
@@ -707,7 +710,7 @@ function statusBadgeClass(status) {
 }
 
 watch(
-  () => [filters.keyword, filters.itemType, filters.status],
+  () => [filters.keyword, filters.categoryId, filters.status],
   () => {
     currentPage.value = 1;
   },
@@ -720,7 +723,12 @@ watch(filteredItems, (list) => {
   }
 });
 
-onMounted(loadPageData);
+function openRequestedItem() {
+  const item = inventoryItems.value.find(item => getItemId(item) === route.query.edit);
+  if (item) openEditModal(item);
+}
+watch(() => route.query.edit, openRequestedItem);
+onMounted(async () => { await loadPageData(); openRequestedItem(); });
 </script>
 
 <template>
@@ -776,15 +784,23 @@ onMounted(loadPageData);
               v-model="filters.keyword"
               type="text"
               class="admin-toolbar__input"
-              placeholder="Tìm theo mã, tên, barcode, đơn vị"
+              placeholder="Tìm theo mã, tên, danh mục, đơn vị"
             />
           </div>
 
           <div class="col-md-3 col-lg-3">
-            <select v-model="filters.itemType" class="admin-toolbar__select">
-              <option value="">Tất cả loại hàng</option>
-              <option v-for="type in itemTypes" :key="type" :value="type">
-                {{ type }}
+            <select
+              v-model="filters.categoryId"
+              class="admin-toolbar__select"
+              aria-label="Lọc theo danh mục"
+            >
+              <option value="">Tất cả danh mục</option>
+              <option
+                v-for="category in categories"
+                :key="getEntityId(category)"
+                :value="getEntityId(category)"
+              >
+                {{ category.name }}
               </option>
             </select>
           </div>
@@ -815,7 +831,7 @@ onMounted(loadPageData);
               <tr>
                 <th>Mã hàng</th>
                 <th>Tên hàng</th>
-                <th>Loại</th>
+                <th>Danh mục</th>
 
                 <th>Thương hiệu</th>
                 <th>Nhà sản xuất</th>
@@ -831,7 +847,6 @@ onMounted(loadPageData);
               <tr v-for="item in paginatedItems" :key="getItemId(item)">
                 <td>
                   <strong>{{ item.itemCode }}</strong>
-                  <div class="inventory-cell-sub">{{ item.barcode || "---" }}</div>
                 </td>
 
                 <td>
@@ -841,7 +856,7 @@ onMounted(loadPageData);
                   </div>
                 </td>
 
-                <td>{{ item.itemType || "---" }}</td>
+                <td>{{ catalogName(categories, item.categoryId) }}</td>
 
                 <td>{{ catalogName(brands, item.brandId) }}</td>
                 <td>{{ catalogName(manufacturers, item.manufacturerId) }}</td>
@@ -947,6 +962,7 @@ onMounted(loadPageData);
 
         <form class="admin-form inventory-form" @submit.prevent="submitItemForm">
           <div class="admin-modal__body">
+            <PackageMeasureFields ref="packageEditor" v-model="itemForm.packageMeasure" />
             <div class="admin-form__row">
               <label class="admin-form__label">Mã hàng *</label>
               <div>
@@ -976,11 +992,6 @@ onMounted(loadPageData);
             </div>
 
             <div class="admin-form__row">
-              <label class="admin-form__label">Loại hàng</label>
-              <input v-model="itemForm.itemType" class="admin-form__control" />
-            </div>
-
-            <div class="admin-form__row">
               <label class="admin-form__label">Đơn vị *</label>
               <div>
                 <input
@@ -1000,13 +1011,8 @@ onMounted(loadPageData);
             </div>
 
             <div class="admin-form__row">
-              <label class="admin-form__label">Barcode</label>
-              <input v-model="itemForm.barcode" class="admin-form__control" />
-            </div>
-
-            <div class="admin-form__row">
-              <label class="admin-form__label">Danh mục</label>
-              <select v-model="itemForm.categoryId" class="admin-form__select">
+              <label for="inventory-item-category" class="admin-form__label">Danh mục</label>
+              <select id="inventory-item-category" v-model="itemForm.categoryId" class="admin-form__select">
                 <option value="">-- Chọn danh mục --</option>
                 <option
                   v-for="item in activeCatalogOptions(categories)"
@@ -1143,6 +1149,10 @@ onMounted(loadPageData);
                 <span>Đơn vị</span>
                 <strong>{{ selectedItem?.unit || "---" }}</strong>
               </div>
+              <div><span>Danh mục</span><strong>{{ catalogName(categories, selectedItem?.categoryId) }}</strong></div>
+              <div><span>Thương hiệu</span><strong>{{ catalogName(brands, selectedItem?.brandId) }}</strong></div>
+              <div><span>Nhà sản xuất</span><strong>{{ catalogName(manufacturers, selectedItem?.manufacturerId) }}</strong></div>
+              <div><span>Quy cách</span><strong>{{ selectedItem?.packageSize || 'Chưa công bố' }}<template v-if="selectedItem?.packageMeasure"> · {{ selectedItem.packageMeasure.value }} {{ selectedItem.packageMeasure.unit }}</template></strong></div>
             </div>
 
             <div v-if="createdProduct" class="inventory-product-created">
@@ -1161,6 +1171,8 @@ onMounted(loadPageData);
               </button>
             </div>
 
+            <h3>Thông tin bán hàng</h3>
+            <div class="admin-form__row"><label class="admin-form__label">Mã sản phẩm</label><input v-model="productForm.productCode" class="admin-form__control" placeholder="Tự tạo nếu để trống" /></div>
             <div class="admin-form__row">
               <label class="admin-form__label">Tên sản phẩm</label>
               <div>
@@ -1180,6 +1192,7 @@ onMounted(loadPageData);
               <div>
                 <input
                   v-model="productForm.slug"
+                  :placeholder="slugFromName(productForm.name || selectedItem?.itemName) || 'Tự tạo từ tên sản phẩm'"
                   class="admin-form__control"
                   :class="{ 'is-invalid': productErrors.slug }"
                 />
@@ -1310,12 +1323,10 @@ onMounted(loadPageData);
 
             <div class="admin-form__row">
               <label class="admin-form__label">Mô tả</label>
-              <textarea
-                v-model="productForm.description"
-                class="admin-form__textarea"
-                rows="4"
-              />
+              <RichTextEditor v-model="productForm.description" content-type="product" label="Mô tả sản phẩm" min-height="240px" />
             </div>
+            <p v-if="legacyTechnicalPrefill" class="admin-note">Đã điền dữ liệu kỹ thuật cũ để bạn kiểm tra. Khi lưu, thông số được quản lý tại sản phẩm website; dữ liệu kho cũ chỉ được giữ để đối chiếu.</p>
+            <TechnicalSpecsEditor ref="technicalEditor" v-model="productForm.technicalSpecs" :packaging="false" />
           </div>
 
           <div class="admin-modal__footer">

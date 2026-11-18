@@ -4,6 +4,13 @@ const CategoryService = require("../services/categories.service");
 const MongoDB = require("../utils/mongodb.util");
 const { deleteUnreferencedUpload } = require("../utils/local-upload.util");
 
+exports.compare = async (req, res, next) => {
+  try {
+    const data = await new ProductsService(MongoDB.client).compare(req.query.ids);
+    return res.send({ data });
+  } catch (error) { return next(error); }
+};
+
 async function safeDeleteLocalImage(imageUrl) {
   return deleteUnreferencedUpload(MongoDB.client, "products", imageUrl);
 }
@@ -114,6 +121,16 @@ exports.findByCategory = async (req, res, next) => {
   }
 };
 
+exports.findBySlug = async (req, res, next) => {
+  try {
+    const product = await new ProductsService(MongoDB.client).findPublicBySlug(req.params.slug);
+    if (!product) return next(new ApiError(404, "Sản phẩm không tồn tại"));
+    return res.send(product);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 exports.findOne = async (req, res, next) => {
   try {
     const productService = new ProductsService(MongoDB.client);
@@ -182,6 +199,9 @@ exports.update = async (req, res, next) => {
     });
   } catch (error) {
     await cleanUploadedFiles(req);
+    if (error.code === 11000 && error.keyPattern?.slug) {
+      return next(new ApiError(409, "Slug sản phẩm đã tồn tại"));
+    }
     return next(
       isApiError(error)
         ? error

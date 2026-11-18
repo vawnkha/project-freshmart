@@ -10,7 +10,6 @@ const {
 
 const canCreatePayment = authMiddleware.authorizeOwnerOrPermissions(
   (req) => req.body.user_id,
-  "payment:create:any",
 );
 
 router.use(authMiddleware);
@@ -25,6 +24,7 @@ router.post(
 router.post(
   "/capture-order",
   validate({ body: paypalCaptureOrderSchema }),
+  authMiddleware.authorizeOwnerOrPermissions((req) => req.body.user_id ?? req.user.id),
   payment.captureOrder,
 );
 

@@ -4,7 +4,7 @@ import { ref } from 'vue';
 const failed = ref(false);
 const illustration = new URL('../../../assets/images/user/approved-home/guidance.svg', import.meta.url).href;
 </script>
-<template>
+<!-- <template>
   <section class="home-sage-section home-sage-guidance" aria-labelledby="home-guide-title">
     <div class="container">
       <div class="home-sage-guide-panel reveal">
@@ -18,4 +18,4 @@ const illustration = new URL('../../../assets/images/user/approved-home/guidance
       </div>
     </div>
   </section>
-</template>
+</template> -->

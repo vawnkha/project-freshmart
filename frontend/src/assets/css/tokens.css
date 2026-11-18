@@ -1,0 +1,65 @@
+/* Hallmark · macrostructure: Operations workbench · tone: precise · anchor hue: Fresh Mart navy / teal · design-system: docs/design.md */
+.fm-dashboard {
+  --color-paper: var(--admin-card, #fff);
+  --color-paper-2: #f5f8fa;
+  --color-navy-soft: #edf2f8;
+  --color-on-dark-muted: #c5d8e7;
+  --color-icon-on-dark: #344f69;
+  --color-ink: var(--admin-sidebar, #223a57);
+  --color-muted: #52677e;
+  --color-rule: var(--admin-border, #dfe6ee);
+  --color-accent: #087f79;
+  --color-accent-ink: #fff;
+  --color-accent-soft: #e9f6f3;
+  --color-accent-on-dark: #8ee5d8;
+  --color-danger-on-dark: #ffb9bd;
+  --color-danger: #b6353f;
+  --color-danger-soft: #fff0f0;
+  --color-warning: #976019;
+  --color-warning-soft: #fff6e6;
+  --color-profit: #5577ac;
+  --color-focus: #087f79;
+  --font-display: inherit;
+  --font-body: inherit;
+  --space-3xs: 4px;
+  --space-2xs: 8px;
+  --space-xs: 12px;
+  --space-sm: 16px;
+  --space-md: 24px;
+  --space-lg: 32px;
+  --space-xl: 48px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-body: 14px;
+  --text-lg: 18px;
+  --text-xl: 28px;
+  --text-metric: 28px;
+  --radius-card: 12px;
+  --radius-control: 6px;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-short: 150ms;
+  --rule-width: 1px;
+  --shadow-tooltip: 0 4px 16px #223a5720;
+  --shadow-panel: 0 1px 3px #223a5708;
+}
+
+/* Hallmark · live chat: inherited Fresh Mart navy / teal, scoped to chat only. */
+.live-chat-scope {
+  --lc-font: "Aumyaec Roboto", Roboto, Arial, sans-serif;
+  --lc-paper: #fff;
+  --lc-surface: #f4f7fa;
+  --lc-ink: #223a57;
+  --lc-muted: #52677e;
+  --lc-border: #dfe6ee;
+  --lc-brand: #087f79;
+  --lc-brand-soft: #e9f6f3;
+  --lc-danger: #b6353f;
+  --lc-danger-soft: #fff0f0;
+  --lc-warning: #976019;
+  --lc-warning-soft: #fff6e6;
+  --lc-inverse-muted: #d3e4ed;
+  --lc-shadow: 0 12px 40px #223a5726;
+  --lc-radius: 12px;
+  --lc-space: 16px;
+  --lc-focus: #087f79;
+}

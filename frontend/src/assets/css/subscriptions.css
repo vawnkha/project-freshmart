@@ -1,0 +1,182 @@
+/* Hallmark · pre-emit critique: P4 H5 E4 S5 R5 V4
+ * design-system: docs/design.md · designed-as-app · existing account workspace.
+ * Module ownership: storefront rules stay inside subscription pages/dialogs;
+ * shared schedule and Admin consume their own semantic tokens. */
+.user-app.sage-storefront .subscription-page { padding-bottom:var(--space-12); }
+.user-app.sage-storefront .subscription-page .container { max-width:1120px; min-width:0; }
+.user-app.sage-storefront .subscription-page .page-heading p { margin-top:var(--space-2); }
+.user-app.sage-storefront .subscription-page .sage-field-placeholder,
+.user-app.sage-storefront .subscription-dialog .sage-field-placeholder { display:none; }
+.user-app.sage-storefront .subscription-page .sage-button,
+.user-app.sage-storefront .subscription-dialog .sage-button { min-height:44px; }
+.subscription-workspace { display:grid; gap:var(--space-6,24px); min-width:0; }
+.subscription-toolbar { display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:var(--space-4,16px); min-width:0; }
+.subscription-toolbar-filter { flex:0 1 260px; min-width:220px; }
+.subscription-toolbar-actions { display:flex; align-items:center; gap:var(--space-3,12px); }
+.subscription-toolbar-actions .sage-button { white-space:nowrap; }
+.subscription-toolbar-actions>button { width:128px; }
+.subscription-result-count { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.subscription-cards { display:grid; gap:var(--space-4,16px); }
+.subscription-card { min-width:0; border:1px solid var(--line); border-radius:var(--radius-card); padding:var(--space-6,24px); background:var(--surface); overflow-wrap:anywhere; }
+.subscription-list-card { padding:var(--space-4,16px); }
+.subscription-list-card .subscription-items { margin-block:var(--space-3,12px); }
+.subscription-card-summary { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:var(--space-4,16px); }
+.subscription-card-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:var(--space-3,12px); min-width:0; }
+.user-app.sage-storefront .subscription-card-heading h2,.user-app.sage-storefront .subscription-card-heading>a { font-size:18px; line-height:1.5; min-width:0; margin:0; overflow-wrap:anywhere; }
+.user-app.sage-storefront .subscription-card-heading>a { font-family:var(--font-mono); font-size:15px; font-weight:600; }
+.subscription-card-heading .subscription-status { flex-shrink:0; max-width:50%; }
+.subscription-card p { margin:var(--space-2,8px) 0 0; }
+.subscription-items { list-style:none; padding:0; margin:var(--space-4,16px) 0; display:grid; gap:var(--space-2,8px); }
+.subscription-items li { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:var(--space-2,8px) var(--space-4,16px); }
+.subscription-items li>span { flex:1 1 180px; min-width:0; }
+.subscription-items strong { font-size:14px; font-weight:500; }
+.subscription-facts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--space-4,16px); margin:0; }
+.subscription-facts>div { min-width:0; }
+.subscription-facts dt { font-size:14px; font-weight:400; color:var(--muted); margin-bottom:var(--space-1,4px); }
+.subscription-facts dd { margin:0; font-weight:500; font-variant-numeric:tabular-nums; }
+.subscription-detail-facts { margin-top:var(--space-4,16px); }
+.subscription-detail-link { display:inline-flex; align-items:center; min-height:44px; }
+.subscription-detail-sections { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--space-6,24px); margin-top:var(--space-6,24px); padding-top:var(--space-4,16px); border-top:1px solid var(--line); }
+.user-app.sage-storefront .subscription-detail-sections h3 { font-size:16px; margin:0 0 var(--space-3,12px); }
+.subscription-detail-sections .subscription-items { margin:0; }
+.subscription-detail-sections+.subscription-actions { margin-top:var(--space-6,24px); }
+.subscription-actions,.subscription-pagination { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-3,12px); min-width:0; }
+.subscription-pagination { justify-content:center; }
+.subscription-note,.subscription-policy { font-size:14px; line-height:1.6; color:var(--body-ink,var(--admin-text)); }
+.subscription-error { color:var(--danger,var(--admin-danger)); overflow-wrap:anywhere; }
+.subscription-status { display:inline-block; font-size:13px; line-height:1.5; padding:var(--space-1,4px) var(--space-2,8px); border-radius:var(--space-1,4px); background:var(--mist,var(--admin-bg)); color:var(--body-ink,var(--admin-text)); white-space:normal; font-weight:500; }
+.subscription-status[data-status="active"],.subscription-status[data-status="order_created"] { background:var(--success-soft,var(--admin-bg)); color:var(--success,var(--admin-sidebar)); }
+.subscription-status[data-status="paused"],.subscription-status[data-status="pending_payment"],.subscription-status[data-status="pending_confirmation"],.subscription-status[data-status="processing"] { background:var(--warning-soft,var(--admin-bg)); color:var(--warning,var(--admin-sidebar)); }
+.subscription-status[data-status="failed"],.subscription-status[data-status="cancelled"] { background:var(--danger-soft,var(--admin-bg)); color:var(--danger,var(--admin-sidebar-dark)); }
+.subscription-history,.subscription-preview { min-width:0; }
+.user-app.sage-storefront .subscription-history h2,.user-app.sage-storefront .subscription-preview h2,.user-app.sage-storefront .subscription-card>h2 { font-size:22px; margin:0 0 var(--space-4,16px); }
+.subscription-admin .subscription-history h2 { font-size:20px; margin:0 0 16px; }
+.subscription-schedule { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--space-3,12px); list-style:none; margin:0; padding:0; max-height:640px; overflow:auto; overscroll-behavior:contain; }
+.subscription-schedule>li { min-width:0; display:flex; align-items:flex-start; flex-direction:column; gap:var(--space-2,8px); border:1px solid var(--line,var(--admin-border)); padding:var(--space-4,16px); border-radius:var(--radius-input,8px); overflow-wrap:anywhere; }
+.subscription-schedule>li>span,.subscription-schedule p { font-size:14px; margin:0; }
+.subscription-run-heading { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:var(--space-2,8px); width:100%; }
+.subscription-run .subscription-actions { width:100%; }
+.subscription-run .subscription-actions:empty { display:none; }
+.subscription-run a,.subscription-run summary { display:inline-flex; align-items:center; min-height:44px; }
+.subscription-notifications { padding-left:var(--space-4,16px); margin:0; }
+.subscription-notifications li+li { margin-top:var(--space-3,12px); }
+.subscription-notifications p { font-size:14px; }
+.subscription-form { display:grid; gap:var(--space-4,16px); width:100%; max-width:960px; margin-inline:auto; min-width:0; }
+.subscription-form fieldset { min-width:0; border:1px solid var(--line); border-radius:var(--radius-card); padding:var(--space-4,16px) var(--space-6,24px) var(--space-6,24px); margin:0; display:grid; gap:var(--space-4,16px); }
+.user-app.sage-storefront .subscription-form legend { float:none; width:auto; max-width:100%; padding:0 var(--space-2,8px); margin:0; font:600 18px/1.5 var(--font-heading); color:var(--ink); }
+.subscription-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--space-4,16px); align-items:start; }
+.subscription-picker { position:relative; min-width:0; }
+.subscription-picker-results {
+  position:absolute;
+  z-index:2;
+  inset-inline:0;
+  inset-block-start:100%;
+  max-height:min(264px,45dvh);
+  overflow:auto;
+  border:1px solid var(--line-2);
+  border-radius:var(--radius-input);
+  background:var(--surface);
+  box-shadow:var(--shadow-2);
+}
+.subscription-picker-results ul { margin:0; padding:0; list-style:none; }
+.subscription-picker-results li {
+  display:flex;
+  align-items:center;
+  min-height:var(--field-size);
+  padding:var(--space-2) var(--space-3);
+  color:var(--ink);
+  overflow-wrap:anywhere;
+  cursor:pointer;
+}
+.subscription-picker-results li[aria-selected="true"] { background:var(--sage-tint); }
+@media (hover:hover) {
+  .subscription-picker-results li:hover { background:var(--sage-tint); }
+}
+.subscription-picker-results p { margin:0; padding:var(--space-3); color:var(--muted); }
+.subscription-picker-results [role="alert"] { color:var(--danger); }
+.subscription-product { display:grid; grid-template-columns:64px minmax(0,1fr) 155px auto; gap:var(--space-3,12px); align-items:center; min-width:0; border-top:1px solid var(--line); padding-top:var(--space-4,16px); }
+.subscription-product--no-image { grid-template-columns:minmax(0,1fr) 155px auto; }
+.subscription-product img { object-fit:contain; background:var(--mist); border-radius:var(--radius-input); }
+.subscription-product-copy { min-width:0; overflow-wrap:anywhere; }
+.subscription-product-copy p { font-size:14px; margin:var(--space-1,4px) 0 0; }
+.subscription-quantity { min-width:0; }
+.subscription-policy { padding:var(--space-4,16px); background:var(--mist); border-radius:var(--radius-input); }
+.subscription-policy p { margin:0; }
+.subscription-policy p+p { margin-top:var(--space-2,8px); }
+.subscription-preview { display:grid; gap:var(--space-3,12px); }
+.subscription-preview h2,.subscription-preview p { margin:0; }
+.user-app.sage-storefront .subscription-consent { display:flex; align-items:flex-start; gap:var(--space-3,12px); margin:var(--space-4,16px) 0; padding-block:var(--space-2,8px); min-height:44px; font-size:15px; font-weight:400; line-height:1.6; cursor:pointer; }
+.user-app.sage-storefront .subscription-consent input[type="checkbox"] { width:20px; height:20px; flex-shrink:0; margin:3px 0 0; accent-color:var(--sage); }
+.subscription-form>.sage-button,.subscription-preview>.sage-button { justify-self:start; }
+.subscription-purchase-link { margin-top:12px; align-self:flex-start; gap:8px; }
+.user-app.sage-storefront .subscription-edit-dialog .sage-overlay-panel { width:min(100%,1000px); }
+.user-app.sage-storefront .subscription-dialog .sage-overlay-content { display:grid; gap:var(--space-4); padding-top:var(--space-4); }
+.user-app.sage-storefront .subscription-dialog .sage-overlay-content>p { margin:0; }
+.user-app.sage-storefront .subscription-dialog .sage-overlay-footer { justify-content:flex-end; }
+.subscription-price-comparison { display:grid; gap:var(--space-3,12px); margin:0; padding:var(--space-4,16px); border-radius:var(--radius-input); background:var(--mist); }
+.subscription-price-comparison>div { display:flex; justify-content:space-between; gap:var(--space-3,12px); flex-wrap:wrap; }
+.subscription-price-comparison dt { font-weight:400; }
+.subscription-price-comparison dd { margin:0; font-weight:600; font-variant-numeric:tabular-nums; }
+.subscription-payment { min-width:0; display:grid; gap:var(--space-4,16px); }
+.subscription-payment p { margin:0; }
+.subscription-paypal-container { min-width:0; max-width:100%; }
+.subscription-admin { min-width:0; overflow-wrap:anywhere; }
+.subscription-admin>section { margin:20px 0; }
+.subscription-admin h2 { font-size:20px; overflow-wrap:anywhere; }
+.subscription-admin-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:16px 0; }
+.subscription-admin-stats .admin-panel { margin:0; }
+.subscription-admin-stats .admin-panel__body { padding:16px; }
+.subscription-admin-stats strong { display:block; font-size:24px; margin-top:8px; }
+.subscription-admin-filters { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px 12px; align-items:end; margin:20px 0; }
+.subscription-admin-filters label { min-width:0; display:grid; gap:8px; font-size:14px; margin:0; }
+.subscription-admin-filters label:first-child { grid-column:span 2; }
+.subscription-admin-filters input,.subscription-admin-filters select { width:100%; min-width:0; min-height:44px; }
+.subscription-admin-filters>.admin-btn { justify-self:start; }
+.subscription-admin .admin-btn,.subscription-admin-dialog .admin-btn { min-height:44px; }
+.subscription-admin .admin-pagination__controls { flex-wrap:wrap; }
+.subscription-admin .admin-pagination__btn { min-width:44px; min-height:44px; }
+.subscription-admin-row { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1.6fr) minmax(0,1fr) minmax(0,.8fr); gap:16px; padding:16px 0; border-top:1px solid var(--admin-border); align-items:start; overflow-wrap:anywhere; }
+.subscription-admin-row>* { min-width:0; }
+.subscription-admin-table-heading { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1.6fr) minmax(0,1fr) minmax(0,.8fr); gap:16px; padding-bottom:12px; font-weight:600; font-size:14px; }
+.subscription-admin .subscription-status[data-status="active"],.subscription-admin .subscription-status[data-status="order_created"] { background:color-mix(in srgb,var(--admin-success) 15%,var(--admin-card)); }
+.subscription-admin .subscription-status[data-status="paused"],.subscription-admin .subscription-status[data-status="pending_payment"],.subscription-admin .subscription-status[data-status="pending_confirmation"],.subscription-admin .subscription-status[data-status="processing"] { background:color-mix(in srgb,var(--admin-warning) 18%,var(--admin-card)); }
+.subscription-admin .subscription-status[data-status="failed"],.subscription-admin .subscription-status[data-status="cancelled"] { background:color-mix(in srgb,var(--admin-danger) 15%,var(--admin-card)); }
+.subscription-admin-row p { font-size:14px; margin:6px 0; }
+.subscription-admin-row ul { margin:0; padding-left:18px; }
+.subscription-admin-row .subscription-status { justify-self:start; }
+.subscription-admin-row>a,.subscription-admin-row>div>a { display:inline-flex; align-items:center; min-height:44px; }
+@media(max-width:1023px) {
+  .subscription-facts { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .subscription-admin-filters { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:767px) {
+  .subscription-grid,.subscription-detail-sections,.subscription-schedule { grid-template-columns:minmax(0,1fr); }
+  .subscription-form fieldset,.subscription-card { padding:var(--space-4,16px); }
+  .subscription-product { grid-template-columns:64px minmax(0,1fr); }
+  .subscription-product--no-image { grid-template-columns:minmax(0,1fr) auto; }
+  .subscription-quantity { width:155px; max-width:100%; }
+  .subscription-product>.sage-button { justify-self:end; align-self:end; }
+  .subscription-product--no-image .subscription-product-copy { grid-column:1/-1; }
+  .subscription-admin-stats { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .subscription-admin-row { grid-template-columns:minmax(0,1fr); gap:8px; }
+  .subscription-admin-table-heading { display:none; }
+}
+@media(max-width:575px) {
+  .subscription-toolbar { display:grid; grid-template-columns:minmax(0,1fr); }
+  .subscription-toolbar-filter { min-width:0; }
+  .subscription-toolbar-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .subscription-toolbar-actions .sage-button { padding-inline:var(--space-3,12px); }
+  .subscription-toolbar-actions>button { width:100%; }
+  .subscription-card-heading { flex-wrap:wrap; }
+  .subscription-card-heading>a,.subscription-card-heading>h2 { flex-basis:100%; }
+  .subscription-card-heading .subscription-status { max-width:100%; }
+  .subscription-facts { gap:var(--space-4,16px) var(--space-3,12px); }
+  .subscription-card-summary { grid-template-columns:minmax(0,1fr); gap:var(--space-2,8px); }
+  .subscription-admin-filters { grid-template-columns:minmax(0,1fr); }
+  .subscription-admin-filters label:first-child { grid-column:auto; }
+  .user-app.sage-storefront .subscription-dialog .sage-overlay-header { padding:var(--space-4); }
+  .user-app.sage-storefront .subscription-dialog .sage-overlay-content { padding-inline:var(--space-4); }
+  .user-app.sage-storefront .subscription-dialog .sage-overlay-footer { padding-inline:var(--space-4); }
+  .user-app.sage-storefront .subscription-dialog .sage-overlay-footer>.sage-button { width:100%; }
+}
+@media(prefers-reduced-motion:reduce) { .subscription-schedule { scroll-behavior:auto; } }

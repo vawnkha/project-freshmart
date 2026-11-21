@@ -4,9 +4,11 @@ import { captureAuthRequestContext, useAuthStore } from '@/stores/user/auth';
 import subscriptions from '@/services/subscriptions.service';
 import addressService from '@/services/address.service';
 import shippingService from '@/services/shipping-method.service';
+import discountService from '@/services/discount.service';
 import { normalizeList } from '@/utils/storefront.util';
 import { userError } from '@/utils/user-error.util';
-import { subscriptionPayload, subscriptionFormProblem, subscriptionMoney as money, subscriptionDate as date } from '@/utils/subscription.util';
+import { subscriptionPayload, subscriptionFormProblem, subscriptionItemsProblem, subscriptionMoney as money, subscriptionDate as date } from '@/utils/subscription.util';
+import CheckoutVoucherDialog from '@/components/user/checkout/CheckoutVoucherDialog.vue';
 import SageInput from '@/components/user/sage/SageInput.vue';
 import SageSelect from '@/components/user/sage/SageSelect.vue';
 import SageTextarea from '@/components/user/sage/SageTextarea.vue';
@@ -22,6 +24,11 @@ const invalidOwner = ref(false);
 const keyword = ref(''), matches = ref([]), searchError = ref(''), searching = ref(false);
 const pickerOpen = ref(false), activeIndex = ref(-1);
 const resultId = useId();
+const voucherId = useId();
+const voucherCodeLimit = 50;
+const voucherPicker = reactive({ open: false, loading: false, offers: [], error: '' });
+const voucherApplyError = ref('');
+let voucherRequest = null;
 let searchVersion = 0, searchTimer;
 let version = 0, disposed = false;
 const chosenAddress = computed(() => addresses.value.find(row => row._id === form.addressId));
@@ -31,6 +38,10 @@ const available = computed(() => (keyword.value.trim() ? matches.value : catalog
   .filter(row => !form.items.some(item => item.productId === row._id)));
 const activeResult = computed(() => available.value[activeIndex.value]);
 const pickerDisabled = computed(() => busy.value || invalidOwner.value || form.items.length >= 30);
+const voucherCode = computed(() => String(form.discountCode || '').trim());
+const voucherApplied = computed(() => !!(preview.value && voucherCode.value));
+const voucherPickerDisabled = computed(() => busy.value || invalidOwner.value || !!subscriptionItemsProblem(form.items));
+const voucherItemsKey = computed(() => JSON.stringify(subscriptionPayload(form).items));
 const addressOptions = computed(() => [{ value: '', label: 'Chọn địa chỉ nhận hàng' }, ...addresses.value.map(row => ({ value: row._id, label: `${row.full_name || row.fullName || ''} · ${row.address_line || row.address || ''}` }))]);
 const shippingOptions = computed(() => [{ value: '', label: 'Chọn phương thức vận chuyển' }, ...shipping.value.map(row => ({ value: row._id, label: `${row.name} · ${money(row.fee)}` }))]);
 function snapshotProduct(row) { return { productId: row._id, name: row.name, image: row.thumbnail || '', unit: row.unit || '', packageSize: row.packageSize || '', price: row.sellingPrice ?? row.price, quantity: 1 }; }
@@ -133,15 +144,69 @@ async function handlePickerKey(event) {
     document.getElementById(resultId + '-' + activeResult.value?._id)?.scrollIntoView?.({ block: 'nearest' });
   }
 }
-async function showPreview() {
+function closeVoucherPicker() {
+  voucherRequest = null;
+  Object.assign(voucherPicker, { open: false, loading: false, offers: [], error: '' });
+}
+
+function ownsVoucherRequest(request) {
+  return !disposed && voucherRequest === request && request.isCurrent();
+}
+
+async function openVoucherPicker() {
+  if (voucherPickerDisabled.value || voucherPicker.loading) return;
+  const request = captureAuthRequestContext();
+  if (!request) return;
+  voucherRequest = request;
+  Object.assign(voucherPicker, { open: true, loading: true, offers: [], error: '' });
+  try {
+    const { data } = await discountService.getAvailable(subscriptionPayload(form).items);
+    if (!Array.isArray(data)) throw new Error('Dữ liệu mã giảm giá không hợp lệ.');
+    if (ownsVoucherRequest(request)) {
+      voucherPicker.offers = data.filter(offer => typeof offer?.code === 'string' && offer.code.trim() && offer.code.length <= voucherCodeLimit);
+    }
+  } catch (cause) {
+    if (ownsVoucherRequest(request)) voucherPicker.error = userError(cause, 'Chưa thể tải mã giảm giá. Vui lòng thử lại.');
+  } finally {
+    if (ownsVoucherRequest(request)) voucherPicker.loading = false;
+  }
+}
+
+function selectVoucher(code) {
+  if (voucherPickerDisabled.value || !voucherRequest || !ownsVoucherRequest(voucherRequest) ||
+      !voucherPicker.offers.some(offer => offer.code === code)) return;
+  closeVoucherPicker();
+  form.discountCode = code;
+  void showPreview({ applyingVoucher: true });
+}
+
+function applyVoucher() {
+  if (voucherCode.value && !voucherApplied.value) void showPreview({ applyingVoucher: true });
+}
+
+function removeVoucher() {
+  form.discountCode = '';
+  error.value = '';
+}
+
+watch(() => form.discountCode, () => { voucherApplyError.value = ''; }, { flush: 'sync' });
+watch(voucherItemsKey, () => {
+  closeVoucherPicker();
+  voucherApplyError.value = '';
+}, { flush: 'sync' });
+watch(() => auth.accessToken, closeVoucherPicker, { flush: 'sync' });
+
+async function showPreview({ applyingVoucher = false } = {}) {
   if (busy.value || invalidOwner.value) return;
-  const context = captureAuthRequestContext(); error.value = ''; form.consent = false;
+  const context = captureAuthRequestContext();
+  const feedback = applyingVoucher ? voucherApplyError : error;
+  error.value = ''; voucherApplyError.value = ''; preview.value = null; form.consent = false;
   // The first estimate supplies a suggested cap. The second signed quote binds
   // the actual, visible cap. Backend remains the only schedule/pricing source.
   const missingCap = !Number(form.maximumTotal);
   const payload = subscriptionPayload(form); if (missingCap) payload.maximumTotal = 1000000000;
   const problem = subscriptionFormProblem({ ...form, maximumTotal: payload.maximumTotal });
-  if (problem) { error.value = problem; return; }
+  if (problem) { feedback.value = problem; return; }
   busy.value = true;
   try {
     let result = await subscriptions.preview(payload, !!props.initial, props.initial?._id);
@@ -152,7 +217,7 @@ async function showPreview() {
       result = await subscriptions.preview(subscriptionPayload(form), !!props.initial, props.initial?._id);
     }
     if (!disposed && context?.isCurrent()) preview.value = result;
-  } catch (cause) { if (!disposed && context?.isCurrent()) error.value = userError(cause, 'Không thể xem lịch và giá.'); }
+  } catch (cause) { if (!disposed && context?.isCurrent()) feedback.value = userError(cause, 'Không thể xem lịch và giá.'); }
   finally { if (!disposed) busy.value = false; }
 }
 async function submit() {
@@ -168,7 +233,8 @@ async function submit() {
 }
 watch(() => auth.userId, () => {
   invalidate(); invalidOwner.value = true; addresses.value = [];
-  form.addressId = ''; form.notes = ''; form.items = []; resetPicker();
+  form.addressId = ''; form.notes = ''; form.discountCode = ''; form.items = [];
+  resetPicker(); closeVoucherPicker();
   error.value = 'Phiên tài khoản đã thay đổi. Vui lòng tải lại trang.';
 }, { flush: 'sync' });
 onMounted(load);
@@ -215,7 +281,7 @@ onBeforeUnmount(() => { disposed = true; version++; clearTimeout(searchTimer); }
     </fieldset>
     <fieldset :disabled="busy||invalidOwner"><legend>Chu kỳ và thời gian</legend><div class="subscription-grid">
       <SageSelect v-model="form.frequency" label="Chu kỳ giao" :disabled="lockedFrequency" :hint="initial ? (lockedFrequency ? 'Lịch sử đã bắt đầu xử lý: giữ chu kỳ gốc; tạo đăng ký mới để đổi chu kỳ.' : 'Có thể đổi chu kỳ trước khi bất kỳ kỳ giao nào bắt đầu xử lý.') : undefined" :options="[{value:'every_14_days',label:'Mỗi 14 ngày'},{value:'monthly',label:'Hằng tháng'}]" />
-      <SageInput v-model="form.startDate" type="date" label="Ngày bắt đầu mong muốn" :min="initial ? undefined : policy.today" :disabled="!!initial" required />
+      <SageInput v-model="form.startDate" type="date" label="Ngày tạo đơn" :min="initial ? undefined : policy.today" :disabled="!!initial" required />
       <SageSelect v-model="form.endMode" label="Kết thúc đăng ký" :options="[{value:'count',label:'Theo số kỳ giao'},{value:'date',label:'Theo ngày kết thúc'}]" />
       <SageInput v-if="form.endMode==='count'" v-model="form.maxOccurrences" type="number" min="1" max="120" step="1" label="Số kỳ giao" required />
       <SageInput v-else v-model="form.endDate" type="date" :min="form.startDate" label="Ngày kết thúc vụ nuôi" required />
@@ -230,10 +296,33 @@ onBeforeUnmount(() => { disposed = true; version++; clearTimeout(searchTimer); }
     <fieldset :disabled="busy||invalidOwner"><legend>Thanh toán từng kỳ</legend><div class="subscription-grid">
       <SageSelect v-model="form.paymentMethod" label="Thanh toán từng kỳ" :options="[{value:'cod',label:'COD — thanh toán khi nhận hàng'},{value:'paypal',label:'PayPal — tự thanh toán từng kỳ'}]" />
       <SageInput v-model="form.maximumTotal" label="Giới hạn tổng tiền mỗi kỳ (đ)" type="number" min="1" max="1000000000" step="1" hint="Bao gồm phí vận chuyển. Để trống khi xem lịch lần đầu để nhận giá gợi ý." />
-      <SageInput v-model="form.discountCode" label="Mã giảm giá (nếu có)" maxlength="50" hint="Kiểm tra lại hiệu lực và đúng lô ở từng kỳ; mã hết hiệu lực sẽ cần xử lý." />
     </div></fieldset>
+    <section class="subscription-voucher" :aria-labelledby="voucherId + '-title'">
+      <div class="subscription-voucher-heading">
+        <h2 :id="voucherId + '-title'">Mã giảm giá (nếu có)</h2>
+        <SageButton variant="secondary" aria-haspopup="dialog" :disabled="voucherPickerDisabled" @click="openVoucherPicker">Chọn mã giảm giá</SageButton>
+      </div>
+      <label :for="voucherId">Nhập mã giảm giá</label>
+      <div class="subscription-voucher-entry">
+        <input :id="voucherId" v-model="form.discountCode" class="sage-control" type="text"
+          placeholder="Nhập mã giảm giá" autocomplete="off" :maxlength="voucherCodeLimit"
+          :disabled="busy || invalidOwner || voucherApplied"
+          :aria-describedby="voucherId + '-hint' + (voucherApplyError ? ' ' + voucherId + '-error' : '')"
+          @keydown.enter.prevent="applyVoucher" />
+        <SageButton v-if="!voucherApplied" :disabled="!voucherCode || busy || invalidOwner" @click="applyVoucher">Áp dụng</SageButton>
+        <SageButton v-if="voucherCode" variant="secondary" :disabled="busy || invalidOwner" @click="removeVoucher">Bỏ mã</SageButton>
+      </div>
+      <p :id="voucherId + '-hint'" class="subscription-note">Mã được kiểm tra lại ở từng kỳ theo hiệu lực và lô hàng.</p>
+      <p v-if="voucherApplyError" :id="voucherId + '-error'" class="subscription-error" role="alert">{{ voucherApplyError }}</p>
+      <p v-if="voucherApplied" class="subscription-voucher-summary" role="status">
+        <strong>{{ voucherCode }}</strong><span>Dự kiến giảm {{ money(preview.discountAmount) }} mỗi kỳ</span>
+      </p>
+      <CheckoutVoucherDialog recurring :open="voucherPicker.open" :loading="voucherPicker.loading"
+        :offers="voucherPicker.offers" :error="voucherPicker.error" :applied-code="voucherApplied ? voucherCode.toUpperCase() : undefined"
+        @close="closeVoucherPicker" @retry="openVoucherPicker" @select="selectVoucher" />
+    </section>
     <div class="subscription-policy"><p>{{ policy.pricePolicy }}</p><p>Hệ thống yêu cầu xác nhận lại nếu tổng vượt giới hạn bạn nhập hoặc tăng quá {{ policy.priceIncreasePercent }}% so với giá đã xác nhận. Tạo đơn trước ngày mong muốn {{ policy.leadDays }} ngày.</p><p>{{ policy.deliveryPolicy }}<span v-if="chosenShipping?.estimatedDays"> Vận chuyển dự kiến: {{ chosenShipping.estimatedDays }} ngày.</span></p><p>Đăng ký không giữ kho. Tạm dừng/tiếp tục giữ lịch gốc và bỏ qua kỳ đã trôi qua. Hủy đăng ký không tự hủy đơn đã tạo.</p><p v-if="form.paymentMethod==='paypal'">Mỗi kỳ cần bạn chủ động phê duyệt PayPal. Không tự động thu tiền; không dùng lại giao dịch cũ.</p></div>
-    <SageButton variant="secondary" :loading="busy" :disabled="invalidOwner" @click="showPreview">Xem lịch và giá dự kiến</SageButton>
+    <SageButton variant="secondary" :loading="busy" :disabled="invalidOwner" @click="showPreview()">Xem lịch và giá dự kiến</SageButton>
     <section v-if="preview" class="subscription-preview" aria-label="Lịch giao dự kiến"><h2>Lịch giao dự kiến · {{ initial ? preview.futureOccurrences : preview.totalOccurrences }} kỳ{{ initial ? ' chưa xử lý' : '' }}</h2><p v-if="initial && preview.lockedOccurrenceCount">{{ preview.lockedOccurrenceCount }} kỳ đã bắt đầu xử lý được giữ nguyên. Các kỳ đã trôi qua không được tự tạo đơn bù.</p>
       <p><strong>{{ money(preview.estimatedTotal) }}/kỳ</strong> · Phí vận chuyển {{ money(preview.shippingFee) }} · Giảm giá {{ money(preview.discountAmount) }}</p><p>Tổng tham khảo {{ money(preview.estimatedAllOccurrences) }}; đây chưa phải khoản thanh toán đã xác nhận.</p>
       <ol class="subscription-schedule"><li v-for="row in preview.schedule" :key="row.occurrenceNumber"><strong>Kỳ {{ row.occurrenceNumber }}</strong><span>Mong muốn nhận: {{ date(row.wishDate) }}</span><span>Xử lý từ: {{ date(row.processAt) }}</span><span>{{ form.items.reduce((sum,item)=>sum+Number(item.quantity),0) }} sản phẩm · {{ money(preview.estimatedTotal) }} dự kiến</span></li></ol>

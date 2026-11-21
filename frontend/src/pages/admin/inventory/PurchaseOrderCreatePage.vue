@@ -6,6 +6,7 @@ import { useRoute, useRouter } from "vue-router";
 import purchaseOrderService from "@/services/purchase-order.service";
 import supplierService from "@/services/supplier.service";
 import inventoryItemService from "@/services/inventory-item.service";
+import InventoryItemPicker from "@/components/admin/inventory/InventoryItemPicker.vue";
 import {
   dateStringSchema,
   nonNegativeNumberSchema,
@@ -17,6 +18,7 @@ import {
 } from "@/validators/common.validator";
 import { mapBackendValidationErrors } from "@/utils/validation-error.util";
 import { normalizeId } from "@/utils/id.util";
+import { slugFromName } from "@/utils/slug.util";
 import { useAuthStore } from "@/stores/user/auth";
 import { hasPermission } from "@/utils/permission.util";
 import { loadWhenAllowed } from "@/utils/authorized-load.util";
@@ -30,6 +32,7 @@ const suppliers = ref([]);
 const inventoryItems = ref([]);
 const loading = ref(false);
 const saving = ref(false);
+let nextRowKey = 0;
 
 const form = reactive({
   supplierId: "",
@@ -112,6 +115,20 @@ function getInventoryItem(id) {
   return inventoryItems.value.find((item) => getId(item) === id);
 }
 
+const inventoryOptions = computed(() =>
+  inventoryItems.value.flatMap((item) => {
+    const id = getId(item);
+    if (!id) return [];
+    const label = `${item.itemCode} - ${item.itemName}`;
+    return [{
+      id,
+      label,
+      searchText: slugFromName(label).replaceAll("-", ""),
+      disabled: Boolean(item.status && item.status !== "active"),
+    }];
+  }),
+);
+
 function formatPrice(value) {
   return Number(value || 0).toLocaleString("vi-VN") + " VND";
 }
@@ -128,6 +145,7 @@ function makeBatchNumber() {
 
 function addItemRow() {
   form.items.push({
+    rowKey: nextRowKey++,
     inventoryItemId: "",
     quantity: 1,
     importPrice: 0,
@@ -152,8 +170,9 @@ function itemError(index, field) {
   );
 }
 
-function onInventoryItemChange(row) {
-  const item = getInventoryItem(row.inventoryItemId);
+function onInventoryItemChange(row, id) {
+  row.inventoryItemId = id;
+  const item = getInventoryItem(id);
   row.unit = item?.unit || "";
   row.packageSize = item?.packageSize || "";
 }
@@ -239,7 +258,7 @@ onMounted(async () => {
       form.supplierId = normalizeId(current.supplierId);
       form.purchaseCode = current.purchaseCode || "";
       form.note = current.note || "";
-      form.items = (current.items || []).map((item) => ({ ...item, inventoryItemId: normalizeId(item.inventoryItemId),
+      form.items = (current.items || []).map((item) => ({ ...item, rowKey: nextRowKey++, inventoryItemId: normalizeId(item.inventoryItemId),
         manufacturingDate: item.manufacturingDate ? new Date(item.manufacturingDate).toISOString().slice(0, 10) : "",
         expiryDate: item.expiryDate ? new Date(item.expiryDate).toISOString().slice(0, 10) : "", }));
     } catch (error) { alert(error?.response?.data?.message || error.message); router.replace({ name: "admin-purchase-orders" }); }
@@ -252,7 +271,7 @@ onMounted(async () => {
     <div class="admin-page-title admin-page-title--stack">
       <h1>{{ editingId ? 'Sửa phiếu nhập nháp' : 'Tạo phiếu nhập kho' }}</h1>
       <p v-if="missingOptionPermissions.length" role="alert">Cần quyền đọc nhà cung cấp và hàng kho để chọn dữ liệu phiếu nhập. Vui lòng liên hệ quản trị viên.</p>
-      <p>Chọn nhà cung cấp và hàng kho bằng dropdown, không nhập ObjectId thủ công.</p>
+      <p>Chọn nhà cung cấp, rồi tìm hàng kho theo mã hoặc tên trong từng dòng hàng nhập.</p>
     </div>
 
     <section class="admin-panel">
@@ -329,7 +348,7 @@ onMounted(async () => {
 
             <div
               v-for="(row, index) in form.items"
-              :key="index"
+              :key="row.rowKey"
               class="purchase-order-line"
             >
               <div class="purchase-order-line__top">
@@ -345,25 +364,14 @@ onMounted(async () => {
 
               <div class="purchase-order-grid">
                 <div class="purchase-order-field purchase-order-field--wide">
-                  <label>Hàng kho *</label>
-                  <select
-                    v-model="row.inventoryItemId"
-                    class="admin-form__select"
-                    :class="{ 'is-invalid': itemError(index, 'inventoryItemId') }"
-                    @change="onInventoryItemChange(row)"
-                  >
-                    <option value="">-- Chọn hàng kho --</option>
-                    <option
-                      v-for="item in activeItems(inventoryItems)"
-                      :key="getId(item)"
-                      :value="getId(item)"
-                    >
-                      {{ item.itemCode }} - {{ item.itemName }}
-                    </option>
-                  </select>
-                  <div v-if="itemError(index, 'inventoryItemId')" class="admin-form__error">
-                    {{ itemError(index, "inventoryItemId") }}
-                  </div>
+                  <label :for="`purchase-order-inventory-${row.rowKey}`">Hàng kho *</label>
+                  <InventoryItemPicker
+                    :id="`purchase-order-inventory-${row.rowKey}`"
+                    :model-value="row.inventoryItemId"
+                    :options="inventoryOptions"
+                    :error="itemError(index, 'inventoryItemId')"
+                    @update:model-value="onInventoryItemChange(row, $event)"
+                  />
                 </div>
 
                 <div class="purchase-order-field">

@@ -332,7 +332,7 @@ onMounted(fetchContacts);
                 </div>
               </div>
 
-              <div class="contact-detail__actions">
+              <div class="contact-detail__actions admin-action-row">
                 <button
                   v-if="canReplyContacts"
                   class="admin-btn admin-btn--primary"

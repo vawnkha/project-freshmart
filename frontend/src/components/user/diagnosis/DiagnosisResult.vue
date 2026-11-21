@@ -13,7 +13,7 @@ const dateTime = value => new Date(value).toLocaleString('vi-VN', { timeZone: 'A
 </script>
 <template>
   <section class="diagnosis-result" :class="{ 'diagnosis-result--dialog': inDialog }" aria-label="Kết quả phân tích đã lưu">
-    <div class="diagnosis-result-image">
+    <div v-if="inDialog" class="diagnosis-result-image">
       <DiagnosisImage v-if="record._id" :id="record._id" />
       <p v-else>Không có ảnh đã lưu.</p>
     </div>

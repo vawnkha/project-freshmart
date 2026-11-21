@@ -100,6 +100,15 @@
 .subscription-product-copy { min-width:0; overflow-wrap:anywhere; }
 .subscription-product-copy p { font-size:14px; margin:var(--space-1,4px) 0 0; }
 .subscription-quantity { min-width:0; }
+.subscription-voucher { display:grid; gap:var(--space-2); min-width:0; padding:var(--space-4) var(--space-6); border:1px solid var(--line); border-radius:var(--radius-card); }
+.subscription-voucher-heading,.subscription-voucher-entry,.subscription-voucher-summary { display:flex; flex-wrap:wrap; gap:var(--space-2) var(--space-3); align-items:center; }
+.subscription-voucher-heading,.subscription-voucher-summary { justify-content:space-between; }
+.subscription-voucher h2 { margin:0; font:600 18px/1.5 var(--font-heading); }
+.subscription-voucher label { margin:0; font-weight:600; }
+.subscription-voucher-entry .sage-control { flex:1 1 240px; min-width:0; }
+.subscription-voucher p { margin:0; }
+.subscription-voucher-summary { padding:var(--space-3); border-radius:var(--radius-input); background:var(--sage-tint); overflow-wrap:anywhere; }
+.user-app.sage-storefront .subscription-voucher .checkout-voucher-dialog .sage-overlay-panel { width:min(100%,620px); }
 .subscription-policy { padding:var(--space-4,16px); background:var(--mist); border-radius:var(--radius-input); }
 .subscription-policy p { margin:0; }
 .subscription-policy p+p { margin-top:var(--space-2,8px); }
@@ -151,7 +160,7 @@
 }
 @media(max-width:767px) {
   .subscription-grid,.subscription-detail-sections,.subscription-schedule { grid-template-columns:minmax(0,1fr); }
-  .subscription-form fieldset,.subscription-card { padding:var(--space-4,16px); }
+  .subscription-form fieldset,.subscription-voucher,.subscription-card { padding:var(--space-4,16px); }
   .subscription-product { grid-template-columns:64px minmax(0,1fr); }
   .subscription-product--no-image { grid-template-columns:minmax(0,1fr) auto; }
   .subscription-quantity { width:155px; max-width:100%; }

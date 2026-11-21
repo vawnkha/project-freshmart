@@ -22,11 +22,11 @@ const openGroups = ref({
   catalog: false,
   inventory: false,
   products: false,
+  discounts: false,
   content: false,
 });
 
 const menus = [
-  { key: 'live-chat', label: 'Chat hỗ trợ khách hàng', icon: 'fa-solid fa-comments', to: { name: 'admin-live-chat' }, names: ['admin-live-chat'], permission: 'chat:read' },
   {
     key: "dashboard",
     label: "Dashboard",
@@ -34,6 +34,7 @@ const menus = [
     to: { name: "admin-dashboard" },
     names: ["admin-dashboard"],
   },
+  { key: 'live-chat', label: 'Chat hỗ trợ khách hàng', icon: 'fa-solid fa-comments', to: { name: 'admin-live-chat' }, names: ['admin-live-chat'], permission: 'chat:read' },
   {
     key: "users",
     label: "Quản lý người dùng",
@@ -174,13 +175,24 @@ const menus = [
   },
   {
     key: "discounts",
-    label: "Mã giảm giá",
+    label: "Khuyến mãi",
     icon: "fa-solid fa-ticket",
-    to: { name: "admin-discounts" },
-    names: ["admin-discounts"],
+    to: null,
+    names: ["admin-discounts", "admin-promotion-proposals"],
+    children: [
+      {
+        label: "Mã giảm giá",
+        to: { name: "admin-discounts" },
+        names: ["admin-discounts"],
+      },
+      {
+        label: "Duyệt giảm giá theo lô",
+        to: { name: "admin-promotion-proposals" },
+        names: ["admin-promotion-proposals"],
+      },
+    ],
     permission: "discount:manage",
   },
-  { key: "promotion-proposals", label: "Duyệt giảm giá theo lô", icon: "fa-solid fa-clipboard-check", to: { name: "admin-promotion-proposals" }, names: ["admin-promotion-proposals"], permission: "discount:manage" },
   {
     key: "content",
     label: "Tin tức",
@@ -297,6 +309,8 @@ function syncOpenGroupsByRoute() {
     "admin-purchase-order-detail",
   ].includes(route.name);
 
+  openGroups.value.discounts = menus.some((item) => item.key === "discounts" && isActive(item));
+
   openGroups.value.content = [
     "admin-news-categories",
     "admin-news",
@@ -356,6 +370,7 @@ watch(
             type="button"
             class="admin-menu__link admin-menu__toggle"
             :class="{ 'is-active': isActive(item) }"
+            :aria-expanded="!!openGroups[item.key]"
             @click="toggleGroup(item.key)"
           >
             <span class="admin-menu__left">

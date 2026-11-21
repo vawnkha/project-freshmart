@@ -142,7 +142,6 @@ onMounted(fetchData);
   <div class="admin-page">
     <div class="admin-page-title admin-page-title--stack">
       <h1>Chi tiết phiếu nhập</h1>
-      <p>Xem snapshot hàng nhập, confirm import và kiểm tra lô/tồn/giao dịch.</p>
     </div>
 
     <div v-if="loading" class="admin-empty-state">Đang tải phiếu nhập...</div>

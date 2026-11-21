@@ -50,7 +50,7 @@ onBeforeUnmount(() => notificationStore.resetSession());
     </template>
 
     <template v-else>
-      <div class="admin-shell" :class="{ 'admin-shell--expiry': isExpiryPage, 'admin-shell--menu-open': isExpiryPage && mobileNavigation }" @keydown.esc="mobileNavigation=false">
+      <div class="admin-shell" :class="{ 'admin-shell--expiry': isExpiryPage, 'admin-shell--menu-open': isExpiryPage && mobileNavigation, 'admin-shell--chat': route.name === 'admin-live-chat' }" @keydown.esc="mobileNavigation=false">
         <AdminSidebar />
         <button v-if="isExpiryPage && mobileNavigation" class="expiry-navigation-backdrop" aria-label="Đóng điều hướng" @click="mobileNavigation=false"></button>
         <div class="admin-content">
@@ -68,6 +68,20 @@ onBeforeUnmount(() => notificationStore.resetSession());
 
 <style scoped>
 .expiry-navigation-toggle,.expiry-navigation-backdrop{display:none}
+.admin-shell--chat{min-height:100dvh}
+.admin-shell--chat .admin-content{
+  display:flex;
+  flex-direction:column;
+  height:100dvh;
+  min-height:460px;
+}
+.admin-shell--chat :deep(.admin-topbar),.admin-shell--chat .expiry-navigation-toggle{flex-shrink:0}
+.admin-shell--chat main.admin-page{
+  display:flex;
+  flex-direction:column;
+  flex:1;
+  min-height:0;
+}
 @media(max-width:767px){
   .admin-shell--expiry .admin-content{margin-left:0;width:100%;min-width:0}
   .admin-shell--expiry :deep(.admin-sidebar){visibility:hidden;transform:translateX(-100%);width:min(280px,85vw)}

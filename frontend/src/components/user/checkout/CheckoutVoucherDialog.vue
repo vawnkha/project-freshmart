@@ -5,7 +5,7 @@ import { formatMoney } from "@/utils/storefront.util";
 import { batchOfferCustomName, expiryDateTime } from "@/utils/expiry.util";
 
 defineProps({
-  open: Boolean, loading: Boolean, error: String, appliedCode: String,
+  open: Boolean, loading: Boolean, error: String, appliedCode: String, recurring: Boolean,
   offers: { type: Array, default: () => [] },
 });
 const emit = defineEmits(["close", "retry", "select"]);
@@ -26,21 +26,25 @@ function offerTitle(offer) {
     :model-value="open" class="checkout-voucher-dialog" title="Chọn mã giảm giá"
     @update:model-value="!$event && emit('close')"
   >
-    <p v-if="loading" role="status">Đang kiểm tra mã cho giỏ hàng…</p>
+    <p v-if="loading" role="status">{{ recurring ? 'Đang kiểm tra mã cho các sản phẩm đã chọn…' : 'Đang kiểm tra mã cho giỏ hàng…' }}</p>
     <div v-else-if="error" class="voucher-picker-state">
       <p role="alert">{{ error }}</p>
       <SageButton variant="secondary" @click="emit('retry')">Thử lại</SageButton>
     </div>
-    <p v-else-if="!offers.length">Hiện chưa có mã công khai phù hợp với giỏ hàng. Nếu có mã riêng, bạn có thể nhập mã ở trang thanh toán.</p>
+    <p v-else-if="!offers.length">{{ recurring
+      ? 'Hiện chưa có mã công khai phù hợp với các sản phẩm đã chọn. Bạn vẫn có thể nhập mã riêng.'
+      : 'Hiện chưa có mã công khai phù hợp với giỏ hàng. Nếu có mã riêng, bạn có thể nhập mã ở trang thanh toán.' }}</p>
     <template v-else>
-      <p class="voucher-picker-hint">Chọn một mã để áp dụng cho đơn này.</p>
+      <p class="voucher-picker-hint">{{ recurring
+        ? 'Mức giảm tính theo giá và tồn kho hiện tại. Mã sẽ được kiểm tra lại ở từng kỳ.'
+        : 'Chọn một mã để áp dụng cho đơn này.' }}</p>
       <ul class="voucher-picker-list" aria-label="Mã giảm giá khả dụng">
         <li v-for="offer in offers" :key="offer.code" class="voucher-picker-card">
           <div class="voucher-picker-row">
             <strong>{{ offerTitle(offer) }}</strong>
-            <strong class="voucher-picker-saving">Giảm {{ formatMoney(offer.discountAmount) }}</strong>
+            <strong class="voucher-picker-saving">{{ recurring ? 'Dự kiến giảm' : 'Giảm' }} {{ formatMoney(offer.discountAmount) }}</strong>
           </div>
-          <p v-if="offer.batchOffer">Giảm {{ offer.value }}% cho {{ offer.eligibleQuantity }} sản phẩm<span v-if="offer.batchOffer.productName && offerTitle(offer) !== offer.batchOffer.productName"> {{ offer.batchOffer.productName }}</span> trong giỏ từ lô ưu đãi.</p>
+          <p v-if="offer.batchOffer">Giảm {{ offer.value }}% cho {{ offer.eligibleQuantity }} sản phẩm<span v-if="offer.batchOffer.productName && offerTitle(offer) !== offer.batchOffer.productName"> {{ offer.batchOffer.productName }}</span>{{ recurring ? ' thuộc lô ưu đãi.' : ' trong giỏ từ lô ưu đãi.' }}</p>
           <p v-else>{{ scopes[offer.scope] }}</p>
           <p v-if="offer.minOrderValue > 0 || offer.endDate" class="voucher-picker-meta">
             <span v-if="offer.minOrderValue > 0">Đơn từ {{ formatMoney(offer.minOrderValue) }}</span>

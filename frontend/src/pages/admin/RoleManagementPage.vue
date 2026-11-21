@@ -205,8 +205,8 @@ async function removeRole(role) {
 
 function permissionText(role) {
   const count = role.permissions?.length || 0;
-  if (count === permissions.value.length && count > 0) return "Tat ca quyen";
-  return `${count} quyen`;
+  if (count === permissions.value.length && count > 0) return "Tất cả quyền";
+  return `${count} quyền`;
 }
 
 onMounted(fetchData);
@@ -216,27 +216,27 @@ onMounted(fetchData);
   <div class="admin-page">
     <div class="admin-page-title admin-page-title--stack">
       <h1>Quản lý phân quyền</h1>
-      <p>Tao role dong va gan permission theo tung nhom nghiep vu.</p>
+      
     </div>
 
     <div class="admin-stat-row admin-stat-row--roles">
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Tong role</div>
+        <div class="admin-stat-card__label">Tổng role</div>
         <div class="admin-stat-card__value">{{ totalRoles }}</div>
       </div>
 
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Dang hoat dong</div>
+        <div class="admin-stat-card__label">Đang hoạt động</div>
         <div class="admin-stat-card__value">{{ activeRoles }}</div>
       </div>
 
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Role tuy chinh</div>
+        <div class="admin-stat-card__label">Role tùy chỉnh</div>
         <div class="admin-stat-card__value">{{ customRoles }}</div>
       </div>
 
       <div class="admin-stat-card">
-        <div class="admin-stat-card__label">Permission</div>
+        <div class="admin-stat-card__label">Quyền</div>
         <div class="admin-stat-card__value">{{ totalPermissions }}</div>
       </div>
     </div>
@@ -244,26 +244,25 @@ onMounted(fetchData);
     <section class="admin-panel admin-panel--roles">
       <div class="admin-panel__header admin-panel__header--flex">
         <div>
-          <div class="admin-panel__header-title">Danh sach role</div>
+          <div class="admin-panel__header-title">Danh sách role</div>
           <div class="admin-panel__header-subtitle">
-            Moi role duoc gan mot tap permission rieng va co the gan cho nhieu
-            nguoi dung.
+            Mỗi role được gán một tập quyền riêng và có thể gán cho nhiều người dùng.
           </div>
         </div>
 
         <div class="admin-role-actions">
           <button class="admin-btn admin-btn--secondary" @click="fetchData">
-            Lam moi
+            Làm mới
           </button>
           <button class="admin-btn admin-btn--primary" @click="openCreateForm">
-            Them role
+            Thêm role
           </button>
         </div>
       </div>
 
       <div class="admin-panel__body">
         <div v-if="loading" class="admin-empty-state">
-          Dang tai du lieu phan quyen...
+          Đang tải dữ liệu phân quyền...
         </div>
 
         <div v-else class="admin-role-grid">
@@ -288,7 +287,7 @@ onMounted(fetchData);
 
             <div class="admin-role-card__meta">
               <span>{{ permissionText(role) }}</span>
-              <span v-if="role.is_system">Role he thong</span>
+              <span v-if="role.is_system">Role hệ thống</span>
               <span v-else>Role tuy chinh</span>
             </div>
 
@@ -314,14 +313,14 @@ onMounted(fetchData);
                 :disabled="isSystemAdmin(role) && authStore.role !== 'admin'"
                 @click="openEditForm(role)"
               >
-                Sua
+                Sửa
               </button>
               <button
                 class="admin-btn admin-btn--danger"
                 :disabled="role.is_system"
                 @click="removeRole(role)"
               >
-                Xoa
+                Xóa
               </button>
             </div>
           </article>

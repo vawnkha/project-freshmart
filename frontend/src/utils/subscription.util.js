@@ -18,10 +18,15 @@ export function subscriptionPayload(form) {
     maximumTotal: Number(form.maximumTotal), consent: true,
   };
 }
+export function subscriptionItemsProblem(items) {
+  if (!items.length) return 'Chọn ít nhất một sản phẩm.';
+  if (items.some(item => !/^[a-f\d]{24}$/i.test(item.productId) || !Number.isSafeInteger(Number(item.quantity)) || Number(item.quantity) < 1 || Number(item.quantity) > 10000)) return 'Số lượng mỗi kỳ phải là số nguyên từ 1 đến 10.000.';
+  if (new Set(items.map(item => item.productId)).size !== items.length) return 'Không chọn trùng sản phẩm.';
+  return '';
+}
 export function subscriptionFormProblem(form) {
-  if (!form.items.length) return 'Chọn ít nhất một sản phẩm.';
-  if (form.items.some(item => !/^[a-f\d]{24}$/i.test(item.productId) || !Number.isSafeInteger(Number(item.quantity)) || Number(item.quantity) < 1 || Number(item.quantity) > 10000)) return 'Số lượng mỗi kỳ phải là số nguyên từ 1 đến 10.000.';
-  if (new Set(form.items.map(item => item.productId)).size !== form.items.length) return 'Không chọn trùng sản phẩm.';
+  const itemsProblem = subscriptionItemsProblem(form.items);
+  if (itemsProblem) return itemsProblem;
   if (!form.startDate || (form.endMode === 'date' && (!form.endDate || form.endDate < form.startDate))) return 'Kiểm tra ngày bắt đầu và kết thúc.';
   if (form.endMode !== 'date' && (!Number.isSafeInteger(Number(form.maxOccurrences)) || Number(form.maxOccurrences) < 1 || Number(form.maxOccurrences) > 120)) return 'Số kỳ phải từ 1 đến 120.';
   if (!form.addressId || !form.shippingMethodId) return 'Chọn địa chỉ và phương thức vận chuyển.';

@@ -29,8 +29,6 @@ exports.create = async (req, res, next) => {
       return next(new ApiError(400, rs?.error || "Không thể tạo đơn hàng"));
     }
 
-    const order = rs.order;
-
     return res.send({
       message: "Đặt hàng thành công",
       data: rs,

@@ -17,6 +17,16 @@ const {
   optionalString,
 } = require("./common.validator");
 
+const sellingPriceSchema = z.preprocess(
+  value => value === null || value === '' ? null : typeof value === 'string' ? Number(value) : value,
+  z.number().finite().min(0).nullable().optional(),
+);
+
+const catalogReferenceSchema = z.preprocess(
+  value => value === '' || value === null ? null : value,
+  objectIdSchema.nullable().optional(),
+);
+
 const productStatusSchema = z.enum(
   ["draft", "active", "inactive", "out_of_stock", "out_stock", "in_stock"],
   { message: "status khong hop le" },
@@ -56,14 +66,14 @@ const productCategoryParamSchema = z.object({
 const productCreateSchema = z
   .object({
     ...directProductFields,
-    brandId: optionalObjectIdSchema,
-    manufacturerId: optionalObjectIdSchema,
+    brandId: catalogReferenceSchema,
+    manufacturerId: catalogReferenceSchema,
     name: nonEmptyString,
     slug: optionalSlugSchema,
     inventoryItemId: optionalObjectIdSchema,
     productCode: optionalString,
-    sellingPrice: optionalNonNegativeNumberSchema,
-    price: optionalNonNegativeNumberSchema,
+    sellingPrice: sellingPriceSchema,
+    price: sellingPriceSchema,
     comparePrice: optionalNonNegativeNumberSchema,
     stock: optionalNonNegativeNumberSchema,
     category_id: optionalObjectIdSchema,
@@ -88,14 +98,14 @@ const productCreateSchema = z
 const productUpdateSchema = z
   .object({
     ...directProductFields,
-    brandId: optionalObjectIdSchema,
-    manufacturerId: optionalObjectIdSchema,
+    brandId: catalogReferenceSchema,
+    manufacturerId: catalogReferenceSchema,
     name: nonEmptyString.optional(),
     slug: optionalSlugSchema,
     inventoryItemId: optionalObjectIdSchema,
     productCode: optionalString,
-    sellingPrice: optionalNonNegativeNumberSchema,
-    price: optionalNonNegativeNumberSchema,
+    sellingPrice: sellingPriceSchema,
+    price: sellingPriceSchema,
     comparePrice: optionalNonNegativeNumberSchema,
     stock: optionalNonNegativeNumberSchema,
     category_id: optionalObjectIdSchema,
@@ -121,8 +131,8 @@ const createProductFromInventorySchema = z
     name: optionalString,
     slug: optionalSlugSchema,
     productCode: optionalString,
-    sellingPrice: optionalNonNegativeNumberSchema,
-    price: optionalNonNegativeNumberSchema,
+    sellingPrice: sellingPriceSchema,
+    price: sellingPriceSchema,
     comparePrice: optionalNonNegativeNumberSchema,
     thumbnail: optionalString,
     images: imagesSchema,

@@ -8,6 +8,7 @@ function checkoutFingerprint(plan) {
       inventory: item.inventoryItemId ? String(item.inventoryItemId) : null,
       category: String(item.category_id || item.categoryId || ""),
       quantity: Number(item.quantity), price: Number(item.price),
+      ...(item.expiryChoice ? { expiryChoice: item.expiryChoice, quote: item.expiryQuote?.quoteFingerprint } : {}),
     })).sort((a, b) => a.product.localeCompare(b.product)),
     address: { id: String(address._id || ""), name: address.full_name || address.fullName || address.name || "",
       phone: address.phone || "", street: address.address_line || "", city: address.city || "", email: address.email || "" },

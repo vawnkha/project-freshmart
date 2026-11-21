@@ -2,7 +2,7 @@
 import { onBeforeUnmount, ref, watch } from 'vue';
 import { useAuthStore } from '@/stores/user/auth';
 import subscriptions from '@/services/subscriptions.service';
-const props = defineProps({ productId: { type: String, required: true }, quantity: { type: Number, default: 1 } });
+const props = defineProps({ productId: { type: String, required: true }, quantity: { type: Number, default: 1 }, expiryChoice: Object });
 const auth = useAuthStore();
 const eligible = ref(false);
 let version = 0;
@@ -13,8 +13,8 @@ watch(() => props.productId, async id => {
 }, { immediate: true });
 onBeforeUnmount(() => { version++; });
 function destination() {
-  const path = `/account/subscriptions/new?productId=${encodeURIComponent(props.productId)}&quantity=${Math.min(10000, Math.max(1, Math.trunc(props.quantity) || 1))}`;
+  const path = `/account/subscriptions/new?productId=${encodeURIComponent(props.productId)}&quantity=${Math.min(10000, Math.max(1, Math.trunc(props.quantity) || 1))}` + (props.expiryChoice ? `&expiryGroup=${props.expiryChoice.group}` : '');
   return auth.isLoggedIn ? path : { path: '/login', query: { redirect: path } };
 }
 </script>
-<template><RouterLink v-if="eligible" :to="destination()" class="sage-button sage-button--secondary subscription-purchase-link"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i> Mua định kỳ</RouterLink></template>
+<template><RouterLink v-if="eligible && expiryChoice?.group !== 'promotion'" :to="destination()" class="sage-button sage-button--secondary subscription-purchase-link"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i> Mua định kỳ</RouterLink></template>

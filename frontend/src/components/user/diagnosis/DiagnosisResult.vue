@@ -45,9 +45,14 @@ const dateTime = value => new Date(value).toLocaleString('vi-VN', { timeZone: 'A
     <div class="diagnosis-result-notes">
       <p class="diagnosis-limit">Điểm softmax chưa được hiệu chuẩn thành xác suất mắc bệnh. Mô hình chỉ phân loại các lớp đã huấn luyện, có thể dự đoán sai với ảnh không phải tôm, ảnh mờ hoặc bệnh khác.</p>
       <p class="diagnosis-disclaimer">Kết quả được dự đoán bằng trí tuệ nhân tạo, chỉ mang tính tham khảo và không thay thế việc chẩn đoán của chuyên gia thủy sản.</p>
-      <details class="diagnosis-model"><summary :tabindex="inDialog ? 0 : undefined">Thông tin ảnh</summary>
+      <details class="diagnosis-model"><summary :tabindex="inDialog ? 0 : undefined">Thông tin ảnh và mô hình</summary>
         <p>Ảnh: {{ record.image?.originalName || 'Không xác định' }}</p>
         <p>Thời điểm chụp: {{ record.capturedAt ? dateTime(record.capturedAt) : 'Không xác định' }}</p>
+        <dl>
+          <dt>Mô hình đã sử dụng</dt><dd>{{ record.model?.name || 'Không có thông tin mô hình' }}</dd>
+          <template v-if="record.model?.modelId"><dt>Mã mô hình</dt><dd>{{ record.model.modelId }}</dd></template>
+          <template v-if="record.model?.version"><dt>Phiên bản đã lưu</dt><dd>{{ record.model.version }}</dd></template>
+        </dl>
       </details>
     </div>
   </section>

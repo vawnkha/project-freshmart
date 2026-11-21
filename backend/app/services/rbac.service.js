@@ -61,14 +61,14 @@ class RbacService {
         updateOne: {
           filter: { key: permission.key },
           update: {
-            $set: {
+            // Seeding adds missing definitions; existing metadata belongs to
+            // the installation and changes through explicit migrations.
+            $setOnInsert: {
               label: permission.label,
               group: permission.group,
               description: permission.description,
               sort_order: index,
               updated_at: new Date(),
-            },
-            $setOnInsert: {
               created_at: new Date(),
             },
           },

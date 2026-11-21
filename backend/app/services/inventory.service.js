@@ -93,6 +93,10 @@ class InventoryService {
       const quantity = Number(item.quantity || 0);
       if (!Number.isFinite(quantity) || quantity <= 0)
         throw new ApiError(400, "So luong nhap khong hop le");
+      const importPrice = Number(item.importPrice ?? 0);
+      const expiryDate = normalizeExpiryDate(item.expiryDate);
+      if (!Number.isFinite(importPrice) || importPrice < 0 || !String(item.batchNumber || '').trim() || !expiryDate)
+        throw new ApiError(400, 'Giá nhập, số lô hoặc hạn sử dụng không hợp lệ');
       await this.stockService.acquireItem(inventoryItemId, options.session, {
         requireActive: true,
       });
@@ -207,7 +211,7 @@ class InventoryService {
     for (const batch of batches) {
       if (remaining <= 0) break;
 
-      const available = Number(batch.quantity || 0);
+      const available = Math.max(0, Number(batch.quantity || 0) - (options.reserved?.get(String(batch._id)) || 0));
       const allocatedQuantity = Math.min(available, remaining);
       if (allocatedQuantity <= 0) continue;
 

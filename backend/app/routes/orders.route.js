@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+router.use((req, res, next) => { const send = res.send.bind(res); res.send = data => send(require('../utils/customer-order.util')(data)); next(); });
 const order = require("../controllers/orders.controller");
 const authMiddleware = require("../middlewares/auth.middleware");
 const validate = require("../middlewares/validate.middleware");

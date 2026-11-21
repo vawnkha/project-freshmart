@@ -292,10 +292,13 @@ class DiscountService {
   }
 
   async findAvailable(payload, now = new Date()) {
+    if (payload.cartItems?.some(item => item.expiryChoice?.group === 'promotion')) return [];
+    const selectedExpiry = payload.cartItems?.some(item => item.expiryChoice);
     const cart = await this.normalizeValidatePayload(payload);
     if (!cart.items.length) return [];
     const available = [];
     const append = (discount, quote) => {
+      if (selectedExpiry && discount.scope === 'batch') return;
       if (!quote.valid || quote.discountAmount <= 0) return;
       available.push({
         ...quote.discount,
@@ -460,6 +463,9 @@ class DiscountService {
   }
 
   async quoteDiscount(discount, payload, options = {}) {
+    const selections = payload.cartItems || payload.items || [];
+    if (selections.some(item => item.expiryChoice?.group === 'promotion')) return this.inactiveResult('Không kết hợp mã khác với hàng giảm giá cận hạn đã chọn.');
+    if (discount.scope === 'batch' && selections.some(item => item.expiryChoice)) return this.inactiveResult('Ưu đãi theo lô chỉ áp dụng khi chọn nhóm giảm giá cận hạn.');
     const now = options.now || new Date();
     if (discount.status !== "active") {
       return this.inactiveResult("Ma giam gia khong hoat dong");

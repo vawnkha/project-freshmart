@@ -3,6 +3,10 @@ const ProductsService = require("../services/products.service");
 const CategoryService = require("../services/categories.service");
 const MongoDB = require("../utils/mongodb.util");
 const { deleteUnreferencedUpload } = require("../utils/local-upload.util");
+exports.purchaseOptions = async (req, res, next) => {
+  try { res.send(await new (require('../services/expiry-choice.service'))(MongoDB.client).options(req.params.id, Number(req.query.quantity || 1))); }
+  catch (error) { next(error); }
+};
 
 exports.compare = async (req, res, next) => {
   try {
@@ -39,17 +43,13 @@ exports.create = async (req, res, next) => {
     const thumbFile = req.files?.thumbnail?.[0];
     const imageFiles = req.files?.images || [];
 
-    if (!thumbFile) {
-      await cleanUploadedFiles(req);
-      return next(new ApiError(400, "Vui lòng chọn thumbnail cho sản phẩm"));
-    }
     if (imageFiles.length > 4) {
       await cleanUploadedFiles(req);
       return next(new ApiError(400, "Images tối đa 4 ảnh"));
     }
 
     const service = new ProductsService(MongoDB.client);
-    const thumbnail = buildUrl(thumbFile);
+    const thumbnail = thumbFile ? buildUrl(thumbFile) : req.body.thumbnail || "";
     const images = imageFiles.map(buildUrl);
 
     const created = await service.create({

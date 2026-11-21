@@ -1,4 +1,5 @@
 <script setup>
+import ExpirySelectionSummary from '@/components/user/product/ExpirySelectionSummary.vue';
 import ResponsiveImage from "@/components/user/common/ResponsiveImage.vue";
 import ProfileOrderProgress from "@/components/user/profile/ProfileOrderProgress.vue";
 import { orderStatusLabel, orderStatusClass } from "@/utils/storefront.util";
@@ -31,6 +32,7 @@ const paymentLabel=status=>({pending:'Chờ thanh toán',completed:'Đã thanh t
       <article v-for="item in order.items" :key="item.id" class="approved-order-line">
         <ResponsiveImage :src="item.thumbnail" :alt="item.name" class="order-product-image" />
         <div><h4>{{ item.name }}</h4><p>{{ item.quantity }} × {{ money(item.price) }}</p><p v-for="allocation in item.batchAllocations || []" :key="allocation.batchId">Lô {{ allocation.batchNumber }} · {{ allocation.quantity }} sản phẩm · HSD {{ allocation.expiryDate ? new Date(allocation.expiryDate).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : 'chưa xác định' }}<span v-if="allocation.discountAmount"> · Giảm {{ money(allocation.discountAmount) }} cho {{ allocation.discountQuantity }} sản phẩm</span></p></div>
+        <ExpirySelectionSummary :choice="item.expiryChoice" :quote="item.expiryQuote" />
         <strong class="approved-account-money">{{ money(item.subtotal) }}</strong>
       </article>
     </div>

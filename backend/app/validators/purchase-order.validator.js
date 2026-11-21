@@ -18,7 +18,7 @@ function validateItems(items) {
   }
 
   for (const item of items) {
-    if (!hasValue(item.inventoryItemId)) return "inventoryItemId la bat buoc";
+    if (!hasValue(item.inventoryItemId) && !hasValue(item.productId)) return "inventoryItemId la bat buoc";
     if (Number(item.quantity || 0) <= 0) return "quantity phai lon hon 0";
     if (Number(item.importPrice || 0) < 0) return "importPrice khong hop le";
     if (!hasValue(item.batchNumber)) return "batchNumber la bat buoc";
@@ -50,7 +50,8 @@ module.exports = {
   }),
   purchaseOrderItemSchema: z
     .object({
-      inventoryItemId: objectIdSchema,
+      productId: objectIdSchema.optional(),
+      inventoryItemId: objectIdSchema.optional(),
       quantity: positiveNumberSchema,
       importPrice: nonNegativeNumberSchema,
       batchNumber: nonEmptyString,
@@ -62,6 +63,7 @@ module.exports = {
         }),
       warehouseLocation: optionalString,
     })
+    .refine(value => Boolean(value.inventoryItemId || value.productId), { message: "Chọn sản phẩm nhập kho", path: ["productId"] })
     .refine(
       (value) =>
         !value.manufacturingDate ||

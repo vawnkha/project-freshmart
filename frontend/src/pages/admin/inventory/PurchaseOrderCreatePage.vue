@@ -118,7 +118,7 @@ function getInventoryItem(id) {
 const inventoryOptions = computed(() =>
   inventoryItems.value.flatMap((item) => {
     const id = getId(item);
-    if (!id) return [];
+    if (!id || !item.productId) return [];
     const label = `${item.itemCode} - ${item.itemName}`;
     return [{
       id,
@@ -191,6 +191,7 @@ function buildPayload() {
     supplierId: form.supplierId,
     note: form.note.trim(),
     items: form.items.map((item) => ({
+      productId: getInventoryItem(item.inventoryItemId)?.productId,
       inventoryItemId: item.inventoryItemId,
       quantity: Number(item.quantity || 0),
       importPrice: Number(item.importPrice || 0),
@@ -270,8 +271,8 @@ onMounted(async () => {
   <div class="admin-page">
     <div class="admin-page-title admin-page-title--stack">
       <h1>{{ editingId ? 'Sửa phiếu nhập nháp' : 'Tạo phiếu nhập kho' }}</h1>
-      <p v-if="missingOptionPermissions.length" role="alert">Cần quyền đọc nhà cung cấp và hàng kho để chọn dữ liệu phiếu nhập. Vui lòng liên hệ quản trị viên.</p>
-      <p>Chọn nhà cung cấp, rồi tìm hàng kho theo mã hoặc tên trong từng dòng hàng nhập.</p>
+      <p v-if="missingOptionPermissions.length" role="alert">Cần quyền đọc nhà cung cấp và sản phẩm để chọn dữ liệu phiếu nhập. Vui lòng liên hệ quản trị viên.</p>
+      <p>Chọn nhà cung cấp, rồi tìm sản phẩm theo mã hoặc tên trong từng dòng hàng nhập.</p>
     </div>
 
     <section class="admin-panel">
@@ -364,7 +365,7 @@ onMounted(async () => {
 
               <div class="purchase-order-grid">
                 <div class="purchase-order-field purchase-order-field--wide">
-                  <label :for="`purchase-order-inventory-${row.rowKey}`">Hàng kho *</label>
+                  <label :for="`purchase-order-inventory-${row.rowKey}`">Sản phẩm *</label>
                   <InventoryItemPicker
                     :id="`purchase-order-inventory-${row.rowKey}`"
                     :model-value="row.inventoryItemId"

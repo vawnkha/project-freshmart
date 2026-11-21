@@ -34,6 +34,7 @@ let priceTimer, filterVersion = 0, syncingFilters = false, priceDirty = false;
 const gridKey = computed(() => JSON.stringify([state.value.q, state.value.category_id, state.value.min_price, state.value.max_price, state.value.unit, state.value.sort, results.value.page, state.value.view]));
 const pageNumbers = computed(() => Array.from({ length: Math.min(5, results.value.pages) }, (_, index) => Math.min(Math.max(1, results.value.page - 2), Math.max(1, results.value.pages - 4)) + index));
 const chips = computed(() => [
+  state.value.sort === 'in-stock' && { key: 'sort', label: 'Còn hàng' },
   state.value.q && { key: 'q', label: 'Từ khóa: ' + state.value.q },
   state.value.category_id && { key: 'category_id', label: 'Danh mục: ' + (state.value.errors.category_id ? 'chưa hợp lệ' : category.value?.name || 'Đã chọn') },
   state.value.min_price !== '' && { key: 'min_price', label: state.value.errors.min_price ? 'Giá từ: chưa hợp lệ' : 'Từ ' + Number(state.value.min_price).toLocaleString('vi-VN') + ' đ' },
@@ -83,13 +84,13 @@ watch([() => filters.value.min_price, () => filters.value.max_price], () => {
   if (!Object.keys(formErrors.value).length) priceTimer = setTimeout(applyFilters, 400);
 }, { flush: 'sync' });
 function removeChip(chip) {
-  update({ ...(chip.unit ? { unit: state.value.unit.filter(unit => unit !== chip.unit) } : { [chip.key]: '' }), page: 1 });
+  update({ ...(chip.unit ? { unit: state.value.unit.filter(unit => unit !== chip.unit) } : { [chip.key]: chip.key === 'sort' ? 'newest' : '' }), page: 1 });
 }
 function resetFilters(all = false) {
   clearTimeout(priceTimer);
   ++filterVersion; pendingQuery.value = null;
   filtersOpen.value = false;
-  update({ category_id: '', min_price: '', max_price: '', unit: [], ...(all ? { q: '' } : {}), page: 1 });
+  update({ category_id: '', min_price: '', max_price: '', unit: [], ...(state.value.sort === 'in-stock' ? { sort: 'newest' } : {}), ...(all ? { q: '' } : {}), page: 1 });
 }
 let focusFrame;
 async function goToPage(page) {
@@ -146,7 +147,7 @@ onBeforeUnmount(() => { wide?.removeEventListener?.('change', onWide); cancelAni
             </div>
             <div class="catalog-sort-tools">
               <SageButton ref="filterTrigger" class="catalog-mobile-filter" variant="secondary" aria-haspopup="dialog" aria-controls="catalog-filter-sheet" :aria-expanded="filtersOpen" @click="openFilters"><i class="fa-solid fa-sliders" aria-hidden="true"></i>Bộ lọc<span v-if="chips.length"> ({{ chips.length }})</span></SageButton>
-              <SageSelect id="catalog-sort" label="Sắp xếp" :model-value="state.sort" :options="CATALOG_SORTS" @update:model-value="update({ sort: $event, page: 1 })" />
+              <SageSelect id="catalog-sort" label="Sắp xếp và lọc" :model-value="state.sort" :options="CATALOG_SORTS" @update:model-value="update({ sort: $event, page: 1 })" />
               <div class="catalog-view-tools" role="group" aria-label="Cách hiển thị sản phẩm">
                 <SageButton variant="ghost" class="sage-icon-button" :aria-pressed="state.view === 'grid'" aria-label="Xem dạng lưới" @click="update({ view: 'grid' })"><i class="fa-solid fa-table-cells-large" aria-hidden="true"></i></SageButton>
                 <SageButton variant="ghost" class="sage-icon-button" :aria-pressed="state.view === 'list'" aria-label="Xem dạng danh sách" @click="update({ view: 'list' })"><i class="fa-solid fa-list" aria-hidden="true"></i></SageButton>

@@ -12,6 +12,7 @@ const OutboxService = require("./outbox.service");
 const PAYMENT_METHODS = require("../constants/payment-methods");
 const { isInventoryItemActive } = require("../utils/inventory-query.util");
 const { checkoutFingerprint } = require("../utils/checkout-fingerprint.util");
+const { choiceKey } = require('../utils/expiry-choice.util');
 
 function toObjectId(id) {
   if (id instanceof ObjectId) return id;
@@ -122,6 +123,7 @@ class OrdersService {
       packageSize: item.packageSize,
       batchAllocations: item.batchAllocations || [],
       discountAmount: Number(item.discountAmount || 0),
+      ...(item.expiryChoice ? { expiryChoice: item.expiryChoice, expiryQuote: item.expiryQuote, lineKey: item.lineKey, expiryOffer: item.expiryOffer } : {}),
     };
   }
 
@@ -278,6 +280,7 @@ class OrdersService {
   }
 
   async recordDiscountUsage(discount, userId, orderId, session) {
+    if (discount?.offers) { for (const offer of discount.offers) await this.recordDiscountUsage(offer, userId, orderId, session); return; }
     if (!discount?.discount_id) return;
 
     const discountId = toObjectId(discount.discount_id);
@@ -446,7 +449,7 @@ class OrdersService {
 
     const cart = sourceItems === undefined
       ? await this.Cart.findOne({ user_id: uid }, { session })
-      : { items: sourceItems.map(item => ({ product_id: item.productId, quantity: item.quantity })) };
+      : { items: sourceItems.map(item => ({ product_id: item.productId, quantity: item.quantity, ...(item.expiryChoice ? { expiryChoice: item.expiryChoice } : {}) })) };
     if (!cart || !cart.items?.length) {
       return { error: "Giỏ hàng trống" };
     }
@@ -469,16 +472,19 @@ class OrdersService {
       ) {
         return { error: "San pham hoac so luong trong gio hang khong hop le" };
       }
-      const key = String(item.product_id);
+      const key = choiceKey(item.product_id, item.expiryChoice);
       const totalQuantity = (cartItemMap.get(key)?.quantity || 0) + quantity;
       if (!Number.isSafeInteger(totalQuantity))
         return { error: "So luong khong hop le" };
       cartItemMap.set(key, {
+        ...item,
         product_id: item.product_id,
         quantity: totalQuantity,
       });
     }
-    const cartItems = [...cartItemMap.values()];
+    // Protect explicitly accepted lots before allocating legacy global FEFO
+    // lines. Old carts may coexist with newly selected lines for this product.
+    const cartItems = [...cartItemMap.values()].sort((a, b) => Number(!!b.expiryChoice) - Number(!!a.expiryChoice));
     const ids = cartItems
       .map((item) => toObjectId(item.product_id))
       .filter(Boolean);
@@ -492,6 +498,8 @@ class OrdersService {
 
     let total = 0;
     const orderItems = [];
+    const reserved = new Map(), automaticOffers = new Map();
+    const choiceService = new (require('./expiry-choice.service'))(this.client);
     const requestedDiscount = discountCode ? await this.Discount.findOne({ code: String(discountCode).trim().toUpperCase() }, { session }) : null;
     const preferredBatchId = requestedDiscount?.scope === "batch" ? requestedDiscount.batchId : null;
 
@@ -544,10 +552,20 @@ class OrdersService {
           return { error: `Sản phẩm "${product.name}" không đủ tồn kho` };
         }
 
-        const allocationResult = (allocateBatches || preferredBatchId)
+        let selected;
+        if (cartItem.expiryChoice) {
+          selected = await choiceService.quote(product, cartItem.expiryChoice, qty, { session, reserved });
+          if (sourceItems === undefined && selected.quoteFingerprint !== cartItem.quoteFingerprint) throw new ApiError(409, 'Giá hoặc hạn dùng trong giỏ đã thay đổi. Vui lòng xác nhận lại từng dòng.', 'EXPIRY_QUOTE_CHANGED');
+          if (selected.discount) {
+            const key = String(selected.discount.discount_id), old = automaticOffers.get(key);
+            automaticOffers.set(key, old ? { ...old, eligibleQuantity: old.eligibleQuantity + qty, discount_amount: old.discount_amount + selected.discountAmount, batchBreakdown: [...old.batchBreakdown, ...selected.discount.batchBreakdown] } : selected.discount);
+          }
+        }
+        const allocationResult = selected ? { ok: true, allocation: selected.allocations } : (allocateBatches || preferredBatchId)
           ? await this.inventoryService.allocateFefo(inventoryItemId, qty, {
               session,
               preferredBatchId,
+              reserved,
             })
           : { ok: true, allocation: [] };
 
@@ -558,6 +576,7 @@ class OrdersService {
               `Sản phẩm "${product.name}" không đủ lô hàng khả dụng`,
           };
         }
+        for (const row of allocationResult.allocation || []) reserved.set(String(row.batchId), (reserved.get(String(row.batchId)) || 0) + row.quantity);
 
         const totalPrice = price * qty;
         total += totalPrice;
@@ -573,14 +592,16 @@ class OrdersService {
           slug: product.slug,
           thumbnail: getProductImage(product),
           image: getProductImage(product),
-          itemCode: inventoryItem.itemCode,
-          itemName: inventoryItem.itemName,
-          unit: inventoryItem.unit || product.unit,
-          packageSize: inventoryItem.packageSize || "",
+          itemCode: product.productCode || inventoryItem.itemCode,
+          itemName: product.name,
+          unit: product.unit || inventoryItem.unit,
+          packageSize: product.packageSize || inventoryItem.packageSize || "",
           quantity: qty,
           price,
           subtotal: totalPrice,
           totalPrice,
+          ...(selected ? { expiryChoice: selected.choice, expiryQuote: choiceService.publicQuote(selected), lineKey: selected.lineKey,
+            discountAmount: selected.discountAmount, expiryOffer: selected.discount, quotedTotal: selected.total } : {}),
           batchAllocations: (allocationResult.allocation || []).map((row) => ({
             batchId: row.batchId,
             batchNumber: row.batchNumber,
@@ -588,6 +609,7 @@ class OrdersService {
             expiryDate: row.expiryDate || null,
             importPrice: Number(row.importPrice || 0),
             inventoryItemId,
+            ...(row.discountId ? { discountId: row.discountId, discountQuantity: row.discountQuantity, discountAmount: row.discountAmount } : {}),
           })),
         });
 
@@ -638,7 +660,10 @@ class OrdersService {
       shippingFee = Number(shippingSnapshot.fee || 0);
     }
 
-    const discountResult = await this.resolveDiscount({
+    if (discountCode && automaticOffers.size) return { error: 'Không kết hợp mã giảm giá khác với hàng đã chọn ưu đãi cận hạn.' };
+    if (requestedDiscount?.scope === 'batch' && cartItems.some(item => item.expiryChoice)) return { error: 'Hãy chọn riêng nhóm ưu đãi cận hạn; mã theo lô không áp dụng cho nhóm hạn dài hoặc hạn dùng khác.' };
+    const offers = [...automaticOffers.values()];
+    const discountResult = offers.length ? { discount: { ...offers[0], offers, batchBreakdown: offers.flatMap(offer => offer.batchBreakdown) }, discount_amount: offers.reduce((sum, offer) => sum + offer.discount_amount, 0) } : await this.resolveDiscount({
       discountCode,
       subtotal: total,
       items: orderItems,
@@ -647,7 +672,7 @@ class OrdersService {
     if (discountResult.error) return { error: discountResult.error };
 
     const discountAmount = Number(discountResult.discount_amount || 0);
-    if (discountResult.discount?.scope === "batch") {
+    if (discountResult.discount?.scope === "batch" && !offers.length) {
       let remainder = discountAmount;
       const target = discountResult.discount.batchOffer;
       let remainingQuantity = Number(discountResult.discount.eligibleQuantity);
@@ -1004,6 +1029,7 @@ class OrdersService {
       return this.inventoryService.stockService.withTransaction({}, async session => {
         const order = await this.Order.findOne({ _id: oid, status: current.status }, { session });
         if (!order) throw new ApiError(409, "Đơn hàng đã thay đổi trạng thái");
+        for (const item of order.items || []) await new (require('./expiry-choice.service'))(this.client).assertAllocation(item, { session, committedAt: order.created_at });
         for (const item of order.items || []) for (const row of item.batchAllocations || []) {
           await this.inventoryService.stockService.acquireItem(row.inventoryItemId, session);
           const batch = await this.inventoryService.InventoryBatch.findOne({ _id: toObjectId(row.batchId) }, { session });
@@ -1030,7 +1056,10 @@ class OrdersService {
   }
 
   async restoreOrderInventory(order, actor, session) {
-    if (order.discount?.scope === "batch" && Number(order.discount.eligibleQuantity) > 0) {
+    if (order.discount?.offers) {
+      for (const offer of order.discount.offers) await this.Discount.updateOne({ _id: toObjectId(offer.discount_id), usedQuantity: { $gte: offer.eligibleQuantity } }, { $inc: { usedQuantity: -offer.eligibleQuantity } }, { session });
+    }
+    if (!order.discount?.offers && order.discount?.scope === "batch" && Number(order.discount.eligibleQuantity) > 0) {
       await this.Discount.updateOne({ _id: toObjectId(order.discount.discount_id), usedQuantity: { $gte: order.discount.eligibleQuantity } },
         { $inc: { usedQuantity: -order.discount.eligibleQuantity } }, { session });
     }
@@ -1371,9 +1400,14 @@ class OrdersService {
       const order = await this.Order.findOne({ _id: payment.order_id }, { session });
       if (!order || order.status !== "awaiting_payment") throw new ApiError(409, "Đơn hàng chưa được ghi nhận ở trạng thái chờ thanh toán");
       let reason = payment.stock_hold_expires_at && new Date(payment.stock_hold_expires_at) <= new Date() ? "Hết thời gian giữ hàng trước thanh toán" : null;
+      for (const item of order.items || []) {
+        try { await new (require('./expiry-choice.service'))(this.client).assertAllocation(item, { session, capture: true }); }
+        catch (error) { if (error.statusCode !== 409) throw error; reason = error.message; }
+      }
       for (const item of order?.items || []) for (const row of item.batchAllocations || []) {
         await this.inventoryService.stockService.acquireItem(row.inventoryItemId, session);
         const batch = await this.inventoryService.InventoryBatch.findOne({ _id: toObjectId(row.batchId) }, { session });
+          if (batch && !["available", "sold_out"].includes(batch.status)) reason = "Lô đang khóa hoặc không đủ điều kiện trước khi bắt đầu thanh toán";
         if (!batch || !(batch.expiryDate instanceof Date) || !(require("../utils/expiry.util").classifyExpiry(batch.expiryDate).daysRemaining > 0)) reason = "Lô đã hết hạn hoặc thiếu hạn sử dụng hợp lệ trước khi bắt đầu thanh toán";
       }
       if (reason) {

@@ -51,6 +51,7 @@ export function createStorefrontSearch({ search, publish, log = console.warn, de
 }
 
 export function cartLineProblem(item) {
+  if (item.requiresReview) return item.choiceError || 'Giá hoặc hạn dùng đã thay đổi. Vui lòng xác nhận lại trong giỏ hàng.';
   if (!normalizeId(item.product_id)) return 'Thông tin sản phẩm không hợp lệ. Vui lòng mở giỏ hàng để kiểm tra.';
   if (productPrice(item) === null) return 'Sản phẩm chưa có giá bán.';
   if (availableStock(item) < 1 || item.outOfStock === true) return 'Sản phẩm hiện không còn hàng để bán.';

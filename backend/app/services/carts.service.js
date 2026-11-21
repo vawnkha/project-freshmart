@@ -3,6 +3,7 @@ const ApiError = require("../api-error");
 const { ObjectId } = require("mongodb");
 const InventoryStockService = require("./inventory-stock.service");
 const ProductsService = require("./products.service");
+const { choiceKey, normalizeChoice } = require('../utils/expiry-choice.util');
 const {
   isInventoryItemActive,
   isProductSellable,
@@ -170,10 +171,10 @@ class CartService {
       productName: product.name,
       slug: product.slug,
       image: this.getProductImage(product),
-      itemCode: inventoryItem?.itemCode,
-      itemName: inventoryItem?.itemName,
-      unit: inventoryItem?.unit || product.unit,
-      packageSize: inventoryItem?.packageSize,
+      itemCode: product.productCode || inventoryItem?.itemCode,
+      itemName: product.name,
+      unit: product.unit || inventoryItem?.unit,
+      packageSize: product.packageSize || inventoryItem?.packageSize,
       price,
       addedAt: existedItem?.addedAt || now,
       updatedAt: now,
@@ -187,7 +188,7 @@ class CartService {
     const positions = new Map();
     for (const item of items) {
       const id = toObjectId(item.product_id);
-      const key = id ? String(id) : String(item.product_id);
+      const key = choiceKey(id || item.product_id, item.expiryChoice);
       if (positions.has(key)) {
         result[positions.get(key)].quantity += Number(item.quantity || 0);
       } else {
@@ -267,7 +268,7 @@ class CartService {
     }
   }
 
-  async addItem(userId, productId, quantity = 1) {
+  async addItem(userId, productId, quantity = 1, options = {}) {
     const uid = toObjectId(userId);
     const pid = toObjectId(productId);
     if (!uid || !pid) return { error: "userId hoặc productId không hợp lệ" };
@@ -275,10 +276,10 @@ class CartService {
     const q = Number(quantity);
     if (!Number.isSafeInteger(q) || q <= 0)
       return { error: "quantity phải là số nguyên lớn hơn 0" };
-    return this.writeItem(uid, pid, q, "add");
+    return this.writeItem(uid, pid, q, "add", options);
   }
 
-  async updateItem(userId, productId, quantity) {
+  async updateItem(userId, productId, quantity, options = {}) {
     const uid = toObjectId(userId);
     const pid = toObjectId(productId);
     const q = Number(quantity);
@@ -287,11 +288,11 @@ class CartService {
 
     if (!Number.isSafeInteger(q) || q < 0)
       return { error: "quantity phải là số nguyên không âm" };
-    if (q === 0) return this.removeItem(uid, pid);
-    return this.writeItem(uid, pid, q, "update");
+    if (q === 0) return this.removeItem(uid, pid, choiceKey(pid, options.expiryChoice));
+    return this.writeItem(uid, pid, q, "update", options);
   }
 
-  async writeItem(uid, pid, q, mode) {
+  async writeItem(uid, pid, q, mode, options = {}) {
     return this.withCartTransaction(uid, pid, async (session) => {
       // All reads belong to this attempt. Never capture a pre-transaction cart
       // or stock value in a callback that MongoDB may run again after conflict.
@@ -300,12 +301,12 @@ class CartService {
         lockStock: true,
       });
       if (context.error) return context;
-      const stock = Number(context.stock || 0);
+      let stock = Number(context.stock || 0);
       if (stock <= 0) return { error: "Sản phẩm đã hết hàng" };
       const cart = await this.Cart.findOne({ user_id: uid }, { session });
       const items = this.canonicalItems(cart?.items);
       const index = items.findIndex(
-        (item) => String(item.product_id) === String(pid),
+        (item) => choiceKey(item.product_id, item.expiryChoice) === choiceKey(pid, options.expiryChoice),
       );
       const existedItem = items[index];
       if (mode === "update" && !existedItem)
@@ -314,6 +315,13 @@ class CartService {
       if (!Number.isSafeInteger(currentQty) || currentQty < 0)
         return { error: "Số lượng trong giỏ hàng không hợp lệ" };
       const nextQty = mode === "add" ? currentQty + q : q;
+      let selected;
+      if (options.expiryChoice) {
+        const service = new (require('./expiry-choice.service'))(this.client);
+        selected = await service.quote(context.product, options.expiryChoice, nextQty, { session });
+        stock = selected.availableQuantity;
+        if (selected.quoteFingerprint !== options.quoteFingerprint) throw new ApiError(409, 'Giá hoặc hạn dùng đã thay đổi. Hãy xem và xác nhận lại.', 'EXPIRY_QUOTE_CHANGED');
+      }
       if (!Number.isSafeInteger(nextQty) || nextQty > stock) {
         return this.buildStockExceededError(
           stock,
@@ -326,6 +334,7 @@ class CartService {
       const snapshot = {
         ...existedItem,
         ...this.buildCartItemSnapshot(context, nextQty, existedItem),
+        ...(selected ? { expiryChoice: normalizeChoice(options.expiryChoice), quoteFingerprint: selected.quoteFingerprint, expiryQuote: new (require('./expiry-choice.service'))(this.client).publicQuote(selected), lineKey: selected.lineKey } : {}),
       };
       if (index < 0) items.push(snapshot);
       else items[index] = snapshot;
@@ -341,15 +350,16 @@ class CartService {
     });
   }
 
-  async removeItem(userId, productId) {
+  async removeItem(userId, productId, lineKey) {
     const uid = toObjectId(userId);
     const pid = toObjectId(productId);
     if (!uid || !pid) return { error: "userId hoặc productId không hợp lệ" };
+    if (lineKey && lineKey !== String(pid) && !lineKey.startsWith(String(pid) + ':')) throw new ApiError(400, 'Dòng giỏ hàng không thuộc sản phẩm yêu cầu');
     await this.withCartTransaction(uid, null, async (session) => {
       const cart = await this.Cart.findOne({ user_id: uid }, { session });
       if (!cart) return;
       const items = this.canonicalItems(cart.items).filter(
-        (item) => String(item.product_id) !== String(pid),
+        (item) => lineKey ? choiceKey(item.product_id, item.expiryChoice) !== lineKey : choiceKey(item.product_id, item.expiryChoice) !== String(pid),
       );
       await this.Cart.updateOne(
         { user_id: uid },
@@ -388,8 +398,8 @@ class CartService {
     ).toArray();
     const productMap = new Map(products.map((p) => [String(p._id), p]));
 
-    const items = cartItems
-      .map((cartItem) => {
+    const items = (await Promise.all(cartItems
+      .map(async (cartItem) => {
         const product = productMap.get(String(cartItem.product_id));
         if (!product) return null;
 
@@ -402,6 +412,16 @@ class CartService {
         const quantity = Number(cartItem.quantity || 0);
         const subtotal = price * quantity;
 
+        let selection = {};
+        if (cartItem.expiryChoice) {
+          const service = new (require('./expiry-choice.service'))(this.client);
+          try {
+            const quote = await service.quote(product, cartItem.expiryChoice, quantity);
+            selection = { expiryChoice: cartItem.expiryChoice, lineKey: choiceKey(cartItem.product_id, cartItem.expiryChoice), expiryQuote: service.publicQuote(quote),
+              quoteFingerprint: quote.quoteFingerprint, requiresReview: quote.quoteFingerprint !== cartItem.quoteFingerprint,
+              price: quote.price, stock: quote.availableQuantity, availableStock: quote.availableQuantity, line_total: quote.total, subtotal: quote.total };
+          } catch (error) { selection = { expiryChoice: cartItem.expiryChoice, lineKey: choiceKey(cartItem.product_id, cartItem.expiryChoice), expiryQuote: cartItem.expiryQuote, requiresReview: true, choiceError: error.message, stock: 0, availableStock: 0, inStock: false, outOfStock: true }; }
+        }
         return removeUndefined({
           product_id: cartItem.product_id,
           quantity: cartItem.quantity,
@@ -411,19 +431,20 @@ class CartService {
           availableStock: stock,
           inStock: stock > 0,
           outOfStock: stock <= 0,
-          unit: inventoryItem?.unit || product.unit || cartItem.unit,
+          unit: product.unit || inventoryItem?.unit || cartItem.unit,
           thumbnail: this.getProductImage(product) || cartItem.image || "",
           line_total: subtotal,
           subtotal,
           inventoryItemId: inventoryItemId || cartItem.inventoryItemId,
-          itemCode: inventoryItem?.itemCode || cartItem.itemCode,
-          itemName: inventoryItem?.itemName || cartItem.itemName,
-          packageSize: inventoryItem?.packageSize || cartItem.packageSize,
+          itemCode: product.productCode || inventoryItem?.itemCode || cartItem.itemCode,
+          itemName: product.name || cartItem.itemName,
+          packageSize: product.packageSize || inventoryItem?.packageSize || cartItem.packageSize,
           productName: cartItem.productName || product.name,
           slug: product.slug || cartItem.slug,
           image: this.getProductImage(product) || cartItem.image || "",
+          ...selection,
         });
-      })
+      })))
       .filter(Boolean);
 
     const subtotal = items.reduce((sum, item) => sum + item.line_total, 0);

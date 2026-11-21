@@ -9,11 +9,12 @@ import { normalizeList } from '@/utils/storefront.util';
 import { userError } from '@/utils/user-error.util';
 import { subscriptionPayload, subscriptionFormProblem, subscriptionItemsProblem, subscriptionMoney as money, subscriptionDate as date } from '@/utils/subscription.util';
 import CheckoutVoucherDialog from '@/components/user/checkout/CheckoutVoucherDialog.vue';
+import ExpirySelectionSummary from '@/components/user/product/ExpirySelectionSummary.vue';
 import SageInput from '@/components/user/sage/SageInput.vue';
 import SageSelect from '@/components/user/sage/SageSelect.vue';
 import SageTextarea from '@/components/user/sage/SageTextarea.vue';
 import SageButton from '@/components/user/sage/SageButton.vue';
-const props = defineProps({ initial: Object, productId: String, quantity: { type: Number, default: 1 } });
+const props = defineProps({ initial: Object, productId: String, quantity: { type: Number, default: 1 }, expiryGroup: String });
 const emit = defineEmits(['saved']);
 const auth = useAuthStore();
 const form = reactive({ items: [], frequency: 'every_14_days', startDate: '', endMode: 'count', endDate: '', maxOccurrences: 6,
@@ -44,7 +45,7 @@ const voucherPickerDisabled = computed(() => busy.value || invalidOwner.value ||
 const voucherItemsKey = computed(() => JSON.stringify(subscriptionPayload(form).items));
 const addressOptions = computed(() => [{ value: '', label: 'Chọn địa chỉ nhận hàng' }, ...addresses.value.map(row => ({ value: row._id, label: `${row.full_name || row.fullName || ''} · ${row.address_line || row.address || ''}` }))]);
 const shippingOptions = computed(() => [{ value: '', label: 'Chọn phương thức vận chuyển' }, ...shipping.value.map(row => ({ value: row._id, label: `${row.name} · ${money(row.fee)}` }))]);
-function snapshotProduct(row) { return { productId: row._id, name: row.name, image: row.thumbnail || '', unit: row.unit || '', packageSize: row.packageSize || '', price: row.sellingPrice ?? row.price, quantity: 1 }; }
+function snapshotProduct(row) { return { productId: row._id, name: row.name, image: row.thumbnail || '', unit: row.unit || '', packageSize: row.packageSize || '', price: row.sellingPrice ?? row.price, quantity: 1, ...(row.inventoryItemId ? { expiryChoice: { group: 'long' } } : {}) }; }
 function invalidate() { preview.value = null; form.consent = false; version++; }
 watch(() => JSON.stringify(subscriptionPayload(form)), invalidate);
 function live(context, request) { return !disposed && context?.isCurrent() && request === version; }
@@ -59,7 +60,7 @@ async function load() {
       const sub = props.initial;
       Object.assign(form, { frequency: sub.frequency, startDate: sub.startDate, endMode: sub.endDate ? 'date' : 'count', endDate: sub.endDate || '', maxOccurrences: sub.maxOccurrences || 6,
         addressId: sub.addressId, shippingMethodId: sub.shippingMethodId, paymentMethod: sub.paymentMethod, notes: sub.notes, discountCode: sub.discountCode, maximumTotal: sub.maximumTotal,
-        items: sub.items.map(item => ({ ...item.productSnapshot, productId: item.productId, quantity: item.quantity })) });
+        items: sub.items.map(item => ({ ...item.productSnapshot, productId: item.productId, quantity: item.quantity, ...(item.expiryChoice ? { expiryChoice: item.expiryChoice } : {}) })) });
     } else {
       form.addressId = addresses.value.find(row => row.is_default || row.isDefault)?._id || addresses.value[0]?._id || '';
       form.shippingMethodId = shipping.value[0]?._id || '';
@@ -73,7 +74,7 @@ async function load() {
           const productPolicy = await subscriptions.policy(props.productId);
           if (!productPolicy.eligible) throw new Error('Sản phẩm không đủ điều kiện đăng ký định kỳ.');
         }
-        if (product) form.items = [{ ...snapshotProduct(product), quantity: Math.min(10000, Math.max(1, props.quantity || 1)) }];
+        if (product) form.items = [{ ...snapshotProduct(product), quantity: Math.min(10000, Math.max(1, props.quantity || 1)), ...(['long','other'].includes(props.expiryGroup) ? {expiryChoice:{group:props.expiryGroup}} : {}) }];
       }
     }
   } catch (cause) { if (!disposed && context?.isCurrent()) error.value = userError(cause, cause.message || 'Không thể tải biểu mẫu.'); }
@@ -276,9 +277,11 @@ onBeforeUnmount(() => { disposed = true; version++; clearTimeout(searchTimer); }
         <img v-if="item.image" :src="item.image" alt="" width="64" height="64" />
         <div class="subscription-product-copy"><RouterLink :to="'/products/'+item.productId">{{ item.name }}</RouterLink><p>{{ item.packageSize }} · {{ item.unit }}<span v-if="item.price"> · {{ money(item.price) }}</span></p></div>
         <div class="subscription-quantity"><SageInput v-model="item.quantity" label="Số lượng mỗi kỳ" :aria-label="'Số lượng mỗi kỳ: '+item.name" type="number" min="1" max="10000" step="1" required /></div>
+        <label>Chính sách hạn dùng mỗi kỳ<select :value="item.expiryChoice?.group || ''" @change="item.expiryChoice=$event.target.value ? {group:$event.target.value}:undefined"><option v-if="!item.expiryChoice" value="">Theo FEFO trước đây</option><option value="long">Hàng có hạn sử dụng dài</option><option value="other">Hàng hạn dùng khác, giá thông thường</option></select></label>
         <SageButton variant="ghost" :aria-label="'Bỏ '+item.name" @click="form.items.splice(index,1)">Bỏ</SageButton>
       </article>
     </fieldset>
+    <p v-if="policy?.longMinDays">Nhóm hạn dài yêu cầu còn tối thiểu {{ policy.longMinDays }} ngày tại thời điểm tạo đơn mỗi kỳ. Nếu không đủ hàng, kỳ giao sẽ báo lỗi, không tự đổi nhóm.</p>
     <fieldset :disabled="busy||invalidOwner"><legend>Chu kỳ và thời gian</legend><div class="subscription-grid">
       <SageSelect v-model="form.frequency" label="Chu kỳ giao" :disabled="lockedFrequency" :hint="initial ? (lockedFrequency ? 'Lịch sử đã bắt đầu xử lý: giữ chu kỳ gốc; tạo đăng ký mới để đổi chu kỳ.' : 'Có thể đổi chu kỳ trước khi bất kỳ kỳ giao nào bắt đầu xử lý.') : undefined" :options="[{value:'every_14_days',label:'Mỗi 14 ngày'},{value:'monthly',label:'Hằng tháng'}]" />
       <SageInput v-model="form.startDate" type="date" label="Ngày tạo đơn" :min="initial ? undefined : policy.today" :disabled="!!initial" required />
@@ -326,6 +329,7 @@ onBeforeUnmount(() => { disposed = true; version++; clearTimeout(searchTimer); }
     <section v-if="preview" class="subscription-preview" aria-label="Lịch giao dự kiến"><h2>Lịch giao dự kiến · {{ initial ? preview.futureOccurrences : preview.totalOccurrences }} kỳ{{ initial ? ' chưa xử lý' : '' }}</h2><p v-if="initial && preview.lockedOccurrenceCount">{{ preview.lockedOccurrenceCount }} kỳ đã bắt đầu xử lý được giữ nguyên. Các kỳ đã trôi qua không được tự tạo đơn bù.</p>
       <p><strong>{{ money(preview.estimatedTotal) }}/kỳ</strong> · Phí vận chuyển {{ money(preview.shippingFee) }} · Giảm giá {{ money(preview.discountAmount) }}</p><p>Tổng tham khảo {{ money(preview.estimatedAllOccurrences) }}; đây chưa phải khoản thanh toán đã xác nhận.</p>
       <ol class="subscription-schedule"><li v-for="row in preview.schedule" :key="row.occurrenceNumber"><strong>Kỳ {{ row.occurrenceNumber }}</strong><span>Mong muốn nhận: {{ date(row.wishDate) }}</span><span>Xử lý từ: {{ date(row.processAt) }}</span><span>{{ form.items.reduce((sum,item)=>sum+Number(item.quantity),0) }} sản phẩm · {{ money(preview.estimatedTotal) }} dự kiến</span></li></ol>
+      <ExpirySelectionSummary v-for="item in preview.items || []" :key="item.productId" :choice="item.expiryChoice" :quote="item.expiryQuote" />
       <label class="subscription-consent"><input v-model="form.consent" type="checkbox" required /> <span>Tôi đồng ý tự động tạo đơn COD theo lịch và giới hạn trên, hoặc tự thanh toán PayPal từng kỳ; tôi đã hiểu chính sách giá, tạm dừng và hủy.</span></label>
       <SageButton type="submit" :disabled="!form.consent" :loading="busy">{{ initial ? 'Lưu thay đổi cho các kỳ chưa xử lý' : 'Xác nhận đăng ký định kỳ' }}</SageButton>
     </section>

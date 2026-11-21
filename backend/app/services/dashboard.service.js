@@ -539,6 +539,7 @@ class DashboardService {
       },
     ]);
     const [stock] = await this.aggregate("inventory_items", [
+      ...require("../utils/warehouse-product.util").warehouseProductStages(),
       {
         $match: { $or: [{ status: "active" }, { status: { $exists: false } }] },
       },

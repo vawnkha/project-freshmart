@@ -10,6 +10,7 @@ import { detailId, detailStock, productSpecifications, quantityMessage } from '@
 import { productPrice } from '@/utils/storefront.util';
 import StorefrontBreadcrumb from '@/components/user/common/StorefrontBreadcrumb.vue';
 import ProductPrice from '@/components/user/product/ProductPrice.vue';
+import ExpiryChoicePicker from '@/components/user/product/ExpiryChoicePicker.vue';
 import BatchPromotionNotice from '@/components/user/product/BatchPromotionNotice.vue';
 import ProductGallery from '@/components/user/product/ProductGallery.vue';
 import ProductInformation from '@/components/user/product/ProductInformation.vue';
@@ -36,12 +37,19 @@ watch(product, (item) => {
 const purchase = useProductPurchase();
 const reviews = useProductReviews(computed(() => detailId(product.value?._id || product.value?.id)));
 const quantity = ref(1), touched = ref(false), feedback = ref(null);
-const stock = computed(() => detailStock(product.value)), maximum = computed(() => purchase.maximum(product.value));
+const expiryState = ref({ loading: true });
+const retainedExpiryChoice = ref(null);
+function updateExpiryState(value) { if (value.choice) retainedExpiryChoice.value = value.choice; expiryState.value = value; }
+watch(() => route.params.id, () => { retainedExpiryChoice.value = null; }, { flush: 'sync' });
+const purchaseProduct = computed(() => product.value?.inventoryItemId ? { ...product.value, expiryChoice: expiryState.value.choice, expiryQuote: expiryState.value.quote,
+  price: expiryState.value.quote?.price ?? product.value.price, sellingPrice: expiryState.value.quote?.price ?? product.value.sellingPrice,
+  stock: expiryState.value.quote?.availableQuantity ?? (expiryState.value.error && !expiryState.value.unavailable ? null : 0), availableStock: expiryState.value.quote?.availableQuantity ?? (expiryState.value.error && !expiryState.value.unavailable ? null : 0) } : product.value);
+const stock = computed(() => detailStock(purchaseProduct.value)), maximum = computed(() => purchase.maximum(purchaseProduct.value));
 const packageSize = computed(() => productSpecifications(product.value).find(row => row.label === 'Quy cách đóng gói')?.value);
 const quantityError = computed(() => touched.value && stock.value >= 1 ? quantityMessage(quantity.value, maximum.value) : '');
-const stockLabel = computed(() => stock.value === null ? 'Chưa xác định tồn kho' : stock.value >= 1 ? 'Còn ' + stock.value + ' ' + (product.value?.unit || 'sản phẩm') : 'Hết hàng');
-const addLabel = computed(() => stock.value === null ? 'Chưa xác định tồn kho' : stock.value < 1 ? 'Hết hàng' : productPrice(product.value) === null ? 'Chưa có giá' : maximum.value < 1 ? 'Đã đủ trong giỏ' : 'Thêm vào giỏ hàng');
-const quantityHint = computed(() => stock.value === null ? 'Tải lại thông tin để kiểm tra khả dụng.' : 'Đã có ' + purchase.quantity(product.value) + ' trong giỏ. Có thể thêm tối đa ' + (maximum.value ?? 0) + '.');
+const stockLabel = computed(() => expiryState.value.requiresChoice ? 'Vui lòng chọn nhóm hạn sử dụng' : stock.value === null ? 'Chưa xác định tồn kho' : stock.value >= 1 ? 'Còn ' + stock.value + ' ' + (product.value?.unit || 'sản phẩm') : 'Hết hàng');
+const addLabel = computed(() => expiryState.value.requiresChoice ? 'Chọn hạn sử dụng' : stock.value === null ? 'Chưa xác định tồn kho' : stock.value < 1 ? 'Hết hàng' : productPrice(product.value) === null ? 'Chưa có giá' : maximum.value < 1 ? 'Đã đủ trong giỏ' : 'Thêm vào giỏ hàng');
+const quantityHint = computed(() => stock.value === null ? 'Tải lại thông tin để kiểm tra khả dụng.' : 'Đã có ' + purchase.quantity(purchaseProduct.value) + ' trong giỏ. Có thể thêm tối đa ' + (maximum.value ?? 0) + '.');
 const catalogLink = computed(() => ({ path: '/products', query: { ...route.query } }));
 const categoryLink = computed(() => ({ path: '/products', query: { ...route.query, category_id: detailId(product.value?.category_id), page: undefined } }));
 const crumbs = computed(() => [{ label: 'Trang chủ', to: '/' }, { label: 'Sản phẩm', to: catalogLink.value },
@@ -51,7 +59,7 @@ function setQuantity(value) { quantity.value = value; touched.value = true; }
 async function add() {
   touched.value = true;
   if (quantityError.value) { document.getElementById('pdp-quantity')?.focus(); return; }
-  await purchase.add(product.value, quantity.value);
+  await purchase.add(purchaseProduct.value, quantity.value);
   if (purchase.state.error) { await nextTick(); feedback.value?.focus({ preventScroll: true }); }
 }
 watch(() => route.params.id, () => { quantity.value = 1; touched.value = false; });
@@ -80,12 +88,13 @@ watch(() => route.params.id, () => { quantity.value = 1; touched.value = false; 
             <RouterLink v-if="product.category_name && product.category_id" :to="categoryLink" class="pdp-category">{{ product.category_name }}</RouterLink>
             <h1>{{ product.name || 'Chi tiết sản phẩm' }}</h1>
             <p v-if="product.productCode" class="pdp-product-code">Mã sản phẩm: {{ product.productCode }}</p>
-            <ProductPrice :product="product" />
+            <ProductPrice :product="purchaseProduct" />
             <div class="pdp-secondary-actions">
               <CompareButton :product="product" detail />
               <DosageCalculatorLink :product="product" />
             </div>
-            <BatchPromotionNotice :product-id="detailId(product._id || product.id)" :promotions="product.batchPromotions" />
+            <ExpiryChoicePicker v-if="product.inventoryItemId" :key="String(product._id)" :product-id="String(product._id)" :quantity="Number(quantity)" :initial-choice="retainedExpiryChoice" @change="updateExpiryState" />
+            <BatchPromotionNotice v-else :product-id="detailId(product._id || product.id)" :promotions="product.batchPromotions" />
             <p v-if="product.shortDescription" class="pdp-short-description">{{ product.shortDescription }}</p>
             <dl class="pdp-facts">
               <div v-if="product.brand?.name" class="pdp-fact"><dt>Thương hiệu</dt><dd>{{product.brand.name}}</dd></div>
@@ -103,11 +112,11 @@ watch(() => route.params.id, () => { quantity.value = 1; touched.value = false; 
                 :disabled="purchase.locked() || maximum === null || maximum < 1" @update:model-value="setQuantity" />
               <div class="pdp-purchase-actions">
                 <SageButton class="pdp-add" :loading="purchase.state.busy === 'cart' && purchase.state.productId === detailId(product._id || product.id)"
-                  :disabled="!purchase.canAdd(product, quantity)" @click="add"><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i>{{ addLabel }}</SageButton>
+                  :disabled="!purchase.canAdd(purchaseProduct, quantity) || (product.inventoryItemId && (expiryState.loading || !expiryState.quote?.canFulfill || !!expiryState.error))" @click="add"><i class="fa-solid fa-bag-shopping" aria-hidden="true"></i>{{ addLabel }}</SageButton>
                 <SageButton variant="secondary" class="pdp-save sage-icon-button" :aria-label="purchase.isSaved(product) ? 'Bỏ yêu thích sản phẩm' : 'Lưu sản phẩm yêu thích'"
                   :aria-pressed="purchase.isSaved(product)" :disabled="purchase.locked()" @click="purchase.toggle(product)"><i class="fa-regular fa-heart" aria-hidden="true"></i></SageButton>
               </div>
-              <SubscriptionPurchaseLink :product-id="detailId(product._id || product.id)" :quantity="Number(quantity)" />
+              <SubscriptionPurchaseLink :product-id="detailId(product._id || product.id)" :quantity="Number(quantity)" :expiry-choice="expiryState.choice" />
               <p class="pdp-cart-note">Giỏ hàng không giữ chỗ tồn kho. Số lượng được kiểm tra lại khi thao tác.</p>
             </div>
             <div v-if="purchase.state.error || purchase.state.success" ref="feedback" tabindex="-1" class="pdp-feedback" :class="{ 'pdp-feedback--error': purchase.state.error }" :role="purchase.state.error ? 'alert' : 'status'">

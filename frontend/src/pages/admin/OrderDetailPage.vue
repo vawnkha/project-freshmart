@@ -189,7 +189,7 @@ onMounted(fetchOrder);
             </thead>
 
             <tbody>
-              <tr v-for="item in order.items || []" :key="item.product_id">
+              <tr v-for="item in order.items || []" :key="item.lineKey || item.product_id">
                 <td class="invoice-thumb-cell">
                   <img
                     v-if="item.thumbnail && !failedImages.has(item.thumbnail)"
@@ -203,6 +203,7 @@ onMounted(fetchOrder);
                 </td>
                 <td>
                   <div class="invoice-product-name">{{ item.name }}</div>
+                  <div v-if="item.expiryChoice">{{ item.expiryChoice.group==='long' ? 'Hàng có hạn sử dụng dài' : item.expiryChoice.group==='promotion' ? 'Hàng giảm giá cận hạn' : 'Hàng hạn dùng khác' }}</div>
                   <div v-for="allocation in item.batchAllocations || []" :key="allocation.batchId">Lô {{ allocation.batchNumber }} · HSD {{ formatDate(allocation.expiryDate) }} · {{ allocation.quantity }} {{ item.unit }}<span v-if="allocation.discountAmount"> · Giảm {{ formatPrice(allocation.discountAmount) }} cho {{ allocation.discountQuantity }} sản phẩm</span></div>
                 </td>
                 <td>{{ formatPrice(item.price) }}</td>

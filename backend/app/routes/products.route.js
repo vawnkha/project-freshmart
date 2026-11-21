@@ -31,6 +31,7 @@ router.get(
 router.get("/compare", validate({ query: compareQuerySchema }), products.compare);
 router.get("/by-slug/:slug", validate({ params: z.object({ slug: slugSchema }) }), products.findBySlug);
 router.get("/:id", validate({ params: productIdParamSchema }), products.findOne);
+router.get('/:id/purchase-options', validate({ params: productIdParamSchema }), products.purchaseOptions);
 router.post(
   "/",
   authMiddleware,

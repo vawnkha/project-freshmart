@@ -52,6 +52,7 @@ class SubscriptionsService {
     const product = productId ? await this.orders.Product.findOne({ _id: objectId(productId) }) : null;
     return {
       enabled: this.config.enabled, eligible: this.config.enabled && this.eligible(product),
+      longMinDays: require('../config/environment').read('EXPIRY_LONG_MIN_DAYS'),
       timezone: this.config.timezone, leadDays: this.config.leadDays,
       priceIncreasePercent: this.config.priceIncreasePercent, maxOccurrences: this.config.maxOccurrences,
       today: localDay(this.now()), paymentMethods: ["cod", "paypal"],
@@ -66,7 +67,7 @@ class SubscriptionsService {
       ...(this.config.productIds.length ? { _id: { $in: this.config.productIds.map(objectId) } } : {}),
       ...(keyword ? { name: { $regex: escapeRegex(keyword), $options: "i" } } : {}),
     };
-    const items = await this.orders.Product.find(filter, { projection: { name: 1, sellingPrice: 1, price: 1, unit: 1, packageSize: 1, thumbnail: 1 } }).sort({ name: 1, _id: 1 }).limit(20).toArray();
+    const items = await this.orders.Product.find(filter, { projection: { name: 1, inventoryItemId: 1, sellingPrice: 1, price: 1, unit: 1, packageSize: 1, thumbnail: 1 } }).sort({ name: 1, _id: 1 }).limit(20).toArray();
     return { items };
   }
 
@@ -136,7 +137,7 @@ class SubscriptionsService {
       schedule: visibleSchedule, totalOccurrences: schedule.length, futureOccurrences: visibleSchedule.length, lockedOccurrenceCount, estimatedTotal: plan.total_price,
       estimatedAllOccurrences: plan.total_price * visibleSchedule.length,
       subtotal: plan.subtotal_price, shippingFee: plan.shipping_fee, discountAmount: plan.discount_amount,
-      items: plan.items.map(item => ({ productId: item.productId, name: item.name, image: item.image, unit: item.unit, packageSize: item.packageSize, price: item.price, quantity: item.quantity })),
+      items: plan.items.map(item => ({ productId: item.productId, name: item.name, image: item.image, unit: item.unit, packageSize: item.packageSize, price: item.price, quantity: item.quantity, ...(item.expiryChoice ? { expiryChoice: item.expiryChoice, expiryQuote: item.expiryQuote } : {}) })),
       quoteToken: this.quoteToken(userId, input, plan.total_price), policy: await this.policy(),
     };
   }
@@ -190,6 +191,7 @@ class SubscriptionsService {
   storedInput(input, plan) {
     return {
       items: plan.items.map(item => ({ productId: item.productId, quantity: item.quantity,
+        ...(item.expiryChoice ? { expiryChoice: item.expiryChoice } : {}),
         productSnapshot: { name: item.name, unit: item.unit || "", packageSize: item.packageSize || "", image: item.image || "" } })),
       frequency: input.frequency, startDate: input.startDate, endDate: input.endDate || null,
       maxOccurrences: input.maxOccurrences || null, anchorDay: Number(input.startDate.slice(-2)),
@@ -203,7 +205,7 @@ class SubscriptionsService {
 
   inputFor(sub) {
     return {
-      items: sub.items.map(item => ({ productId: String(item.productId), quantity: item.quantity })),
+      items: sub.items.map(item => ({ productId: String(item.productId), quantity: item.quantity, ...(item.expiryChoice ? { expiryChoice: item.expiryChoice } : {}) })),
       frequency: sub.frequency, startDate: sub.startDate,
       ...(sub.endDate ? { endDate: sub.endDate } : { maxOccurrences: sub.maxOccurrences }),
       addressId: String(sub.addressId), shippingMethodId: String(sub.shippingMethodId),

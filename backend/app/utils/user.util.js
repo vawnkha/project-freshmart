@@ -2,11 +2,11 @@ function sanitizeUser(user) {
   if (!user) return user;
 
   const {
-    password,
-    activation_token,
-    activation_token_expires,
-    resetToken,
-    resetTokenExpiresAt,
+    password: _password,
+    activation_token: _activationToken,
+    activation_token_expires: _activationTokenExpires,
+    resetToken: _resetToken,
+    resetTokenExpiresAt: _resetTokenExpiresAt,
     ...safeUser
   } = user;
 

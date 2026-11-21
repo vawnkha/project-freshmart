@@ -1,5 +1,5 @@
 const { z } = require("zod");
-const { emailSchema, nonEmptyString } = require("./common.validator");
+const { emailSchema } = require("./common.validator");
 const passwordSchema = z.string().min(8).max(128);
 const credentialSchema = z.string().min(1, "Truong nay la bat buoc");
 

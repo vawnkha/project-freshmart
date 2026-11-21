@@ -10,23 +10,25 @@ class CartService {
     return res.data;
   }
 
-  async addItem(userId, productId, quantity = 1) {
+  async addItem(userId, productId, quantity = 1, selection = {}) {
     const res = await this.api.post(`/${userId}/items`, {
       productId,
       quantity,
+      ...selection,
     });
     return res.data;
   }
 
-  async updateItem(userId, productId, quantity) {
+  async updateItem(userId, productId, quantity, selection = {}) {
     const res = await this.api.put(`/${userId}/items/${productId}`, {
       quantity,
+      ...selection,
     });
     return res.data;
   }
 
-  async removeItem(userId, productId) {
-    const res = await this.api.delete(`/${userId}/items/${productId}`);
+  async removeItem(userId, productId, lineKey) {
+    const res = await this.api.delete(`/${userId}/items/${productId}`, ...(lineKey ? [{ params: { lineKey } }] : []));
     return res.data;
   }
 

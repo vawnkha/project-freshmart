@@ -1,4 +1,6 @@
 const { z } = require("zod");
+const expiryChoiceSchema = z.object({ group: z.enum(['long', 'other', 'promotion']), discountId: z.string().regex(/^[a-f\d]{24}$/i).optional(), minRemainingDays: z.number().int().min(1).max(3650).optional() }).strict();
+const choiceFields = { expiryChoice: expiryChoiceSchema.optional(), quoteFingerprint: z.string().regex(/^[a-f\d]{64}$/).optional() };
 const {
   objectIdSchema,
 } = require("./common.validator");
@@ -33,6 +35,7 @@ const addCartItemSchema = z
     product_id: objectIdSchema.optional(),
     productId: objectIdSchema.optional(),
     quantity: integerPositiveQuantitySchema.optional().default(1),
+    ...choiceFields,
   })
   .superRefine((value, ctx) => {
     if (!value.product_id && !value.productId) {
@@ -49,6 +52,7 @@ const addCartItemSchema = z
   }));
 
 const updateCartItemSchema = z.object({
+  ...choiceFields,
   quantity: integerNonNegativeQuantitySchema,
 });
 
@@ -75,6 +79,7 @@ function validateUpdateItem(req) {
 }
 
 module.exports = {
+  expiryChoiceSchema,
   addCartItemSchema,
   cartItemParamSchema,
   cartUserParamSchema,

@@ -10,6 +10,7 @@
     "start": "nodemon server.js",
     "test": "node --test",
     "lint": "eslint app app.js server.js scripts test",
+    "migrate:product-ownership": "node scripts/migrate-product-ownership.js",
     "migrate:inventory-expiry": "node scripts/migrate-inventory-expiry.js",
     "migrate:security-indexes": "node scripts/migrate-security-indexes.js",
     "migrate:product-technical-specs": "node scripts/migrate-product-technical-specs.js",

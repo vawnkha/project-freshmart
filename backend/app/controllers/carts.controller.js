@@ -43,7 +43,7 @@ exports.addItem = async (req, res, next) => {
     if (!productId) return next(new ApiError(400, "product_id là bắt buộc"));
 
     const cartService = new CartsService(MongoDB.client);
-    const result = await cartService.addItem(userId, productId, quantity);
+    const result = await cartService.addItem(userId, productId, quantity, req.body);
     if (result.error) return next(new ApiError(400, result.error));
 
     return res.send({ message: "Thêm sản phẩm vào giỏ hàng thành công" });
@@ -57,7 +57,7 @@ exports.updateItem = async (req, res, next) => {
     const { userId, productId } = req.params;
     const { quantity } = req.body;
     const cartService = new CartsService(MongoDB.client);
-    const result = await cartService.updateItem(userId, productId, quantity);
+    const result = await cartService.updateItem(userId, productId, quantity, req.body);
     if (result.error) return next(new ApiError(400, result.error));
 
     return res.send({
@@ -72,7 +72,7 @@ exports.removeItem = async (req, res, next) => {
   try {
     const { userId, productId } = req.params;
     const cartService = new CartsService(MongoDB.client);
-    const result = await cartService.removeItem(userId, productId);
+    const result = await cartService.removeItem(userId, productId, req.query.lineKey);
     if (result.error) return next(new ApiError(400, result.error));
 
     return res.send({ message: "Xóa sản phẩm khỏi giỏ hàng thành công" });

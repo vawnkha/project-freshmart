@@ -17,7 +17,7 @@ export function useProductPurchase() {
   const id = product => detailId(product?._id || product?.id);
   const live = (owner, run) => !disposed && run === generation && owner === auth.userId;
   function reset() { Object.assign(state, { busy: '', productId: '', success: '', error: '', uncertain: '', fresh: false }); }
-  function quantity(product) { return cart.items.filter(row => detailId(row.product_id) === id(product)).reduce((sum, row) => sum + Number(row.quantity || 0), 0); }
+  function quantity(product) { return cart.items.filter(row => detailId(row.product_id) === id(product) && (!product.expiryChoice || JSON.stringify(row.expiryChoice) === JSON.stringify(product.expiryChoice))).reduce((sum, row) => sum + Number(row.quantity || 0), 0); }
   function maximum(product) { const stock = detailStock(product); return stock === null ? null : Math.max(0, Math.floor(stock) - quantity(product)); }
   function locked() { return !!state.busy || !!state.uncertain || cart.loading || wishlist.loading || cart.mutation.uncertain || wishlist.mutation.uncertain; }
   function canAdd(product, amount = 1) { return !!id(product) && productPrice(product) !== null && !quantityMessage(amount, maximum(product)) && !locked(); }
@@ -31,11 +31,12 @@ export function useProductPurchase() {
     }
   }
   async function perform(product, kind, amount = 1) {
+    if (kind === 'cart' && product?.inventoryItemId && !product.expiryChoice) { router.push('/products/' + (product.slug || id(product))); notify('Vui lòng chọn nhóm hạn sử dụng và kiểm tra giá trước khi thêm vào giỏ.'); return; }
     if (locked() || !id(product) || (kind === 'cart' && !canAdd(product, amount))) return;
     if (!auth.userId) { notify('Vui lòng đăng nhập để sử dụng chức năng này.'); router.push('/login'); return; }
     const owner = auth.userId, run = generation; reset(); state.busy = kind; state.productId = id(product);
     try {
-      await (kind === 'cart' ? cart.addToCart(owner, id(product), Number(amount)) : wishlist.toggleWishlist(owner, id(product)));
+      await (kind === 'cart' ? cart.addToCart(owner, id(product), Number(amount), ...(product.expiryChoice ? [{ expiryChoice: product.expiryChoice, quoteFingerprint: product.expiryQuote?.quoteFingerprint }] : [])) : wishlist.toggleWishlist(owner, id(product)));
       if (live(owner, run)) { state.success = kind === 'cart' ? 'Đã thêm sản phẩm vào giỏ hàng.' : 'Đã cập nhật danh sách yêu thích.'; notify(state.success, 'success'); }
     } catch (cause) {
       if (!live(owner, run)) return;

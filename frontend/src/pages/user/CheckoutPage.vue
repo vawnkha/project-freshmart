@@ -1,5 +1,6 @@
 <script setup>
 import PageHeading from "@/components/user/common/PageHeading.vue";
+import ExpirySelectionSummary from '@/components/user/product/ExpirySelectionSummary.vue';
 import { notify } from "@/composables/useStorefrontNotice";
 import AppState from "@/components/user/common/AppState.vue";
 import ResponsiveImage from "@/components/user/common/ResponsiveImage.vue";
@@ -52,6 +53,7 @@ const selectedShippingMethodId = ref("");
 const paymentMethod = ref(PAYMENT_METHODS.COD);
 const submitting = ref(false);
 const discountCode = ref("");
+const hasExpiryPromotion = computed(() => items.value.some(item => item.expiryChoice?.group === 'promotion'));
 const discountLoading = ref(false);
 const discountError = ref("");
 const appliedDiscount = ref(null);
@@ -280,6 +282,7 @@ function buildDiscountCartItems() {
     category_id: item.category_id || item.categoryId,
     price: Number(item.price || 0),
     quantity: Number(item.quantity || 0),
+    ...(item.expiryChoice ? { expiryChoice: item.expiryChoice } : {}),
     subtotal: Number(
       item.subtotal || item.line_total || item.price * item.quantity || 0,
     ),
@@ -353,9 +356,10 @@ async function openVoucherPicker() {
   try {
     const result = await discountService.getAvailable(buildDiscountCartItems().map(item => ({
       productId: normalizeId(item.productId), quantity: item.quantity,
+      ...(item.expiryChoice ? { expiryChoice: item.expiryChoice } : {}),
     })));
     if (!Array.isArray(result?.data)) throw new Error("Dữ liệu mã giảm giá không hợp lệ.");
-    if (ownsVoucherOffers(request)) voucherOffers.value = result.data;
+    if (ownsVoucherOffers(request)) voucherOffers.value = items.value.some(item => item.expiryChoice) ? result.data.filter(offer => offer.scope !== 'batch') : result.data;
   } catch (error) {
     if (ownsVoucherOffers(request)) voucherOffersError.value = userError(error, "Chưa thể tải mã giảm giá. Vui lòng thử lại.");
   } finally {
@@ -1034,11 +1038,12 @@ function checkoutMoney(value) {
                   <div class="discount-box__heading">
                     <h2 id="checkout-discount-title" class="block-title">Mã giảm giá</h2>
                     <button type="button" class="btn btn-default" aria-haspopup="dialog"
-                      :disabled="!!checkoutCartProblem || discountLoading || submitting" @click="openVoucherPicker">
+                      :disabled="hasExpiryPromotion || !!checkoutCartProblem || discountLoading || submitting" @click="openVoucherPicker">
                       Chọn mã giảm giá
                     </button>
                   </div>
                   <label for="checkout-discount" class="discount-box__label">Nhập mã giảm giá</label>
+                  <p v-if="hasExpiryPromotion">Ưu đãi cận hạn đã tính theo nhóm đã chọn; không kết hợp mã giảm giá khác.</p>
                   <div class="discount-box__input-row">
                     <input
                       id="checkout-discount"
@@ -1048,14 +1053,14 @@ function checkoutMoney(value) {
                       type="text"
                       class="form-control"
                       placeholder="Nhập mã giảm giá"
-                      :disabled="discountLoading || !!appliedDiscount"
+                      :disabled="hasExpiryPromotion || discountLoading || !!appliedDiscount"
                       @keyup.enter="applyDiscount()"
                     />
                     <button
                   type="button"
                       v-if="!appliedDiscount"
                       class="btn btn-primary"
-                      :disabled="discountLoading || !discountCode.trim()"
+                      :disabled="hasExpiryPromotion || discountLoading || !discountCode.trim()"
                       :aria-busy="discountLoading"
                       @click="applyDiscount()"
                     >
@@ -1141,7 +1146,7 @@ function checkoutMoney(value) {
                 <div class="summary-items">
                   <div
                     v-for="item in items"
-                    :key="item.product_id || item.id"
+                    :key="item.lineKey || item.product_id || item.id"
                     class="summary-item"
                   >
                     <div class="summary-item-left">
@@ -1157,6 +1162,7 @@ function checkoutMoney(value) {
                       <div class="summary-meta">
                         Số lượng: {{ item.quantity }} × {{ checkoutMoney(item.price) }}
                       </div>
+                      <ExpirySelectionSummary :choice="item.expiryChoice" :quote="item.expiryQuote" />
                       <div v-if="item.line_total != null || item.subtotal != null" class="summary-line-amount">
                         <span>Thành tiền</span> <strong>{{ checkoutMoney(item.line_total ?? item.subtotal) }}</strong>
                       </div>

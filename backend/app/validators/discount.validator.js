@@ -212,6 +212,7 @@ module.exports = {
   availableDiscountSchema: z.object({
     cartItems: z.array(z.object({
       productId: objectIdSchema,
+      expiryChoice: require('./cart.validator').expiryChoiceSchema.optional(),
       quantity: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     })).min(1),
   }).strict(),

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
+    "test:products:e2e": "node scripts/product-workflow-e2e.cjs",
     "test:diagnosis:e2e": "node scripts/shrimp-diagnosis-e2e.cjs",
     "lint": "node scripts/check-source.mjs",
     "dev": "vite",

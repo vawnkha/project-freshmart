@@ -50,13 +50,16 @@ class PurchaseOrderService {
     const normalized = [];
 
     for (const item of items) {
-      const inventoryItemId = toObjectId(item.inventoryItemId);
+      const product = item.productId ? await this.client.db().collection('products').findOne({ _id: toObjectId(item.productId) }) : null;
+      const inventoryItemId = toObjectId(product?.inventoryItemId || item.inventoryItemId);
       if (!inventoryItemId)
         throw new ApiError(400, "inventoryItemId khong hop le");
 
-      const inventoryItem =
-        await this.inventoryItemRepository.findById(inventoryItemId);
-      if (!isInventoryItemActive(inventoryItem)) {
+      const inventoryItem = await require('../utils/warehouse-product.util').productForItem(this.client,
+        await this.inventoryItemRepository.findById(inventoryItemId));
+      if (item.productId && (!product || !inventoryItem || String(inventoryItem.productId) !== String(product._id)))
+        throw new ApiError(400, 'Liên kết sản phẩm và hồ sơ kho không hợp lệ');
+      if (!isInventoryItemActive(inventoryItem) || !inventoryItem.productId) {
         throw new ApiError(400, "Hang kho khong ton tai hoac khong hoat dong");
       }
 

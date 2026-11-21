@@ -6,6 +6,8 @@ import { toTypedSchema } from "@vee-validate/zod";
 import categoryService from "@/services/category.service";
 import productService from "@/services/product.service";
 import adminProductService from "@/services/admin-product.service";
+import ProductIdentityFields from '@/components/admin/common/ProductIdentityFields.vue';
+import { hasSellingPrice, isProductVisible } from '@/utils/product-visibility.util';
 import TechnicalSpecsEditor from '@/components/admin/common/TechnicalSpecsEditor.vue';
 import RichTextEditor from '@/components/admin/common/RichTextEditor.vue';
 import { cleanSpecs } from '@/validators/technical-specs.validator';
@@ -40,6 +42,8 @@ const newThumbnailPreview = ref("");
 const newImagePreviews = ref([]);
 
 const editForm = reactive({
+  note: "",
+  productCode: "", slug: "", brandId: "", manufacturerId: "", shortDescription: "",
   _id: "",
   name: "",
   category_id: "",
@@ -139,11 +143,14 @@ function openEditModal(item) {
   Object.assign(metadata, { technicalSpecs: JSON.parse(JSON.stringify(item.technicalSpecs || {})), packageMeasure: item.packageMeasure ? { ...item.packageMeasure } : null,
     packageSize: item.packageSize || '', storageInstruction: item.storageInstruction || '', expiryMonths: item.expiryMonths ?? '' });
   resetEditValidation();
+  for (const key of ['productCode', 'slug', 'shortDescription', 'note']) editForm[key] = item[key] || '';
+  editForm.brandId = normalizeId(item.brandId);
+  editForm.manufacturerId = normalizeId(item.manufacturerId);
   editForm._id = item._id || item.id;
   editForm.name = item.name || "";
   editForm.category_id = normalizeId(item.category_id || item.category);
   editForm.description = item.description || "";
-  editForm.price = item.price ?? "";
+  editForm.price = item.sellingPrice ?? item.price ?? "";
   editForm.stock = item.stock ?? "";
   editForm.unit = item.unit || "";
   editForm.inventoryItemId = normalizeId(item.inventoryItemId);
@@ -242,17 +249,13 @@ async function submitEdit(nextStatus = editForm.status) {
   try {
     const data = new FormData();
     data.append('technicalSpecs', JSON.stringify(cleanSpecs(metadata.technicalSpecs)));
-    if (!isEditingInventoryProduct.value) {
-      data.append('packageMeasure', JSON.stringify(metadata.packageMeasure?.value ? metadata.packageMeasure : null));
-      for (const key of ['packageSize','storageInstruction','expiryMonths']) data.append(key, metadata[key]);
-    }
+    data.append('packageMeasure', JSON.stringify(metadata.packageMeasure?.value ? metadata.packageMeasure : null));
+    for (const key of ['packageSize','storageInstruction','expiryMonths']) data.append(key, metadata[key]);
+    for (const key of ['productCode','slug','brandId','manufacturerId','shortDescription','note']) data.append(key, editForm[key]);
     data.append("name", editForm.name);
     data.append("category_id", editForm.category_id);
     data.append("description", editForm.description);
-    data.append("price", String(editForm.price));
-    if (!isEditingInventoryProduct.value) {
-      data.append("stock", String(editForm.stock));
-    }
+    data.append("sellingPrice", String(editForm.price));
     data.append("unit", editForm.unit);
     data.append("status", nextStatus);
 
@@ -279,6 +282,48 @@ async function submitEdit(nextStatus = editForm.status) {
   }
 }
 
+const visibilityBusy = reactive({});
+const visibilityError = ref('');
+const priceProduct = ref(null);
+const visibilityPrice = ref('');
+const priceError = ref('');
+
+async function saveVisibility(item, status, sellingPrice) {
+  if (visibilityBusy[item._id]) return;
+  visibilityBusy[item._id] = true;
+  visibilityError.value = '';
+  priceError.value = '';
+  try {
+    const data = new FormData();
+    data.append('status', status);
+    if (sellingPrice !== undefined) data.append('sellingPrice', String(sellingPrice));
+    const response = await productService.update(item._id, data);
+    const updated = response?.data || response;
+    Object.assign(item, updated);
+    priceProduct.value = null;
+  } catch (error) {
+    const message = error?.response?.data?.message || 'Không thể cập nhật trạng thái sản phẩm';
+    if (priceProduct.value) priceError.value = message;
+    else visibilityError.value = message;
+  } finally { visibilityBusy[item._id] = false; }
+}
+
+function toggleVisibility(item) {
+  if (isProductVisible(item)) return saveVisibility(item, 'draft');
+  if (hasSellingPrice(item)) return saveVisibility(item, 'active');
+  priceProduct.value = item;
+  visibilityPrice.value = '';
+  priceError.value = '';
+}
+
+function publishWithPrice() {
+  if (!hasSellingPrice({ sellingPrice: visibilityPrice.value })) {
+    priceError.value = 'Giá bán phải là số hợp lệ lớn hơn 0';
+    return;
+  }
+  return saveVisibility(priceProduct.value, 'active', Number(visibilityPrice.value));
+}
+
 async function removeProduct(id) {
   if (!window.confirm("Bạn có chắc muốn xóa sản phẩm này?\n\nDữ liệu sau khi xóa sẽ không thể khôi phục.")) return;
 
@@ -297,9 +342,7 @@ async function removeProduct(id) {
   }
 }
 
-function resolveStatus(stock) {
-  return Number(stock) > 0 ? "Còn hàng" : "Hết hàng";
-}
+
 
 function handlePageChange(page) {
   currentPage.value = page;
@@ -351,14 +394,16 @@ onMounted(fetchData);
         <div>
           <div class="admin-panel__header-title">Danh sách sản phẩm</div>
           <div class="admin-panel__header-subtitle">
-            Trang quản lý sản phẩm cho phép admin chỉnh sửa và xóa các sản phẩm
-            hiện có.
+            Quản lý thông tin sản phẩm và hiển thị trên website.
           </div>
         </div>
 
-        <button class="admin-btn admin-btn--secondary" @click="fetchData">
-          Làm mới
-        </button>
+        <div class="product-list-actions">
+          <RouterLink class="admin-btn admin-btn--primary" to="/admin/products/create">Thêm sản phẩm</RouterLink>
+          <button class="admin-btn admin-btn--secondary" @click="fetchData">
+            Làm mới
+          </button>
+        </div>
       </div>
 
       <div class="admin-panel__body">
@@ -395,29 +440,19 @@ onMounted(fetchData);
               <tr v-for="item in paginatedProducts" :key="item._id || item.id">
                 <td>
                   <div class="admin-product-thumb-wrap">
-                    <img
+                    <img v-if="item.thumbnail"
                       :src="item.thumbnail"
                       class="admin-thumb admin-thumb--product"
                       :alt="item.name"
                     />
+                    <span v-else class="admin-note">Chưa có ảnh</span>
                   </div>
                 </td>
 
                 <td>
                   <div class="admin-product-info">
                     <strong>{{ item.name }}</strong>
-                    <div class="mt-2">
-                      <span
-                        class="admin-badge"
-                        :class="
-                          hasInventoryLink(item)
-                            ? 'admin-badge--info'
-                            : 'admin-badge--warning'
-                        "
-                      >
-                        {{ hasInventoryLink(item) ? "Từ kho" : "Legacy" }}
-                      </span>
-                    </div>
+                    <div class="admin-note">{{ item.productCode }}</div>
                   </div>
                 </td>
 
@@ -444,22 +479,18 @@ onMounted(fetchData);
                 </td>
 
                 <td class="admin-price-cell">
-                  {{ Number(item.price || 0).toLocaleString("vi-VN") }} VND
+                  {{ item.sellingPrice == null ? "Chưa thiết lập" : Number(item.sellingPrice).toLocaleString("vi-VN") + " VNĐ" }}
                 </td>
 
                 <td>{{ item.unit || "---" }}</td>
 
                 <td>
-                  <span
-                    class="admin-badge"
-                    :class="
-                      Number(item.stock) > 0
-                        ? 'admin-badge--success'
-                        : 'admin-badge--danger'
-                    "
-                  >
-                    {{ item.status === "draft" ? "Bản nháp" : item.status === "inactive" ? "Đã ẩn" : resolveStatus(item.stock) }}
-                  </span>
+                  <button type="button" role="switch" :aria-checked="isProductVisible(item)"
+                    :aria-label="`Hiển thị ${item.name}`" class="product-visibility-toggle"
+                    :disabled="Boolean(visibilityBusy[item._id])" @click="toggleVisibility(item)">
+                    <span class="product-visibility-track" aria-hidden="true"></span>
+                    {{ visibilityBusy[item._id] ? 'Đang lưu…' : isProductVisible(item) ? 'Hiển thị' : 'Ẩn' }}
+                  </button>
                 </td>
 
                 <td>
@@ -495,6 +526,28 @@ onMounted(fetchData);
       </div>
     </section>
 
+    <div v-if="priceProduct" class="admin-modal-mask" @click.self="!visibilityBusy[priceProduct._id] && (priceProduct = null)">
+      <form class="admin-modal" role="dialog" aria-modal="true" aria-labelledby="visibility-price-title" @submit.prevent="publishWithPrice">
+        <div class="admin-modal__header"><h2 id="visibility-price-title" class="admin-modal__title">Yêu cầu bổ sung giá bán</h2></div>
+        <div class="admin-modal__body">
+          <p>Sản phẩm chưa được thiết lập giá bán. Vui lòng nhập giá bán trước khi hiển thị trên website.</p>
+          <p class="admin-note">
+            Giá nhập gần nhất
+            <strong v-if="Number.isFinite(priceProduct.lastImportPrice)">
+              {{ priceProduct.lastImportPrice.toLocaleString('vi-VN') }} VNĐ
+            </strong>
+            <span v-else>Chưa có lần nhập kho đã xác nhận</span>
+          </p>
+          <label for="visibility-price">Giá bán (VNĐ)</label>
+          <input id="visibility-price" v-model="visibilityPrice" type="number" min="0.01" step="any" class="admin-form__control" autofocus />
+          <p v-if="priceError" role="alert" class="admin-form__error">{{ priceError }}</p>
+        </div>
+        <div class="admin-modal__footer">
+          <button type="button" class="admin-btn admin-btn--secondary" :disabled="visibilityBusy[priceProduct._id]" @click="priceProduct = null">Hủy</button>
+          <button type="submit" class="admin-btn admin-btn--success" :disabled="visibilityBusy[priceProduct._id]">{{ visibilityBusy[priceProduct._id] ? 'Đang lưu…' : 'Lưu và hiển thị' }}</button>
+        </div>
+      </form>
+    </div>
     <div
       v-if="showEditModal"
       class="admin-modal-mask"
@@ -514,14 +567,7 @@ onMounted(fetchData);
         </div>
 
         <div class="admin-modal__body">
-          <section v-if="isEditingInventoryProduct" class="admin-note">
-            <p>Quy cách, bảo quản và thời hạn tham khảo được quản lý tại hồ sơ hàng kho.</p>
-            <RouterLink :to="{ name: 'admin-inventory-items', query: { edit: editForm.inventoryItemId } }">Chỉnh sửa hồ sơ hàng kho</RouterLink>
-            <p>Quy cách: {{ metadata.packageSize || 'Chưa công bố' }}<span v-if="metadata.packageMeasure"> · {{ metadata.packageMeasure.value }} {{ metadata.packageMeasure.unit }}</span></p>
-            <p>Bảo quản: {{ metadata.storageInstruction || 'Chưa công bố' }}</p>
-            <p>Thời hạn tham khảo: {{ metadata.expiryMonths === '' ? 'Chưa công bố' : metadata.expiryMonths + ' tháng' }}</p>
-          </section>
-          <TechnicalSpecsEditor ref="technicalEditor" v-model="metadata.technicalSpecs" v-model:package-measure="metadata.packageMeasure" v-model:package-size="metadata.packageSize" v-model:storage-instruction="metadata.storageInstruction" v-model:expiry-months="metadata.expiryMonths" :general="!isEditingInventoryProduct" :packaging="!isEditingInventoryProduct" />
+          <ProductIdentityFields :model-value="editForm" />
           <div class="admin-form__row">
             <label class="admin-form__label">Tên sản phẩm *</label>
             <div>
@@ -579,7 +625,7 @@ onMounted(fetchData);
               min="0"
               class="admin-form__control"
               :class="{ 'is-invalid': editErrors.stock }"
-              :disabled="isEditingInventoryProduct"
+              :disabled="true"
             />
             <div v-if="editErrors.stock" class="admin-form__error">
               {{ editErrors.stock }}
@@ -741,6 +787,8 @@ onMounted(fetchData);
               </div>
             </div>
           </div>
+
+          <TechnicalSpecsEditor general ref="technicalEditor" v-model="metadata.technicalSpecs" v-model:package-measure="metadata.packageMeasure" v-model:package-size="metadata.packageSize" v-model:storage-instruction="metadata.storageInstruction" v-model:expiry-months="metadata.expiryMonths" />
         </div>
 
         <div class="admin-modal__footer">
@@ -764,7 +812,7 @@ onMounted(fetchData);
             Xuất bản
           </button>
           <button v-if="!['draft', 'inactive'].includes(editForm.status)" type="button" class="admin-btn admin-btn--secondary"
-            :disabled="saving" @click="submitEdit('inactive')">
+            :disabled="saving" @click="submitEdit('draft')">
             Ẩn sản phẩm
           </button>
         </div>
@@ -774,6 +822,21 @@ onMounted(fetchData);
 </template>
 
 <style scoped>
+.product-list-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.product-visibility-toggle { display:inline-flex; align-items:center; gap:8px; border:0; background:transparent; color:inherit; padding:8px 0; white-space:nowrap; cursor:pointer; }
+.product-visibility-toggle:disabled { cursor:wait; opacity:.6; }
+.product-visibility-track { width:36px; height:20px; border-radius:10px; background:#8491a0; position:relative; }
+.product-visibility-track::after { content:''; position:absolute; width:16px; height:16px; top:2px; left:2px; border-radius:50%; background:white; transition:transform .15s; }
+.product-visibility-toggle[aria-checked="true"] .product-visibility-track { background:#168579; }
+.product-visibility-toggle[aria-checked="true"] .product-visibility-track::after { transform:translateX(16px); }
+
 .admin-modal--product { width:min(1120px,100%); max-height:calc(100dvh - 32px); }
 .admin-modal--product .admin-modal__header,.admin-modal--product .admin-modal__footer { padding:12px 16px; }
 .admin-modal--product .admin-modal__body { padding:12px 16px; }

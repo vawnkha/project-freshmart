@@ -5,6 +5,7 @@ import { toTypedSchema } from "@vee-validate/zod";
 import { useRouter } from "vue-router";
 import categoryService from "@/services/category.service";
 import productService from "@/services/product.service";
+import ProductIdentityFields from '@/components/admin/common/ProductIdentityFields.vue';
 import TechnicalSpecsEditor from '@/components/admin/common/TechnicalSpecsEditor.vue';
 import RichTextEditor from '@/components/admin/common/RichTextEditor.vue';
 import { cleanSpecs } from '@/validators/technical-specs.validator';
@@ -12,7 +13,7 @@ const technicalEditor = ref(null);
 const metadata = reactive({ technicalSpecs: {}, packageMeasure: null, packageSize: '', storageInstruction: '', expiryMonths: '' });
 import {
   imageFileSchema,
-  nonNegativeNumberSchema,
+  optionalNonNegativeNumberSchema,
   objectIdSchema,
   optionalString,
   requiredString,
@@ -27,11 +28,12 @@ const imagePreviews = ref([]);
 const loading = ref(false);
 
 const form = reactive({
+  note: "",
+  productCode: "", slug: "", brandId: "", manufacturerId: "", shortDescription: "",
   name: "",
   category_id: "",
   description: "",
   price: "",
-  stock: "",
   unit: "",
   thumbnail: null,
   images: [],
@@ -42,10 +44,9 @@ const productCreateSchema = toTypedSchema(
     name: requiredString("Ten san pham la bat buoc"),
     category_id: objectIdSchema,
     description: optionalString,
-    price: nonNegativeNumberSchema,
-    stock: nonNegativeNumberSchema,
+    price: optionalNonNegativeNumberSchema,
     unit: optionalString,
-    thumbnail: imageFileSchema,
+    thumbnail: imageFileSchema.optional(),
     images: z.array(imageFileSchema).max(4, "Anh chi tiet toi da 4 file"),
   }),
 );
@@ -87,7 +88,7 @@ async function validateForm() {
 }
 
 async function submitForm() {
-  if (!technicalEditor.value?.validate()) return;
+  if (loading.value || !technicalEditor.value?.validate()) return;
   const valid = await validateForm();
   if (!valid) return;
 
@@ -100,8 +101,10 @@ async function submitForm() {
     data.append("name", form.name);
     data.append("category_id", form.category_id);
     data.append("description", form.description);
-    data.append("price", String(form.price));
-    data.append("stock", String(form.stock));
+    data.append("sellingPrice", form.price === '' ? '' : String(form.price));
+    for (const key of ['productCode', 'slug', 'brandId', 'manufacturerId', 'shortDescription', 'note']) {
+      if (form[key]) data.append(key, form[key]);
+    }
     data.append("unit", form.unit);
 
     if (form.thumbnail) {
@@ -131,7 +134,8 @@ onMounted(fetchCategories);
     <div class="admin-page-title">Thêm sản phẩm</div>
 
     <section class="admin-panel">
-      <div class="admin-panel__header">Thêm Sản Phẩm Mới</div>
+      <div class="admin-panel__header">Thêm sản phẩm</div>
+      <p class="admin-note">Sản phẩm mới được lưu ở trạng thái Ẩn. Hồ sơ kho được tạo tự động với tồn kho bằng 0.</p>
 
       <div class="admin-panel__body">
         <form class="admin-form" @submit.prevent="submitForm">
@@ -178,7 +182,7 @@ onMounted(fetchCategories);
           </div>
 
           <div class="admin-form__row">
-            <label class="admin-form__label">Giá *</label>
+            <label class="admin-form__label">Giá bán (không bắt buộc)</label>
             <input
               v-model="form.price"
               type="number"
@@ -188,20 +192,6 @@ onMounted(fetchCategories);
             />
             <div v-if="errors.price" class="admin-form__error">
               {{ errors.price }}
-            </div>
-          </div>
-
-          <div class="admin-form__row">
-            <label class="admin-form__label">Số lượng *</label>
-            <input
-              v-model="form.stock"
-              type="number"
-              min="0"
-              class="admin-form__control"
-              :class="{ 'is-invalid': errors.stock }"
-            />
-            <div v-if="errors.stock" class="admin-form__error">
-              {{ errors.stock }}
             </div>
           </div>
 
@@ -266,6 +256,7 @@ onMounted(fetchCategories);
             </div>
           </div>
 
+          <ProductIdentityFields :model-value="form" />
           <TechnicalSpecsEditor ref="technicalEditor" v-model="metadata.technicalSpecs" v-model:package-measure="metadata.packageMeasure" v-model:package-size="metadata.packageSize" v-model:storage-instruction="metadata.storageInstruction" v-model:expiry-months="metadata.expiryMonths" general />
           <div class="admin-form__actions">
             <button

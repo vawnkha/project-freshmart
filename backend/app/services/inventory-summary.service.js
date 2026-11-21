@@ -14,6 +14,7 @@ class InventorySummaryService {
       .collection()
       .aggregate([
         { $match: filter },
+        ...require("../utils/warehouse-product.util").warehouseProductStages("inventoryItemId"),
         buildBatchStockLookup(),
         {
           $replaceWith: {

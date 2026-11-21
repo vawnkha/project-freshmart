@@ -9,14 +9,10 @@ const {
   PUBLIC_PRODUCT_FILTER,
 } = require("../utils/inventory-query.util");
 const validator = require("../validators/product.validator");
-const { OWNED_FIELDS, transferConflicts, normalizedPrice } = require("../utils/product-comparison.util");
+const { normalizedPrice } = require("../utils/product-comparison.util");
 const { availableDosagesExpression, withDosageIds } = require('../utils/dosage-instruction.util');
 const { publicTechnicalSpecs, publicProductDetail } = require('../utils/public-product.util');
 const { insertWithSlug } = require("../utils/slug.util");
-
-function hasValue(value) {
-  return value !== undefined && value !== null && String(value).trim() !== "";
-}
 
 function normalizeUnit(value) {
   return typeof value === "string" ? value.trim().normalize("NFC") : "";
@@ -126,6 +122,7 @@ class ProductsService {
 
   pickExtendedFields(payload = {}) {
     const fields = [
+      "note",
       "slug",
       "productCode",
       "comparePrice",
@@ -152,10 +149,15 @@ class ProductsService {
     }, {});
   }
 
-  resolvePrice(payload = {}, fallback = 0) {
+  resolvePrice(payload = {}, fallback = null) {
     const raw =
       payload.sellingPrice !== undefined ? payload.sellingPrice : payload.price;
-    return raw !== undefined ? Number(raw || 0) : Number(fallback || 0);
+    if (raw === undefined) return fallback;
+    if (raw === null || raw === "") return null;
+    if (typeof raw !== 'string' && typeof raw !== 'number') throw new ApiError(400, 'Giá bán không hợp lệ');
+    const price = Number(raw);
+    if (!Number.isFinite(price) || price < 0) throw new ApiError(400, 'Giá bán không hợp lệ');
+    return price;
   }
 
   normalizeCategoryId(value) {
@@ -166,15 +168,11 @@ class ProductsService {
 
   extractCreateData(payload, context = {}) {
     const inventoryItem = context.inventoryItem || null;
-    const inventorySummary = context.inventorySummary || null;
     const hasInventoryLink = Boolean(inventoryItem);
-    const sellingPrice = this.resolvePrice(payload, 0);
-    const stock = hasInventoryLink
-      ? this.getSummaryStock(inventorySummary)
-      : Number(payload.stock || 0);
+    const sellingPrice = this.resolvePrice(payload, null);
 
     const product = {
-      ...this.extractMetadata(payload, hasInventoryLink),
+      ...this.extractMetadata(payload),
       ...this.pickExtendedFields(payload),
       name: payload.name,
       inventoryItemId: hasInventoryLink
@@ -186,11 +184,7 @@ class ProductsService {
           : inventoryItem?.categoryId,
       price: sellingPrice,
       sellingPrice,
-      ...(!hasInventoryLink ? { stock } : {}),
-      status:
-        payload.status ||
-        context.defaultStatus ||
-        (hasInventoryLink ? "draft" : this.compluteStatus(stock)),
+      status: "draft",
       unit: payload.unit !== undefined ? payload.unit : inventoryItem?.unit,
       description: payload.description,
       thumbnail: payload.thumbnail,
@@ -216,7 +210,7 @@ class ProductsService {
     const current = context.current || {};
     const inventoryItem = context.inventoryItem || null;
     const product = {
-      ...this.extractMetadata(payload, Boolean(inventoryItem)),
+      ...this.extractMetadata(payload),
       ...this.pickExtendedFields(payload),
       name: payload.name,
       inventoryItemId:
@@ -250,74 +244,50 @@ class ProductsService {
       product.comparePrice = Number(payload.comparePrice || 0);
     }
 
-    if (!inventoryItem && payload.stock !== undefined) {
-      product.stock = Number(payload.stock || 0);
-    }
-
-    if (
-      payload.status === undefined &&
-      payload.stock !== undefined &&
-      !inventoryItem
-    ) {
-      product.status = this.compluteStatus(payload.stock);
-    }
-
     return deleteUndefined(product);
   }
 
   async create(payload) {
     const message = validator.validateProductCreateData(payload);
     if (message) throw new ApiError(400, message);
-
-    const inventoryContext = hasValue(payload.inventoryItemId)
-      ? await this.resolveInventoryLink(payload.inventoryItemId)
-      : {};
-
-    const product = this.extractCreateData(payload, inventoryContext);
-    const result = await this.insertProduct(product);
-    return {
-      insertedId: result.insertedId,
-      ...(await this.findById(result.insertedId)),
-    };
+    if (payload.inventoryItemId) throw new ApiError(400, 'Hồ sơ kho được tạo tự động cùng sản phẩm');
+    const productId = new ObjectId();
+    const inventoryItemId = new ObjectId();
+    const product = this.extractCreateData(payload);
+    product._id = productId;
+    product.inventoryItemId = inventoryItemId;
+    product.productCode = String(payload.productCode || `SP-${productId.toHexString().toUpperCase()}`).trim();
+    this.assertProductCode(product.productCode);
+    product.search_text = this.buildSerchText(product);
+    try {
+      await insertWithSlug({
+        requested: product.slug, name: product.name, fallback: 'san-pham',
+        find: slug => this.Product.findOne({ slug }, { projection: { _id: 1 } }),
+        insert: slug => this.inventoryStockService.withTransaction({}, async session => {
+          if (await this.Product.findOne({ productCode: product.productCode }, { session }))
+            throw new ApiError(409, 'Mã sản phẩm đã tồn tại');
+          await this.client.db().collection('inventory_items').insertOne({
+            _id: inventoryItemId, productId, createdAt: new Date(), updatedAt: new Date(),
+          }, { session });
+          const document = { ...product, slug };
+          return this.deletion.withReferences(this.deletion.referencesFor('products', document),
+            () => this.Product.insertOne(document, { session }), { session });
+        }),
+      });
+    } catch (error) {
+      if (error.code === 11000) throw new ApiError(409, 'Mã hoặc slug sản phẩm đã tồn tại');
+      throw error;
+    }
+    return { insertedId: productId, ...(await this.findById(productId)) };
   }
 
-  async createFromInventory(inventoryItemId, payload = {}) {
-    const message = validator.validateCreateFromInventory(payload);
-    if (message) throw new ApiError(400, message);
+  assertProductCode(code) {
+    if (typeof code !== 'string' || !code.trim() || code.length > 100)
+      throw new ApiError(400, 'Mã sản phẩm phải có từ 1 đến 100 ký tự');
+  }
 
-    const { inventoryItem, inventorySummary } =
-      await this.resolveInventoryLink(inventoryItemId);
-
-    const name = hasValue(payload.name) ? payload.name : inventoryItem.itemName;
-    const sellingPrice = this.resolvePrice(payload, 0);
-    const productCode = hasValue(payload.productCode)
-      ? payload.productCode
-      : `SP-${inventoryItem.itemCode}`;
-
-    const product = this.extractCreateData(
-      {
-        ...payload,
-        inventoryItemId: inventoryItem._id,
-        name,
-        productCode,
-        sellingPrice,
-        price: sellingPrice,
-        category_id: payload.category_id || inventoryItem.categoryId,
-        unit: payload.unit || inventoryItem.unit,
-        status: payload.status || "draft",
-      },
-      {
-        inventoryItem,
-        inventorySummary,
-        defaultStatus: "draft",
-      },
-    );
-
-    const result = await this.insertProduct(product);
-    return {
-      insertedId: result.insertedId,
-      ...(await this.findById(result.insertedId)),
-    };
+  async createFromInventory() {
+    throw new ApiError(409, 'Tạo sản phẩm tại Quản lý sản phẩm. Hồ sơ kho được tạo tự động.');
   }
 
   async insertProduct(product) {
@@ -428,20 +398,13 @@ class ProductsService {
       },
       {
         $addFields: {
-          ...Object.fromEntries(OWNED_FIELDS.map(field => [field, {
-            $cond: [
-              { $ne: [{ $ifNull: ["$inventoryItemId", null] }, null] },
-              { $ifNull: [`$inventoryItem.${field}`, null] },
-              { $ifNull: [`$${field}`, null] },
-            ],
-          }])),
           technicalSpecs: { $ifNull: ["$technicalSpecs", {}] },
           technicalSpecsSource: "product",
           category_id: {
             $ifNull: ["$category_id", "$inventoryItem.categoryId"],
           },
           price: {
-            $ifNull: ["$price", { $ifNull: ["$sellingPrice", 0] }],
+            $ifNull: ["$sellingPrice", { $ifNull: ["$price", null] }],
           },
           sellingPrice: {
             $ifNull: ["$sellingPrice", "$price"],
@@ -474,7 +437,7 @@ class ProductsService {
           unit: {
             $cond: [
               { $ne: [{ $ifNull: ["$inventoryItemId", null] }, null] },
-              { $ifNull: ["$inventoryItem.unit", "$unit"] },
+              { $ifNull: ["$unit", "$inventoryItem.unit"] },
               "$unit",
             ],
           },
@@ -608,7 +571,9 @@ class ProductsService {
       ? { $and: [filter, PUBLIC_PRODUCT_FILTER] }
       : filter;
 
-    const requests = [this.Product.aggregate(this.buildPopulatePipeline({ match })).toArray()];
+    const pipeline = this.buildPopulatePipeline({ match });
+    if (!publicOnly) pipeline.push(...require('../utils/warehouse-product.util').latestImportPriceStages());
+    const requests = [this.Product.aggregate(pipeline).toArray()];
     if (publicOnly && query.include_units === "1") {
       // Options span the public catalog, independently of the selected units.
       // Resolve linked inventory units with the same precedence as product rows.
@@ -618,7 +583,7 @@ class ProductsService {
         { $unwind: { path: "$unitInventory", preserveNullAndEmptyArrays: true } },
         { $group: { _id: { $cond: [
           { $ne: [{ $ifNull: ["$inventoryItemId", null] }, null] },
-          { $ifNull: ["$unitInventory.unit", "$unit"] },
+          { $ifNull: ["$unit", "$unitInventory.unit"] },
           "$unit",
         ] } } },
       ]).toArray());
@@ -627,7 +592,7 @@ class ProductsService {
     const selected = publicOnly ? [...new Set((Array.isArray(query.unit) ? query.unit : [query.unit]).map(normalizeUnit).filter(Boolean))] : [];
     const data = selected.length ? rows.filter(product => selected.includes(normalizeUnit(product.unit))) : rows;
     if (publicOnly) await this.attachBatchOffers(data);
-    return { data, ...(unitRows ? { units: [...new Set(unitRows.map(row => normalizeUnit(row._id)).filter(Boolean))].sort((a, b) => a.localeCompare(b, "vi")) } : {}) };
+    return { data: publicOnly ? data.map(publicProductDetail) : data, ...(unitRows ? { units: [...new Set(unitRows.map(row => normalizeUnit(row._id)).filter(Boolean))].sort((a, b) => a.localeCompare(b, "vi")) } : {}) };
   }
 
   async getProductsForAI(message, limit = 50) {
@@ -776,73 +741,53 @@ class ProductsService {
   async update(id, payload) {
     const message = validator.validateProductUpdateData(payload);
     if (message) throw new ApiError(400, message);
-
-    const filter = {
-      _id: ObjectId.isValid(id) ? new ObjectId(id) : null,
-    };
-
-    const current = await this.Product.findOne(filter);
-    if (!current) return null;
-
-    const inventoryContext =
-      payload.inventoryItemId !== undefined
-        ? await this.resolveInventoryLink(payload.inventoryItemId, id)
-        : current.inventoryItemId
-          ? await this.resolveInventoryLink(current.inventoryItemId, id)
-          : {};
-    const update = this.extractUpdateData(payload, {
-      ...inventoryContext,
-      current,
+    const filter = { _id: toObjectId(id) };
+    const result = await this.inventoryStockService.withTransaction({}, async session => {
+      const current = await this.Product.findOne(filter, { session });
+      if (!current) return null;
+      if (payload.inventoryItemId !== undefined && String(payload.inventoryItemId) !== String(current.inventoryItemId))
+        throw new ApiError(400, 'Không thể thay đổi liên kết kho của sản phẩm');
+      if (payload.stock !== undefined) throw new ApiError(400, 'Tồn kho được cập nhật qua nghiệp vụ kho');
+      const update = this.extractUpdateData(payload, { current });
+      const next = { ...current, ...update };
+      if (payload.productCode !== undefined) {
+        update.productCode = String(payload.productCode).trim();
+        this.assertProductCode(update.productCode);
+        if (await this.Product.findOne({ productCode: update.productCode, _id: { $ne: current._id } }, { session }))
+          throw new ApiError(409, 'Mã sản phẩm đã tồn tại');
+      }
+      const effectivePrice = next.sellingPrice === undefined ? next.price : next.sellingPrice;
+      if (['active', 'in_stock', 'out_stock', 'out_of_stock'].includes(next.status) && !(Number.isFinite(effectivePrice) && effectivePrice > 0))
+        throw new ApiError(400, 'Vui lòng nhập giá bán hợp lệ lớn hơn 0 trước khi hiển thị', 'SELLING_PRICE_REQUIRED');
+      update.search_text = this.buildSerchText({ ...next, ...update });
+      return this.deletion.withReferences(this.deletion.referencesFor('products', update), () =>
+        this.Product.findOneAndUpdate(filter, { $set: update }, { returnDocument: 'after', session }), { session });
+    }).catch(error => {
+      if (error.code === 11000) throw new ApiError(409, 'Mã hoặc slug sản phẩm đã tồn tại');
+      throw error;
     });
-
-    if (
-      payload.name !== undefined ||
-      payload.description !== undefined ||
-      payload.shortDescription !== undefined ||
-      payload.productCode !== undefined
-    ) {
-      update.search_text = this.buildSerchText({
-        name: payload.name ?? current.name ?? "",
-        description: payload.description ?? current.description ?? "",
-        shortDescription:
-          payload.shortDescription ?? current.shortDescription ?? "",
-        productCode: payload.productCode ?? current.productCode ?? "",
-      });
-    }
-
-    const result = await this.deletion.withReferences(this.deletion.referencesFor("products", update),
-      async (session) => {
-        if (inventoryContext.inventoryItem) {
-          const latest = await this.Product.findOne(filter, { session });
-          const target = await this.inventoryItemRepository.findById(inventoryContext.inventoryItem._id, { session });
-          if (!target || (target.status && target.status !== "active")) throw new ApiError(409, "Hàng kho không còn hoạt động");
-          const conflicts = latest && !latest.inventoryItemId ? transferConflicts(latest, target) : [];
-          if (conflicts.length) throw new ApiError(409,
-            `Cần chuyển các trường ${conflicts.join(", ")} sang hồ sơ hàng kho và xác nhận dữ liệu giống nhau trước khi liên kết. Thông số hiện tại được giữ nguyên.`, "TECHNICAL_SPECS_TRANSFER_REQUIRED");
-        }
-        return this.Product.findOneAndUpdate(
-      filter,
-      {
-        $set: update,
-        ...(inventoryContext.inventoryItem ? { $unset: { stock: "", ...Object.fromEntries(OWNED_FIELDS.map(field => [field, ""])) } } : {}),
-      },
-      { returnDocument: "after", session },
-    ); });
-
     return result ? this.findById(id) : null;
   }
 
   async delete(id) {
-    return this.deletion.remove("products", id);
+    return this.inventoryStockService.withTransaction({}, async session => {
+      const product = await this.Product.findOne({ _id: toObjectId(id) }, { session });
+      if (!product) return null;
+      const items = this.client.db().collection('inventory_items');
+      const item = await items.findOne({ _id: product.inventoryItemId, productId: product._id }, { session });
+      if (!item) return this.deletion.remove('products', id, { session });
+      await items.updateOne({ _id: item._id }, { $unset: { productId: '' } }, { session });
+      const deleted = await this.deletion.remove('products', id, { session });
+      await this.deletion.remove('inventory_items', item._id, { session });
+      return deleted;
+    });
   }
 
-  extractMetadata(payload, linked) {
-    if (linked && OWNED_FIELDS.some(field => payload[field] !== undefined))
-      throw new ApiError(400, "Quy cách, bảo quản và thông tin định danh kho phải được cập nhật tại hồ sơ hàng kho", "INVENTORY_SPECS_OWNED");
+  extractMetadata(payload) {
     const parsed = validator.productMetadataSchema.safeParse(payload);
     if (!parsed.success) throw new ApiError(400, parsed.error.issues[0].message);
-    if(parsed.data.technicalSpecs)parsed.data.technicalSpecs=withDosageIds(parsed.data.technicalSpecs);
-    return linked ? deleteUndefined({ technicalSpecs: parsed.data.technicalSpecs }) : deleteUndefined({ ...parsed.data,
+    if (parsed.data.technicalSpecs) parsed.data.technicalSpecs = withDosageIds(parsed.data.technicalSpecs);
+    return deleteUndefined({ ...parsed.data,
       brandId: payload.brandId !== undefined ? toObjectId(payload.brandId) : undefined,
       manufacturerId: payload.manufacturerId !== undefined ? toObjectId(payload.manufacturerId) : undefined,
     });

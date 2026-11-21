@@ -24,6 +24,9 @@ class ProductService {
     const res = await this.api.get(`/${id}`);
     return res.data;
   }
+  async purchaseOptions(id, quantity = 1) {
+    return (await this.api.get(`/${id}/purchase-options`, { params: { quantity } })).data;
+  }
 
   async getBySlug(slug) {
     const res = await this.api.get(`/by-slug/${encodeURIComponent(slug)}`);

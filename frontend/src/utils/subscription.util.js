@@ -10,7 +10,7 @@ export function subscriptionDate(value) {
 }
 export function subscriptionPayload(form) {
   return {
-    items: form.items.map(item => ({ productId: String(item.productId), quantity: Number(item.quantity) })),
+    items: form.items.map(item => ({ productId: String(item.productId), quantity: Number(item.quantity), ...(item.expiryChoice ? { expiryChoice: item.expiryChoice } : {}) })),
     frequency: form.frequency, startDate: form.startDate,
     ...(form.endMode === 'date' ? { endDate: form.endDate } : { maxOccurrences: Number(form.maxOccurrences) }),
     addressId: form.addressId, shippingMethodId: form.shippingMethodId, paymentMethod: form.paymentMethod,
@@ -37,7 +37,8 @@ export function subscriptionLoginReturn(value) {
   if (typeof value !== 'string' || value.length > 2048 || /[\\\u0000-\u001f]/.test(value)) return null;
   if (!/^\/account\/subscriptions\/new(?:\?[^#]*)?$/.test(value)) return null;
   const url = new URL(value, 'https://freshmart.local');
-  for (const key of url.searchParams.keys()) if (!['productId', 'quantity'].includes(key)) return null;
+  for (const key of url.searchParams.keys()) if (!['productId', 'quantity', 'expiryGroup'].includes(key)) return null;
+  if (url.searchParams.has('expiryGroup') && !['long','other'].includes(url.searchParams.get('expiryGroup'))) return null;
   if (url.searchParams.has('productId') && !/^[a-f\d]{24}$/i.test(url.searchParams.get('productId'))) return null;
   if (url.searchParams.has('quantity') && (!/^\d+$/.test(url.searchParams.get('quantity')) || Number(url.searchParams.get('quantity')) < 1 || Number(url.searchParams.get('quantity')) > 10000)) return null;
   return url.pathname + url.search;

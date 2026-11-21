@@ -16,6 +16,8 @@ import ResponsiveImage from "@/components/user/common/ResponsiveImage.vue";
 import SageButton from "@/components/user/sage/SageButton.vue";
 import SageSkeleton from "@/components/user/sage/SageSkeleton.vue";
 import BatchPromotionNotice from "@/components/user/product/BatchPromotionNotice.vue";
+import ExpirySelectionSummary from '@/components/user/product/ExpirySelectionSummary.vue';
+import products from '@/services/product.service';
 const auth = useAuthStore();
 const cart = useCartStore();
 const { items, cartTotal } = storeToRefs(cart);
@@ -23,6 +25,43 @@ const loading = ref(true);
 const error = ref("");
 const busy = ref({});
 const quantityErrors = ref({});
+const pendingQuotes = ref({});
+const quoteLoading = ref({});
+const quoteRequests = new Map();
+const lineKey = item => item.lineKey || item.product_id;
+async function prepareExpiry(item, value) {
+  if (mutationsDisabled.value) return;
+  const key = lineKey(item), ctx = context(), request = (quoteRequests.get(key) || 0) + 1;
+  quoteRequests.set(key, request);
+  const current = () => live(ctx) && quoteRequests.get(key) === request;
+  quantityErrors.value[key] = '';
+  delete pendingQuotes.value[key];
+  const quantity = Number(value);
+  if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 10000) {
+    quantityErrors.value[key] = 'Số lượng phải là số nguyên từ 1 đến 10000.';
+    quoteLoading.value[key] = false;
+    return;
+  }
+  quoteLoading.value[key] = true;
+  try {
+    const response = await products.purchaseOptions(String(item.product_id), quantity);
+    if (!current()) return;
+    const quote = response.choices.find(row => row.lineKey === key);
+    if (!quote?.canFulfill) throw new Error('Nhóm đã chọn không đủ hàng. Vui lòng chọn lại sản phẩm.');
+    pendingQuotes.value[key] = quote;
+  } catch (error) { if (current()) quantityErrors.value[key] = userError(error, 'Chưa kiểm tra được giá và hạn dùng. Vui lòng thử lại.'); }
+  finally { if (current()) quoteLoading.value[key] = false; }
+}
+async function confirmExpiry(item) {
+  const key = lineKey(item), quote = pendingQuotes.value[key] || item.expiryQuote;
+  if (!quote?.canFulfill || mutationsDisabled.value || quoteLoading.value[key]) return;
+  const ctx = context(); busy.value[key] = true; quantityErrors.value[key] = '';
+  try {
+    await cart.updateQuantity(ctx.owner, item.product_id, quote.quantity, { expiryChoice: item.expiryChoice, quoteFingerprint: quote.quoteFingerprint });
+    if (live(ctx)) delete pendingQuotes.value[key];
+  } catch (error) { if (live(ctx)) quantityErrors.value[key] = userError(error, 'Giá hoặc hạn dùng đã thay đổi. Kiểm tra lại giỏ hàng.'); }
+  finally { if (live(ctx)) busy.value[key] = false; }
+}
 const confirmClear = ref(false);
 const clearing = ref(false), actionError = ref(''), root = ref(null), clearTrigger = ref(null);
 let generation = 0, readRequest = 0, disposed = false;
@@ -31,6 +70,8 @@ const live = ctx => !disposed && ctx.owner === auth.userId && ctx.version === ca
 const pending = computed(() => loading.value || cart.loading || clearing.value || Object.values(busy.value).some(Boolean));
 const mutationsDisabled = computed(() => pending.value || !!error.value || cart.mutation.uncertain || !auth.userId);
 function problem(item) {
+  if (item.requiresReview) return item.choiceError || 'Giá hoặc hạn dùng đã thay đổi. Vui lòng xác nhận lại.';
+  if (pendingQuotes.value[item.lineKey]) return 'Kiểm tra và xác nhận giá, hạn dùng mới.';
   if (catalogStock(item) === null) return 'Chưa xác định tồn kho. Tải lại giỏ hàng để kiểm tra.';
   return cartLineProblem(item);
 }
@@ -49,8 +90,8 @@ const insufficient = computed(() =>
   items.value.some(
     (item) =>
       problem(item) ||
-      quantityErrors.value[item.product_id] ||
-      busy.value[item.product_id],
+      quantityErrors.value[lineKey(item)] || quoteLoading.value[lineKey(item)] ||
+      busy.value[lineKey(item)],
   ),
 );
 const checkoutBlocked = computed(() => mutationsDisabled.value || !items.value.length || insufficient.value);
@@ -71,9 +112,10 @@ async function loadCart() {
 function acceptConfirmedQuantity(item, value) {
   // A validation render can restore the store's input value before blur.
   // Editing back to that confirmed value needs no PUT, even without a change event.
-  if (!mutationsDisabled.value && Number(value) === Number(item.quantity)) quantityErrors.value[item.product_id] = '';
+  if (!mutationsDisabled.value && Number(value) === Number(item.quantity)) quantityErrors.value[lineKey(item)] = '';
 }
 async function updateQuantity(item, value) {
+  if (item.expiryChoice) { await prepareExpiry(item, value); return; }
   const qty = Number(value);
   const id = item.product_id;
   if (mutationsDisabled.value) return;
@@ -103,12 +145,13 @@ async function restoreRemovedFocus(previous, ctx) {
   if (live(ctx) && previous && !previous.isConnected && document.activeElement === document.body && !document.querySelector('dialog[open]'))
     root.value?.querySelector('.cart-remove:not(:disabled), .cart-empty a, .cart-actions a')?.focus({ preventScroll: true });
 }
-async function remove(id) {
+async function remove(id, lineKey) {
   if (mutationsDisabled.value || !normalizeId(id)) return;
   const ctx = context(), previous = document.activeElement; actionError.value = '';
   busy.value[id] = true;
   try {
-    await cart.removeFromCart(ctx.owner, id);
+    await cart.removeFromCart(ctx.owner, id, ...(lineKey ? [lineKey] : []));
+    if (live(ctx) && lineKey) { quoteRequests.set(lineKey, (quoteRequests.get(lineKey) || 0) + 1); delete pendingQuotes.value[lineKey]; delete quoteLoading.value[lineKey]; delete quantityErrors.value[lineKey]; }
   } catch {
     if (live(ctx) && !cart.mutation.uncertain) { actionError.value = 'Không thể xóa sản phẩm. Vui lòng thử lại.'; notify(actionError.value, 'error'); }
   } finally {
@@ -130,6 +173,7 @@ async function clear() {
 async function cancelClear() { confirmClear.value = false; await nextTick(); if (!disposed && !document.querySelector('dialog[open]')) clearTrigger.value?.focus({ preventScroll: true }); }
 watch(() => cart.ownerVersion, () => {
   ++generation; ++readRequest; busy.value = {}; quantityErrors.value = {}; confirmClear.value = false;
+  quoteRequests.clear(); pendingQuotes.value = {}; quoteLoading.value = {};
   clearing.value = false; error.value = ''; actionError.value = ''; loading.value = !!auth.userId;
   // The store increments its epoch before finishing reset; read after that reset.
   if (auth.userId) { const ctx = context(); void nextTick(() => { if (live(ctx)) return loadCart(); }); }
@@ -163,14 +207,16 @@ onBeforeUnmount(() => { disposed = true; ++generation; ++readRequest; });
         <div v-if="items.length" class="cart-layout">
           <div class="cart-content">
             <div class="cart-lines" :aria-busy="pending">
-              <article v-for="item in items" :key="item.product_id" class="cart-line">
+              <article v-for="item in items" :key="item.lineKey || item.product_id" class="cart-line">
                 <RouterLink v-if="normalizeId(item.product_id)" :to="productPath(item)" class="cart-line-image">
                   <ResponsiveImage :src="item.thumbnail || item.image" :alt="item.name || item.productName || 'Sản phẩm'" />
                 </RouterLink>
                 <div v-else class="cart-line-image"><ResponsiveImage :src="item.thumbnail || item.image" :alt="item.name || 'Sản phẩm'" /></div>
                 <div class="cart-line-body">
                   <h2 class="cart-line-title"><RouterLink v-if="normalizeId(item.product_id)" :to="productPath(item)">{{ item.name || item.productName || 'Sản phẩm' }}</RouterLink><span v-else>{{ item.name || 'Sản phẩm không còn khả dụng' }}</span></h2>
-                  <BatchPromotionNotice :product-id="normalizeId(item.product_id)" :promotions="item.batchPromotions" />
+                  <ExpirySelectionSummary v-if="item.expiryChoice" :choice="item.expiryChoice" :quote="pendingQuotes[item.lineKey] || item.expiryQuote" />
+                  <button v-if="item.expiryChoice && (pendingQuotes[item.lineKey] || item.requiresReview)" type="button" :disabled="mutationsDisabled || quoteLoading[item.lineKey] || !!item.choiceError" @click="confirmExpiry(item)">Xác nhận giá và hạn dùng</button>
+                  <BatchPromotionNotice v-if="!item.expiryChoice" :product-id="normalizeId(item.product_id)" :promotions="item.batchPromotions" />
                   <p v-if="item.packageSize" class="cart-line-package">{{ item.packageSize }}</p>
                   <p class="cart-unit-price">{{ productPrice(item) === null ? 'Chưa có giá' : formatMoney(productPrice(item)) }}<span v-if="item.unit"> / {{ item.unit }}</span></p>
                   <p class="stock-label" :class="catalogStock(item) === null ? 'unknown-stock' : catalogStock(item) > 0 && !item.outOfStock ? 'in-stock' : 'out-stock'">{{ stockLabel(item) }}</p>
@@ -178,13 +224,13 @@ onBeforeUnmount(() => { disposed = true; ++generation; ++readRequest; });
                     <button type="button" :aria-label="'Giảm số lượng ' + item.name" :disabled="mutationsDisabled || item.quantity <= 1 || catalogStock(item) === null || catalogStock(item) < 1 || productPrice(item) === null || item.outOfStock"
                       @click="updateQuantity(item, Number(item.quantity) - 1)">−</button>
                     <input type="number" inputmode="numeric" step="1" min="1" :max="catalogStock(item) ?? undefined" :value="item.quantity" :aria-label="'Số lượng ' + item.name"
-                      :aria-invalid="!!quantityErrors[item.product_id]" :aria-describedby="'cart-quantity-error-' + item.product_id"
+                      :aria-invalid="!!quantityErrors[lineKey(item)]" :aria-describedby="'cart-quantity-error-' + lineKey(item)"
                       :disabled="mutationsDisabled || catalogStock(item) === null || catalogStock(item) < 1 || productPrice(item) === null || item.outOfStock" @input="acceptConfirmedQuantity(item, $event.target.value)" @change="updateQuantity(item, $event.target.value)" />
                     <button type="button" :aria-label="'Tăng số lượng ' + item.name" :disabled="mutationsDisabled || !!problem(item) || Number(item.quantity) >= catalogStock(item)"
                       @click="updateQuantity(item, Number(item.quantity) + 1)">+</button>
                   </div>
-                  <p :id="'cart-quantity-error-' + item.product_id" class="form-error form-error--field" aria-live="polite">{{ quantityErrors[item.product_id] || problem(item) }}</p>
-                  <button type="button" class="cart-remove text-link" :aria-label="'Xóa ' + item.name" :aria-busy="busy[item.product_id] || undefined" :disabled="mutationsDisabled || !normalizeId(item.product_id)" @click="remove(item.product_id)">Xóa</button>
+                  <p :id="'cart-quantity-error-' + lineKey(item)" class="form-error form-error--field" aria-live="polite">{{ quantityErrors[lineKey(item)] || problem(item) }}</p>
+                  <button type="button" class="cart-remove text-link" :aria-label="'Xóa ' + item.name" :aria-busy="busy[item.product_id] || undefined" :disabled="mutationsDisabled || !normalizeId(item.product_id)" @click="remove(item.product_id,item.lineKey)">Xóa</button>
                 </div>
                 <div class="cart-line-end"><strong>{{ lineTotal(item) }}</strong></div>
               </article>

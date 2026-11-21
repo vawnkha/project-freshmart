@@ -57,6 +57,7 @@ const INDEX_DEFINITIONS = [
   {
     collection: "products",
     indexes: [
+      { key: { productCode: 1 }, options: { unique: true, partialFilterExpression: { productCode: { $type: "string", $gt: "" } } } },
       { key: { slug: 1 }, options: { unique: true, partialFilterExpression: { slug: { $type: "string", $gt: "" } } } },
       { key: { created_at: -1 } },
       { key: { category_id: 1 } },
@@ -208,7 +209,7 @@ const INDEX_DEFINITIONS = [
   {
     collection: "inventory_items",
     indexes: [
-      { key: { itemCode: 1 }, options: { unique: true } },
+      { key: { productId: 1 }, options: { unique: true, partialFilterExpression: { productId: { $type: "objectId" } } } },
       { key: { barcode: 1 }, options: { unique: true, sparse: true } },
       { key: { categoryId: 1, status: 1 } },
       { key: { brandId: 1, status: 1 } },

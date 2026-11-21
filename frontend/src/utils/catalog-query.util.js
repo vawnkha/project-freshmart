@@ -11,7 +11,7 @@ export function catalogStock(product) {
   return product?.inStock === false ? 0 : availableStock(product);
 }
 export const CATALOG_SORTS = Object.freeze([
-  { value: 'newest', label: 'Mới nhất' }, { value: 'price-asc', label: 'Giá: thấp đến cao' },
+  { value: 'newest', label: 'Mới nhất' }, { value: 'in-stock', label: 'Còn hàng' }, { value: 'price-asc', label: 'Giá: thấp đến cao' },
   { value: 'price-desc', label: 'Giá: cao đến thấp' }, { value: 'name-asc', label: 'Tên: A–Z' }, { value: 'name-desc', label: 'Tên: Z–A' },
 ]);
 const scalar = value => String((Array.isArray(value) ? value[0] : value) ?? '').trim();
@@ -62,12 +62,13 @@ export function catalogResponse(response) {
 }
 export function catalogResults(products, state) {
   const filtered = products.filter(product => {
+    if (state.sort === 'in-stock' && !(catalogStock(product) > 0)) return false;
     const price = productPrice(product);
     if ((state.min_price !== '' || state.max_price !== '') && price === null) return false;
     return (state.min_price === '' || price >= Number(state.min_price)) && (state.max_price === '' || price <= Number(state.max_price)) &&
       (!state.unit.length || state.unit.includes(catalogUnits(product.unit)[0]));
   });
-  const sorted = sortProducts(filtered, state.sort), pages = Math.max(1, Math.ceil(sorted.length / CATALOG_PAGE_SIZE)), page = Math.min(state.page, pages);
+  const sorted = sortProducts(filtered, state.sort === 'in-stock' ? 'newest' : state.sort), pages = Math.max(1, Math.ceil(sorted.length / CATALOG_PAGE_SIZE)), page = Math.min(state.page, pages);
   return { total: sorted.length, pages, page, items: sorted.slice((page - 1) * CATALOG_PAGE_SIZE, page * CATALOG_PAGE_SIZE),
     start: sorted.length ? (page - 1) * CATALOG_PAGE_SIZE + 1 : 0, end: Math.min(page * CATALOG_PAGE_SIZE, sorted.length) };
 }

@@ -10,7 +10,7 @@ defineProps({
   parentTo: [String, Object],
 });
 </script>
-<!-- <template>
+<template>
   <div class="page-heading approved-page-heading" :class="{ 'page-heading--split': split }">
     <div class="container">
       <StorefrontBreadcrumb :current="breadcrumbTitle || title" :parent="parent" :parent-to="parentTo" />
@@ -18,4 +18,4 @@ defineProps({
       <p v-if="description">{{ description }}</p>
     </div>
   </div>
-</template> -->
+</template>

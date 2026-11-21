@@ -128,13 +128,14 @@ function normalizeOrder(raw, previous) {
 
   const items = Array.isArray(raw.items)
     ? raw.items.map((item, index) => ({
-        id: item.product_id || item._id || item.id || index,
+        id: item.lineKey || item.product_id || item._id || item.id || index,
         name: item.name || "Sản phẩm",
         thumbnail: item.thumbnail || "",
-        price: Number(item.price || 0),
+        price: Number(item.expiryQuote?.price ?? item.price ?? 0),
         quantity: Number(item.quantity || 1),
-        subtotal: item.subtotal ?? item.totalPrice ?? null,
+        subtotal: item.expiryQuote?.total ?? item.subtotal ?? item.totalPrice ?? null,
         batchAllocations: item.batchAllocations || [],
+        expiryChoice: item.expiryChoice, expiryQuote: item.expiryQuote,
       }))
     : [];
 

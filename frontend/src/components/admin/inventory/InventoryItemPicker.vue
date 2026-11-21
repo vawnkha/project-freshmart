@@ -90,7 +90,7 @@ async function handleKeydown(event) {
         type="text"
         class="admin-form__control inventory-picker__input"
         :class="{ 'is-invalid': error }"
-        placeholder="Tìm theo mã hoặc tên hàng kho"
+        placeholder="Tìm theo mã hoặc tên sản phẩm"
         autocomplete="off"
         role="combobox"
         aria-autocomplete="list"
@@ -108,11 +108,11 @@ async function handleKeydown(event) {
         v-if="modelValue"
         type="button"
         class="inventory-picker__clear"
-        aria-label="Bỏ chọn hàng kho"
+        aria-label="Bỏ chọn sản phẩm"
         @click="clearSelection"
       ><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
       <div v-if="open" class="inventory-picker__results">
-        <ul :id="id + '-options'" role="listbox" aria-label="Hàng kho có thể chọn">
+        <ul :id="id + '-options'" role="listbox" aria-label="Sản phẩm có thể chọn">
           <li
             v-for="(option, index) in matches"
             :id="id + '-option-' + option.id"
@@ -124,7 +124,7 @@ async function handleKeydown(event) {
             @click="selectOption(option)"
           >{{ option.label }}</li>
         </ul>
-        <p v-if="!matches.length" role="status">Không tìm thấy hàng kho phù hợp.</p>
+        <p v-if="!matches.length" role="status">Không tìm thấy sản phẩm phù hợp.</p>
       </div>
     </div>
     <div v-if="error" :id="id + '-error'" class="admin-form__error">{{ error }}</div>

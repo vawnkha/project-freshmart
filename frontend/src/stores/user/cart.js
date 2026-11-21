@@ -86,16 +86,16 @@ export const useCartStore = defineStore("cart", () => {
     }
   }
 
-  async function addToCart(userId, productId, quantity = 1) {
-    await mutate(userId, productId, () => cartService.addItem(userId, productId, quantity), "add");
+  async function addToCart(userId, productId, quantity = 1, selection) {
+    await mutate(userId, productId, () => cartService.addItem(userId, productId, quantity, ...(selection ? [selection] : [])), "add");
   }
 
-  async function updateQuantity(userId, productId, quantity) {
-    await mutate(userId, productId, () => cartService.updateItem(userId, productId, quantity), "quantity");
+  async function updateQuantity(userId, productId, quantity, selection) {
+    await mutate(userId, productId, () => cartService.updateItem(userId, productId, quantity, ...(selection ? [selection] : [])), "quantity");
   }
 
-  async function removeFromCart(userId, productId) {
-    await mutate(userId, productId, () => cartService.removeItem(userId, productId), "remove");
+  async function removeFromCart(userId, productId, lineKey) {
+    await mutate(userId, productId, () => cartService.removeItem(userId, productId, ...(lineKey ? [lineKey] : [])), "remove");
   }
 
   async function clearCart(userId) {

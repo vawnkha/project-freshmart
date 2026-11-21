@@ -51,19 +51,15 @@ class InventoryStockService {
       {
         $set: {
           ...totals,
-          itemCode: item.itemCode,
-          itemName: item.itemName,
-          unit: item.unit,
           updatedAt: new Date(),
         },
         $setOnInsert: { minQuantity: Number(item.minQuantity ?? 10) },
       },
       { upsert: true, session: options.session },
     );
-    return this.Summary.findOne(
-      { inventoryItemId: itemId },
-      { session: options.session },
-    );
+    const summary = await this.Summary.findOne({ inventoryItemId: itemId }, { session: options.session });
+    const identity = await require('../utils/warehouse-product.util').productForItem(this.client, item, { session: options.session });
+    return { ...summary, itemCode: identity.itemCode, itemName: identity.itemName, unit: identity.unit };
   }
 
   async withTransaction(options, callback) {

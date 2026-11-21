@@ -260,6 +260,15 @@
     "max": 9007199254740991,
     "exclusiveMin": true
   },
+  "EXPIRY_LONG_MIN_DAYS": {
+    "default": 180,
+    "description": "Hạn dùng tối thiểu của nhóm hạn dài tại thời điểm đặt hàng.",
+    "scope": "Hạn sử dụng",
+    "type": "integer",
+    "unit": "ngày",
+    "min": 1,
+    "max": 3650
+  },
   "EXPIRY_WARNING_DAYS": {
     "default": 60,
     "description": "Ngưỡng cảnh báo sắp hết hạn. Không tự cập nhật giá bán hoặc voucher trong MongoDB.",

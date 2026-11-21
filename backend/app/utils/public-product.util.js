@@ -21,7 +21,7 @@ function publicSpecifications(value){
   return typeof value==='string'?value:null;
 }
 function publicProductDetail(row){
-  const result={_id:row._id,...pick(row,['name','slug','productCode','status','thumbnail','description','shortDescription','price','sellingPrice','comparePrice','unit','origin','ingredients','usagePurpose','dosage','usageInstruction','usage','storage','targetSpecies','suitableStage','certification','packageSize','storageInstruction','expiryMonths','category_name','category_slug','average_rating','total_reviews','dosageCalculatorAvailable']),
+  const result={_id:row._id,...pick(row,['created_at','updated_at','name','slug','productCode','status','thumbnail','description','shortDescription','price','sellingPrice','comparePrice','unit','origin','ingredients','usagePurpose','dosage','usageInstruction','usage','storage','targetSpecies','suitableStage','certification','packageSize','storageInstruction','expiryMonths','category_name','category_slug','average_rating','total_reviews','dosageCalculatorAvailable']),
     inventoryItemId:row.inventoryItemId||null,category_id:row.category_id||null,brandId:row.brandId||null,manufacturerId:row.manufacturerId||null,
     images:(Array.isArray(row.images)?row.images:typeof row.images==='string'?[row.images]:[]).filter(value=>typeof value==='string'),category:reference(row.category),brand:reference(row.brand),manufacturer:reference(row.manufacturer),
     technicalSpecs:publicTechnicalSpecs(row.technicalSpecs),technicalSpecsSource:'product',

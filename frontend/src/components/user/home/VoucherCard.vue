@@ -4,6 +4,9 @@ import { formatMoney } from '@/utils/storefront.util';
 import { copyText } from '@/utils/clipboard.util';
 import { batchOfferCustomName, expiryDateTime } from '@/utils/expiry.util';
 import SageDialog from '@/components/user/sage/SageDialog.vue';
+import { getActivePinia } from 'pinia';
+import { useAuthStore } from '@/stores/user/auth';
+import { hasAllPermissions } from '@/utils/permission.util';
 const props = defineProps({ voucher: { type: Object, required: true } });
 const emit = defineEmits(['notice']);
 const summaryId = 'voucher-summary-' + useId();
@@ -12,6 +15,9 @@ const infoTrigger = ref(null), copyTrigger = ref(null);
 let alive = true;
 onBeforeUnmount(() => { alive = false; });
 const code = computed(() => typeof props.voucher.code === 'string' ? props.voucher.code.trim() : '');
+const auth = getActivePinia() ? useAuthStore() : null;
+const canEditBatchOffer = computed(() => props.voucher.scope === 'batch' && props.voucher._id &&
+  auth?.isLoggedIn && hasAllPermissions(auth, ['admin:access', 'discount:manage']));
 const offer = computed(() => {
   const value = Number(props.voucher.value);
   if (props.voucher.value == null || props.voucher.value === '' || !Number.isFinite(value) || value < 0) return 'Chưa có giá trị ưu đãi';
@@ -76,6 +82,7 @@ async function copyCode() {
         <div><dt>Hạn dùng mã</dt><dd>{{ voucher.endDate ? expiryDateTime(voucher.endDate) : expiry }}</dd></div>
         <div v-if="voucher.scope === 'batch'"><dt>Lưu ý</dt><dd>Dùng sản phẩm trước {{ dateLabel(voucher.expiryDate) }} · Còn {{ voucher.availableQuantity }} suất</dd></div>
       </dl>
+      <RouterLink v-if="canEditBatchOffer" class="admin-btn admin-btn--secondary" :to="{ path: '/admin/discounts', query: { editBatch: voucher._id } }">Chỉnh sửa ưu đãi</RouterLink>
       <p>Phạm vi cụ thể và điều kiện cuối cùng được kiểm tra khi sử dụng mã. Sao chép mã không áp dụng ưu đãi vào giỏ hàng.</p>
     </SageDialog>
     <SageDialog v-model="manualOpen" class="home-voucher-dialog" title="Sao chép mã thủ công" @closed="restoreFallbackFocus(copyTrigger)">

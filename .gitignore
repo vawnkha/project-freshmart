@@ -67,4 +67,4 @@ test-support/
 /frontend/scripts/
 output/
 tmp/
-backend/test/
+/backend/test/

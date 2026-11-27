@@ -28,7 +28,7 @@ class NotificationsService {
   }
 
   buildFilter(query) {
-    const filter = {};
+    const filter = { "data.audience": { $ne: "customer" } };
 
     if (query.type) {
       filter.type = query.type;
@@ -79,12 +79,33 @@ class NotificationsService {
 
   // In-app subscription events participate in the order transaction and are
   // shared with administrators; customer APIs always scope data.userId.
-  async createOnce(payload, deduplicationKey, { session } = {}) {
+  async createOnce(payload, deduplicationKey, { session, emitAdmin = true } = {}) {
     const document = this.extractNotificationData(payload);
     await this.Notification.updateOne({ deduplicationKey }, { $setOnInsert: { ...document, deduplicationKey } }, { upsert: true, session });
     const notification = await this.Notification.findOne({ deduplicationKey }, { session });
-    await this.outbox.enqueue("notification.subscription", { notificationId: String(notification._id) }, { session, idempotencyKey: `notification-socket:${deduplicationKey}` });
+    if (emitAdmin) await this.outbox.enqueue("notification.subscription", { notificationId: String(notification._id) }, { session, idempotencyKey: `notification-socket:${deduplicationKey}` });
     return notification;
+  }
+
+  customerFilter(userId, extra = {}) {
+    return { ...extra, "data.audience": "customer", "data.userId": String(userId) };
+  }
+
+  async findMine(userId) {
+    return this.find(this.customerFilter(userId));
+  }
+
+  async countMineUnread(userId) {
+    return this.Notification.countDocuments(this.customerFilter(userId, { is_read: false }));
+  }
+
+  async markMineAsRead(id, userId) {
+    if (!ObjectId.isValid(id)) return null;
+    return this.Notification.findOneAndUpdate(
+      { _id: new ObjectId(id), ...this.customerFilter(userId) },
+      { $set: { is_read: true, updated_at: new Date() } },
+      { returnDocument: "after" },
+    );
   }
 
   async find(filter = {}) {

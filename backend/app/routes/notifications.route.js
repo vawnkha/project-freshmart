@@ -12,10 +12,11 @@ const {
 
 const router = express.Router();
 
-router.use(
-  authMiddleware,
-  authMiddleware.authorizePermissions("notification:manage"),
-);
+router.use(authMiddleware);
+router.get("/mine", notifications.findMine);
+router.get("/mine/unread-count", notifications.countMineUnread);
+router.patch("/mine/:id/read", validate({ params: notificationIdParamSchema }), notifications.markMineAsRead);
+router.use(authMiddleware.authorizePermissions("notification:manage"));
 
 router
   .route("/")

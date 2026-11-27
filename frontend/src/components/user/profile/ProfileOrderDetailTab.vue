@@ -3,7 +3,7 @@ import ExpirySelectionSummary from '@/components/user/product/ExpirySelectionSum
 import ResponsiveImage from "@/components/user/common/ResponsiveImage.vue";
 import ProfileOrderProgress from "@/components/user/profile/ProfileOrderProgress.vue";
 import { orderStatusLabel, orderStatusClass } from "@/utils/storefront.util";
-defineProps({ order: { type: Object, required: true }, saving: Boolean });
+defineProps({ order: { type: Object, required: true }, saving: Boolean, notifications: { type: Array, default: () => [] } });
 defineEmits(["back-to-orders", "cancel-order", "complete-order"]);
 const money=value=>value===null || value===undefined || String(value).trim()==='' || !Number.isFinite(Number(value)) ? 'Chưa xác định' : Number(value).toLocaleString('vi-VN')+'đ';
 const paymentLabel=status=>({pending:'Chờ thanh toán',completed:'Đã thanh toán',paid:'Đã thanh toán',failed:'Thanh toán chưa hoàn tất',refund_pending:'Đang chờ hoàn tiền',refunded:'Đã hoàn tiền',capture_unknown:'Chưa xác định kết quả thanh toán',created:'Đang khởi tạo thanh toán',canceled:'Đã hủy thanh toán'})[status] || 'Chưa xác định';
@@ -15,6 +15,16 @@ const paymentLabel=status=>({pending:'Chờ thanh toán',completed:'Đã thanh t
       <button class="btn" @click="$emit('back-to-orders')">Quay lại</button>
     </div>
     <span class="status-badge" :class="orderStatusClass(order)">{{ orderStatusLabel(order) }}</span>
+    <section v-if="order.deliveryAlert?.blocked" class="order-delivery-alert" role="alert">
+      <h3>{{ order.deliveryAlert.title }}</h3>
+      <p>{{ order.deliveryAlert.message }}</p>
+    </section>
+    <section v-if="notifications.some(item => String(item.data?.orderId) === String(order.id))" class="order-account-alerts" aria-label="Thông báo đơn hàng">
+      <h3>Thông báo đơn hàng</h3>
+      <div v-for="item in notifications.filter(row => String(row.data?.orderId) === String(order.id))" :key="item._id" class="order-account-alert">
+        <strong>{{ item.title }}</strong><span>{{ item.content }}</span>
+      </div>
+    </section>
     <dl class="approved-order-meta">
       <div><dt>Ngày đặt</dt><dd>{{ order.orderDate || 'Chưa xác định' }}</dd></div>
       <div><dt>Thanh toán</dt><dd>{{ order.paymentMethod === 'paypal' ? 'PayPal' : order.paymentMethod === 'cod' ? 'Thanh toán khi nhận hàng' : 'Chưa xác định' }}<br />{{ paymentLabel(order.paymentStatus) }}</dd></div>

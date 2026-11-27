@@ -116,6 +116,27 @@ exports.countUnread = async (_req, res, next) => {
   }
 };
 
+exports.findMine = async (req, res, next) => {
+  try {
+    return res.send(await new NotificationsService(MongoDB.client).findMine(req.user.id));
+  } catch (_) { return next(new ApiError(500, "Không thể tải thông báo tài khoản")); }
+};
+
+exports.countMineUnread = async (req, res, next) => {
+  try {
+    const unread = await new NotificationsService(MongoDB.client).countMineUnread(req.user.id);
+    return res.send({ unread });
+  } catch (_) { return next(new ApiError(500, "Không thể đếm thông báo tài khoản")); }
+};
+
+exports.markMineAsRead = async (req, res, next) => {
+  try {
+    const document = await new NotificationsService(MongoDB.client).markMineAsRead(req.params.id, req.user.id);
+    if (!document) return next(new ApiError(404, "Không tìm thấy thông báo"));
+    return res.send({ message: "Đã đánh dấu đã đọc", data: document });
+  } catch (_) { return next(new ApiError(500, "Không thể cập nhật thông báo tài khoản")); }
+};
+
 exports.delete = async (req, res, next) => {
   try {
     const notificationsService = new NotificationsService(MongoDB.client);

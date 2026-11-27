@@ -160,6 +160,7 @@ app.use((err, req, res, next) => {
   return res.status(statusCode).json({
     message: publicMessage,
     ...(statusCode < 500 && err.code ? { success: false, code: err.code } : {}),
+    ...(statusCode < 500 && err.details !== undefined ? { details: err.details } : {}),
   });
 });
 

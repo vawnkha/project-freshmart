@@ -41,15 +41,18 @@ class InventoryBatchService {
           : Number(current.quantity) > 0
             ? "available"
             : "sold_out";
-      const batch = await this.repository.updateById(
-        id,
+      const startsNewLockIncident = locked && current.status !== "locked";
+      const batch = await this.repository.collection().findOneAndUpdate(
+        { _id: current._id },
         {
-          status,
-          updatedAt: new Date(),
+          $set: { status, updatedAt: new Date() },
+          ...(startsNewLockIncident ? { $inc: { alertRevision: 1 } } : {}),
         },
-        { session },
+        { session, returnDocument: "after" },
       );
       await this.stockService.syncSummary(current.inventoryItemId, { session });
+      if (locked) await new (require("./order-batch-alert.service"))(this.stockService.client)
+        .notifyForBatch(batch, "locked", { session, incidentKey: `lock-${Number(batch.alertRevision || 0)}` });
       return batch;
     });
   }

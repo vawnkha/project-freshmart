@@ -25,6 +25,18 @@ class NotificationService {
     return (await this.api.get("/unread-count")).data;
   }
 
+  async getMine() {
+    return (await this.api.get("/mine")).data;
+  }
+
+  async getMineUnreadCount() {
+    return (await this.api.get("/mine/unread-count")).data;
+  }
+
+  async markMineAsRead(id) {
+    return (await this.api.patch(`/mine/${id}/read`)).data;
+  }
+
   async markAsRead(id) {
     return (await this.api.patch(`/${id}/read`)).data;
   }

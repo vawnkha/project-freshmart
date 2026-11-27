@@ -18,6 +18,7 @@ import userService from "@/services/user.service";
 import authService from "@/services/auth.service";
 import ordersService from "@/services/orders.service";
 import addressService from "@/services/address.service";
+import notificationService from "@/services/notification.service";
 import { useDialogFocus } from "@/composables/useDialogFocus";
 import { userError, userFieldErrors } from "@/utils/user-error.util";
 import { accountSchema, addressSchema, changePasswordSchema } from "@/validators/storefront-form.validator";
@@ -81,6 +82,7 @@ const profileError = ref("");
 const ordersError = ref("");
 const addressesError = ref("");
 const orders = ref([]);
+const orderNotifications = ref([]);
 const addresses = ref([]);
 
 const newAddressForm = reactive({
@@ -171,6 +173,7 @@ function normalizeOrder(raw, previous) {
             phone: shipping.phone || shipping.phoneNumber || "",
           },
     timeline: Array.isArray(raw.timeline) ? raw.timeline : [],
+    deliveryAlert: raw.deliveryAlert || null,
   };
 }
 
@@ -203,6 +206,16 @@ async function fetchOrders() {
       if (selectedOrder.value) selectedOrder.value = orders.value.find(item => item.id === selectedOrder.value.id) || null;
       if (route.query.orderId && activeTab.value === "orders") selectedOrder.value = orders.value.find(item => item.id === route.query.orderId) || null;
     }, 'Không thể tải đơn hàng. Vui lòng thử lại.', () => { orders.value=[]; selectedOrder.value=null; });
+}
+
+async function fetchOrderNotifications() {
+  if (!accountReady()) return;
+  try {
+    const response = await notificationService.getMine();
+    orderNotifications.value = Array.isArray(response?.items) ? response.items : [];
+  } catch {
+    orderNotifications.value = [];
+  }
 }
 
 async function fetchAddresses() {
@@ -397,7 +410,7 @@ function clearAccount(){
   // replaced it with a newer notice in the meantime.
   if (accountNotice && storefrontNotice.value === accountNotice) storefrontNotice.value = null;
   accountNotice = null;
-  accountTokens.clear();selectedOrder.value=null;orders.value=[];addresses.value=[];
+  accountTokens.clear();selectedOrder.value=null;orders.value=[];orderNotifications.value=[];addresses.value=[];
   for(const key of Object.keys(userProfile))userProfile[key]='';
   for(const key of Object.keys(accountForm))accountForm[key]='';
   for(const key of Object.keys(passwordForm))passwordForm[key]='';
@@ -409,7 +422,7 @@ function clearAccount(){
   avatarSaving.value=false;addressActionPending.value=false;orderActionPending.value=false;
   for(const key of Object.keys(saving)){saving[key]=false;submittedForms[key]=false;}
 }
-async function loadAccount(){if(accountReady())await Promise.all([fetchUserProfile(),fetchOrders(),fetchAddresses()]);}
+async function loadAccount(){if(accountReady())await Promise.all([fetchUserProfile(),fetchOrders(),fetchAddresses(),fetchOrderNotifications()]);}
 watch(()=>[cartStore.ownerVersion,authStore.isLoggedIn],()=>{
   const generation=++loadGeneration;clearAccount();
   nextTick(()=>{if(!accountDisposed && generation===loadGeneration)loadAccount();});
@@ -470,6 +483,7 @@ onBeforeUnmount(()=>{accountDisposed=true;++loadGeneration;clearAccount();});
             <ProfileOrdersTab
               v-else-if="activeTab === 'orders' && !selectedOrder"
               :orders="orders"
+              :notifications="orderNotifications"
               :loading="loadingOrders"
               :error="ordersError"
               @retry="fetchOrders"
@@ -479,6 +493,7 @@ onBeforeUnmount(()=>{accountDisposed=true;++loadGeneration;clearAccount();});
             <ProfileOrderDetailTab
               v-else-if="activeTab === 'orders' && selectedOrder"
               :order="selectedOrder"
+              :notifications="orderNotifications"
               :saving="orderActionPending"
               @back-to-orders="backToOrders"
               @cancel-order="cancelOrder"

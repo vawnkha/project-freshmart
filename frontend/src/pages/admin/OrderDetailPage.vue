@@ -60,6 +60,10 @@ function formatDate(value) {
   return new Date(value).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
 }
 
+function alertReason(reason) {
+  return reason === "expired" ? "Lô đã hết hạn sử dụng" : "Lô đang bị khóa";
+}
+
 async function handleSendInvoice() {
   if (sendingInvoice.value) return;
   if (!canUpdateOrders.value) {
@@ -91,6 +95,27 @@ onMounted(fetchOrder);
 <template>
   <div v-if="order" class="admin-page">
     <div class="admin-page-title">Hóa đơn</div>
+    <section v-if="order.deliveryAlert?.blocked" class="admin-alert admin-alert--danger order-batch-warning" role="alert">
+      <h2>{{ order.deliveryAlert.title }}</h2>
+      <p>{{ order.deliveryAlert.message }}</p>
+      <p><strong>Mã đơn hàng:</strong> {{ order._id }}</p>
+      <div class="table-responsive">
+        <table class="admin-table">
+          <thead><tr><th>Sản phẩm</th><th>Mã lô</th><th>Số lượng</th><th>Hạn sử dụng</th><th>Trạng thái lô</th><th>Nguyên nhân</th></tr></thead>
+          <tbody>
+            <tr v-for="issue in order.deliveryAlert.affectedItems" :key="`${issue.batchId}-${issue.productName}`">
+              <td>{{ issue.productName }}</td>
+              <td>{{ issue.batchNumber }}</td>
+              <td>{{ issue.quantity }}</td>
+              <td>{{ issue.expiryDate ? formatDate(issue.expiryDate) : 'Chưa xác định' }}</td>
+              <td>{{ issue.status }}</td>
+              <td>{{ alertReason(issue.reason) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>{{ order.deliveryAlert.guidance }}</p>
+    </section>
     <details v-if="canUpdateOrders && ['shipping', 'completed', 'cancel_pending'].includes(order.status)" class="admin-panel admin-disclosure">
       <summary class="admin-panel__header">Xác nhận đã nhận hàng hoàn</summary>
       <form class="admin-panel__body admin-form--stacked" :aria-busy="returning" @submit.prevent="returnReceived">

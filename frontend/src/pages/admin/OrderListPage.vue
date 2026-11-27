@@ -13,6 +13,7 @@ const orders = ref([]);
 const activeShipping = ref(null);
 const activeItems = ref(null);
 const loading = ref(false);
+const orderActionError = ref(null);
 const keyword = ref("");
 const selectedStatus = ref("");
 const selectedPayment = ref("");
@@ -74,6 +75,7 @@ async function confirmOrder(item) {
     return;
   }
 
+  orderActionError.value = null;
   try {
     let nextStatus = "";
 
@@ -91,7 +93,14 @@ async function confirmOrder(item) {
 
     await fetchOrders();
   } catch (error) {
-    alert(error?.message || "Không thể cập nhật trạng thái đơn hàng");
+    const payload = error?.response?.data || {};
+    orderActionError.value = {
+      orderId: String(item._id),
+      message: payload.message || "Không thể cập nhật trạng thái đơn hàng",
+      code: payload.code || "",
+      affectedItems: Array.isArray(payload.details?.affectedItems) ? payload.details.affectedItems : [],
+    };
+    await fetchOrders();
   }
 }
 
@@ -212,6 +221,17 @@ onMounted(fetchOrders);
         </button>
       </div>
 
+      <div v-if="orderActionError" class="admin-alert admin-alert--danger" role="alert">
+        <strong>{{ orderActionError.message }}</strong>
+        <p>Đơn hàng: {{ orderActionError.orderId }}</p>
+        <ul v-if="orderActionError.affectedItems.length">
+          <li v-for="issue in orderActionError.affectedItems" :key="issue.batchId">
+            {{ issue.productName }} — lô {{ issue.batchNumber }} — {{ issue.quantity }} sản phẩm —
+            {{ issue.reason === 'expired' ? 'đã hết hạn' : 'đang bị khóa' }}
+          </li>
+        </ul>
+      </div>
+
       <div class="admin-panel__body">
         <div class="row admin-toolbar">
           <div class="col-md-6 col-lg-6">
@@ -301,6 +321,9 @@ onMounted(fetchOrders);
                 <td class="text-center">
                   <span class="admin-badge" :class="orderBadgeClass(item)">
                     {{ item.status_text }}
+                  </span>
+                  <span v-if="item.deliveryAlert?.blocked" class="admin-badge admin-badge--danger">
+                    {{ item.deliveryAlert.code === 'ORDER_BATCH_EXPIRED' ? 'Lô hết hạn' : 'Lô bị khóa' }}
                   </span>
                 </td>
 

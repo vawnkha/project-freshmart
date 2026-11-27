@@ -15,3 +15,27 @@ export function savePendingPaypal(storage, userId, payment) {
   if (payment) storage.setItem(pendingPaypalKey(userId), JSON.stringify(payment));
   else storage.removeItem(pendingPaypalKey(userId));
 }
+
+export function paypalTerminalKey(userId) { return `paypal-terminal:${userId}`; }
+
+export function readPaypalTerminal(storage, userId) {
+  const raw = storage.getItem(paypalTerminalKey(userId));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    const createdAt = new Date(parsed?.createdAt).getTime();
+    if (!parsed?.message || !Number.isFinite(createdAt) || Date.now() - createdAt > 7 * 24 * 60 * 60 * 1000) {
+      storage.removeItem(paypalTerminalKey(userId));
+      return null;
+    }
+    return parsed;
+  } catch {
+    storage.removeItem(paypalTerminalKey(userId));
+    return null;
+  }
+}
+
+export function savePaypalTerminal(storage, userId, result) {
+  if (result) storage.setItem(paypalTerminalKey(userId), JSON.stringify(result));
+  else storage.removeItem(paypalTerminalKey(userId));
+}

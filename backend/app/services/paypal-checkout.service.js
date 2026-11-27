@@ -223,7 +223,16 @@ class PaypalCheckoutService {
 
     if (paypalOrder.status !== "COMPLETED") {
       const gate = await this.orders.beginPaypalCapture(paypalOrderId);
-      if (gate.error) throw new ApiError(409, gate.error, gate.released ? "PAYPAL_PAYMENT_TERMINAL" : "PAYPAL_RECONCILIATION_REQUIRED");
+      if (gate.error) {
+        const terminal = gate.released;
+        throw new ApiError(
+          409,
+          terminal && gate.code
+            ? "Một số sản phẩm trong đơn hàng hiện không còn đủ điều kiện cung cấp. Thanh toán chưa được thực hiện. Vui lòng kiểm tra lại đơn hàng hoặc liên hệ bộ phận hỗ trợ."
+            : gate.error,
+          terminal ? "PAYPAL_PAYMENT_TERMINAL" : "PAYPAL_RECONCILIATION_REQUIRED",
+        );
+      }
     }
     await this.intents
       .markStatus(paypalOrderId, "capturing", {
@@ -244,7 +253,8 @@ class PaypalCheckoutService {
       await this.intents.markStatus(paypalOrderId, "capture_unknown");
       throw new ApiError(
         502,
-        "Chưa xác định được kết quả capture PayPal; có thể thử lại an toàn",
+        "Chưa xác định kết quả thanh toán. Trạng thái thanh toán đang được xác minh. Vui lòng không thực hiện thanh toán lại cho đến khi có kết quả.",
+        "PAYPAL_RECONCILIATION_REQUIRED",
       );
     }
 

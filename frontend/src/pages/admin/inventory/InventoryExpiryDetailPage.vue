@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useAuthStore } from "@/stores/user/auth";
 import { hasPermission } from "@/utils/permission.util";
@@ -8,6 +8,7 @@ import PromotionProposalModal from "@/components/admin/inventory/PromotionPropos
 import { expiryLabels, expiryClass, expiryDate, proposalLabels, money } from "@/utils/expiry.util";
 const route = useRoute(), auth = useAuthStore();
 const batch = ref(null), loading = ref(true), error = ref(""), message = ref(""), selected = ref(null), editing = ref(null);
+const stockUnit = computed(() => batch.value?.product?.unit || batch.value?.unit || "");
 const correctionDate = ref(""), correctionReason = ref(""), correcting = ref(false), correctionError = ref("");
 async function correctExpiry() {
   if (correcting.value) return;
@@ -34,7 +35,7 @@ onBeforeUnmount(() => { ++version; });
 <template>
   <div class="admin-workflow-page">
     <div class="admin-page-title admin-page-title--stack">
-      <RouterLink to="/admin/inventory-expiry">← Cảnh báo hạn sử dụng</RouterLink>
+      <RouterLink :to="{ name: 'admin-inventory-expiry', query: { inventoryItemId: typeof route.query.inventoryItemId === 'string' ? route.query.inventoryItemId : undefined, product_id: typeof route.query.product_id === 'string' ? route.query.product_id : undefined } }">{{ route.query.inventoryItemId || route.query.product_id ? '← Hạn sử dụng theo sản phẩm' : '← Cảnh báo hạn sử dụng' }}</RouterLink>
       <h1>Chi tiết lô hàng</h1>
     </div>
     <p v-if="message" role="status">{{ message }}</p>
@@ -59,9 +60,10 @@ onBeforeUnmount(() => { ++version; });
             <div class="admin-detail-card"><dt>Ngày sản xuất</dt><dd>{{ expiryDate(batch.manufacturingDate) }}</dd></div>
             <div class="admin-detail-card"><dt>Ngày nhập kho</dt><dd>{{ expiryDate(batch.createdAt) }}</dd></div>
             <div class="admin-detail-card"><dt>Hạn sử dụng</dt><dd>{{ expiryDate(batch.expiryDate) }}</dd></div>
-            <div class="admin-detail-card"><dt>Số lượng nhập</dt><dd>{{ batch.originalQuantity ?? 'Chưa ghi nhận' }} {{ batch.unit }}</dd></div>
-            <div class="admin-detail-card"><dt>Tồn chưa phân bổ</dt><dd>{{ batch.quantity }} {{ batch.unit }}</dd></div>
-            <div class="admin-detail-card"><dt>Giữ riêng chưa trừ kho</dt><dd>{{ batch.reservedQuantity }} {{ batch.unit }}</dd></div>
+            <div class="admin-detail-card"><dt>Quy cách</dt><dd>{{ batch.product?.packageSize || batch.packageSize || 'Chưa ghi nhận' }}</dd></div>
+            <div class="admin-detail-card"><dt>Số lượng nhập</dt><dd>{{ batch.originalQuantity ?? 'Chưa ghi nhận' }} {{ stockUnit }}</dd></div>
+            <div class="admin-detail-card"><dt>Tồn chưa phân bổ</dt><dd>{{ batch.quantity }} {{ stockUnit }}</dd></div>
+            <div class="admin-detail-card"><dt>Giữ riêng chưa trừ kho</dt><dd>{{ batch.reservedQuantity }} {{ stockUnit }}</dd></div>
           </dl>
           <p>{{ batch.daysRemaining === null ? 'Chưa rõ số ngày' : batch.daysRemaining + ' ngày còn lại' }} · Trạng thái kho {{ batch.status }}</p>
         </div>
@@ -95,7 +97,7 @@ onBeforeUnmount(() => { ++version; });
         <div class="admin-panel__body">
           <p v-if="!batch.proposals.length" class="admin-empty-state">Chưa có đề xuất.</p>
           <article v-for="proposal in batch.proposals" :key="proposal._id" class="batch-proposal admin-form--stacked">
-            <p><strong>{{ proposalLabels[proposal.status] }}</strong> · {{ proposal.percent }}% · {{ money(proposal.discountedPrice) }} · {{ proposal.quantity }} {{ batch.unit }}</p>
+            <p><strong>{{ proposalLabels[proposal.status] }}</strong> · {{ proposal.percent }}% · {{ money(proposal.discountedPrice) }} · {{ proposal.quantity }} {{ stockUnit }}</p>
             <p>{{ expiryDate(proposal.startDate) }} – {{ expiryDate(proposal.endDate) }} · {{ proposal.discountCode || 'Chưa tạo mã' }}</p>
             <p v-if="proposal.rejectionReason"><strong>Lý do từ chối:</strong> {{ proposal.rejectionReason }}</p>
             <div v-if="['draft', 'pending'].includes(proposal.status) && String(proposal.createdBy) === String(auth.userId)" class="admin-action-row">

@@ -9,6 +9,7 @@ defineProps({
   orders: { type: Array, required: true },
   loading: Boolean,
   error: String,
+  notifications: { type: Array, default: () => [] },
 });
 defineEmits(["view-order-detail", "retry"]);
 const money = value => value === null || value === undefined || !Number.isFinite(Number(value)) ? 'Chưa xác định' : formatMoney(value);
@@ -16,6 +17,13 @@ const money = value => value === null || value === undefined || !Number.isFinite
 <template>
   <div class="profile-content-box">
     <h2 class="profile-section-title">Đơn hàng của bạn</h2>
+    <section v-if="notifications.length" class="order-account-alerts" aria-labelledby="order-alerts-title">
+      <h3 id="order-alerts-title">Thông báo đơn hàng</h3>
+      <router-link v-for="item in notifications" :key="item._id" :to="item.data?.url || '/profile?tab=orders'" class="order-account-alert">
+        <strong>{{ item.title }}</strong>
+        <span>{{ item.content }}</span>
+      </router-link>
+    </section>
     <AppState
       v-if="loading"
       kind="loading"
@@ -40,9 +48,10 @@ const money = value => value === null || value === undefined || !Number.isFinite
         </div>
         <span class="status-badge" :class="orderStatusClass(order)">{{
           orderStatusLabel(order)
-        }}</span
-        ><strong>{{ money(order.total) }}</strong
-        ><button class="btn" @click="$emit('view-order-detail', order)">
+        }}</span>
+        <span v-if="order.deliveryAlert?.blocked" class="status-badge status-badge--warning">Cần kiểm tra</span>
+        <strong>{{ money(order.total) }}</strong>
+        <button class="btn" @click="$emit('view-order-detail', order)">
           Xem chi tiết
           <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
         </button>

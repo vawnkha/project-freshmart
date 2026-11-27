@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onBeforeUnmount, reactive, ref, watch } from "vue";
+import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import expiryService from "@/services/expiry.service";
 import AdminPagination from "@/components/admin/common/AdminPagination.vue";
@@ -7,14 +7,16 @@ import PromotionProposalModal from "@/components/admin/inventory/PromotionPropos
 import { expiryLabels, expiryClass, expiryDate } from "@/utils/expiry.util";
 const route = useRoute();
 const summary = ref(null), rows = ref([]), total = ref(0), loading = ref(true), error = ref(""), message = ref(""), selected = ref(null), page = ref(1);
-const filters = reactive({ keyword: "", status: "", sort_by: "expiryDate", sort_order: "asc", product_id: "" });
+const filters = reactive({ keyword: "", status: "", sort_by: "expiryDate", sort_order: "asc", product_id: "", inventoryItemId: "" });
+const scopedToProduct = computed(() => Boolean(filters.inventoryItemId || filters.product_id));
+const productName = computed(() => rows.value[0]?.product?.name || rows.value[0]?.itemName || "");
 const limit = 12;
 let version = 0, timer;
 async function load() {
   const run = ++version;
   loading.value = true; error.value = "";
   try {
-    const [stats, result] = await Promise.all([expiryService.summary(), expiryService.batches({ ...Object.fromEntries(Object.entries(filters).filter(([,v]) => v)), page: page.value, limit })]);
+    const [stats, result] = await Promise.all([scopedToProduct.value ? null : expiryService.summary(), expiryService.batches({ ...Object.fromEntries(Object.entries(filters).filter(([,v]) => v)), page: page.value, limit })]);
     if (run !== version) return;
     const lastPage = Math.max(1, Math.ceil(result.total / limit));
     if (page.value > lastPage) { page.value = lastPage; return await load(); }
@@ -24,15 +26,24 @@ async function load() {
 }
 function search() { page.value = 1; void load(); }
 function saved() { message.value = "Đã lưu đề xuất giảm giá."; void load(); }
-watch(() => route.query.status, status => { filters.status = Object.hasOwn(expiryLabels, status) ? status : ""; search(); });
-onMounted(() => { filters.status = Object.hasOwn(expiryLabels, route.query.status) ? route.query.status : ""; void load(); timer = setInterval(load, 60000); });
+watch(() => [route.query.inventoryItemId, route.query.product_id, route.query.status], ([inventoryItemId, productId, status]) => {
+  filters.inventoryItemId = typeof inventoryItemId === "string" ? inventoryItemId : "";
+  filters.product_id = typeof productId === "string" ? productId : "";
+  filters.status = Object.hasOwn(expiryLabels, status) ? status : "";
+  filters.keyword = "";
+  rows.value = []; summary.value = null; total.value = 0; message.value = ""; selected.value = null;
+  search();
+}, { immediate: true });
+onMounted(() => { timer = setInterval(load, 60000); });
 onBeforeUnmount(() => { ++version; clearInterval(timer); });
 </script>
 <template>
   <div class="admin-workflow-page">
     <div class="admin-page-title admin-page-title--stack">
-      <h1>Cảnh báo hạn sử dụng</h1>
+      <h1>{{ scopedToProduct ? 'Hạn sử dụng theo sản phẩm' : 'Cảnh báo hạn sử dụng' }}</h1>
+      <p v-if="scopedToProduct">{{ productName ? productName + ' · ' : '' }}Chỉ hiển thị các lô còn tồn của sản phẩm được chọn.</p>
       <p>Theo ngày lịch Việt Nam. Lô hết hạn hôm nay ngừng bán.</p>
+      <RouterLink v-if="scopedToProduct" :to="{ name: 'admin-inventory-items' }">← Kho hàng</RouterLink>
     </div>
 
     <div v-if="summary" class="admin-panel expiry-stats">
@@ -98,7 +109,7 @@ onBeforeUnmount(() => { ++version; clearInterval(timer); });
           <button type="button" class="admin-btn admin-btn--secondary" @click="load">Thử lại</button>
         </div>
         <p v-else-if="loading" class="admin-empty-state" role="status">Đang tải cảnh báo…</p>
-        <p v-else-if="!rows.length" class="admin-empty-state">Không có lô phù hợp bộ lọc.</p>
+        <p v-else-if="!rows.length" class="admin-empty-state">{{ scopedToProduct ? 'Không có lô còn tồn của sản phẩm này phù hợp bộ lọc.' : 'Không có lô phù hợp bộ lọc.' }}</p>
         <div v-else class="table-responsive" role="region" tabindex="0" aria-label="Bảng cảnh báo hạn sử dụng, có thể cuộn ngang">
           <table class="admin-table">
             <thead>
@@ -109,6 +120,7 @@ onBeforeUnmount(() => { ++version; clearInterval(timer); });
                 <th scope="col">Hạn sử dụng</th>
                 <th scope="col">Còn lại</th>
                 <th scope="col">Tồn kho</th>
+                <th scope="col">Quy cách</th>
                 <th scope="col">Trạng thái</th>
                 <th scope="col">Thao tác</th>
               </tr>
@@ -120,14 +132,15 @@ onBeforeUnmount(() => { ++version; clearInterval(timer); });
                 <td>{{ expiryDate(batch.createdAt) }}</td>
                 <td>{{ expiryDate(batch.expiryDate) }}</td>
                 <td>{{ batch.daysRemaining === null ? 'Chưa xác định' : batch.daysRemaining + ' ngày' }}</td>
-                <td>{{ batch.quantity }} {{ batch.unit }}</td>
+                <td>{{ batch.quantity }} {{ batch.product?.unit || batch.unit }}</td>
+                <td>{{ batch.product?.packageSize || batch.packageSize || '—' }}</td>
                 <td>
                   <span class="admin-badge" :class="expiryClass(batch.expiryStatus)">{{ expiryLabels[batch.expiryStatus] }}</span>
                   <small v-if="batch.status === 'locked'"> · Đang khóa</small>
                 </td>
                 <td>
                   <div class="admin-action-row">
-                    <RouterLink :to="`/admin/inventory-expiry/${batch._id}`" class="admin-btn admin-btn--secondary">Xem</RouterLink>
+                    <RouterLink :to="{ name: 'admin-inventory-expiry-detail', params: { id: batch._id }, query: { inventoryItemId: filters.inventoryItemId || undefined, product_id: filters.product_id || undefined } }" class="admin-btn admin-btn--secondary">Xem</RouterLink>
                     <button v-if="batch.sellable && ['warning', 'urgent'].includes(batch.expiryStatus) && batch.product" type="button" class="admin-btn admin-btn--primary" @click="selected = batch._id">Đề xuất giảm giá</button>
                   </div>
                 </td>

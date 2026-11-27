@@ -3,6 +3,7 @@ const MongoDB = require("../utils/mongodb.util");
 const OrdersService = require("../services/orders.service");
 const authMiddleware = require("../middlewares/auth.middleware");
 const PAYMENT_METHODS = require("../constants/payment-methods");
+const { hasPermission } = require("../config/permissions");
 
 exports.create = async (req, res, next) => {
   try {
@@ -73,7 +74,8 @@ exports.findOne = async (req, res, next) => {
   try {
     const { id } = req.params;
     const service = new OrdersService(MongoDB.client);
-    const doc = await service.getOrderDetail(id);
+    const audience = hasPermission(req.user, ["order:read:any"]) ? "admin" : "customer";
+    const doc = await service.getOrderDetail(id, { audience });
 
     if (!doc) {
       return next(new ApiError(404, "Đơn hàng không tồn tại"));

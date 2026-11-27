@@ -21,7 +21,7 @@ import { PAYMENT_METHODS } from "@/constants/checkout";
 import { useDialogFocus } from "@/composables/useDialogFocus";
 import { userError, userFieldErrors, userMessage } from "@/utils/user-error.util";
 import { loadPaypalSdk } from "@/services/paypal-sdk.service";
-import { readPendingPaypal, savePendingPaypal } from "@/utils/paypal-pending.util";
+import { readPendingPaypal, savePendingPaypal, readPaypalTerminal, savePaypalTerminal } from "@/utils/paypal-pending.util";
 import { normalizeId } from "@/utils/id.util";
 import { catalogStock } from "@/utils/catalog-query.util";
 import { cartLineProblem } from "@/utils/storefront-shell.util";
@@ -69,6 +69,11 @@ const paypalContainer = ref(null);
 const paypalError = ref("");
 const paypalLoading = ref(false);
 const pendingPaypal = ref(readPendingPaypal(sessionStorage, authStore.userId));
+const paypalTerminalResult = ref(readPaypalTerminal(sessionStorage, authStore.userId));
+watch(() => normalizeId(authStore.userId), userId => {
+  pendingPaypal.value = readPendingPaypal(sessionStorage, userId);
+  paypalTerminalResult.value = readPaypalTerminal(sessionStorage, userId);
+}, { flush: "sync" });
 let paypalButtons;
 let paypalRenderVersion = 0;
 let disposed = false;
@@ -144,6 +149,11 @@ function rememberPaypal(payment) {
   savePendingPaypal(sessionStorage, authStore.userId, payment);
 }
 
+function rememberPaypalTerminal(result) {
+  paypalTerminalResult.value = result;
+  savePaypalTerminal(sessionStorage, authStore.userId, result);
+}
+
 async function capturePendingPaypal(id = pendingPaypal.value?.id) {
   if (!id || submitting.value) return;
   const captureOwner = normalizeId(authStore.userId), captureEpoch = cartStore.ownerVersion;
@@ -165,6 +175,11 @@ async function capturePendingPaypal(id = pendingPaypal.value?.id) {
     if (!ownsCapture()) return;
     if (error?.response?.data?.code === "PAYPAL_NOT_APPROVED") rememberPaypal({ id, phase: "created" });
     if (["PAYPAL_PAYMENT_TERMINAL", "PAYPAL_INTENT_EXPIRED"].includes(error?.response?.data?.code)) {
+      rememberPaypalTerminal({
+        title: "Không thể hoàn tất thanh toán",
+        message: userError(error, "Một số sản phẩm trong đơn hàng hiện không còn đủ điều kiện cung cấp. Thanh toán chưa được thực hiện. Vui lòng kiểm tra lại đơn hàng hoặc liên hệ bộ phận hỗ trợ."),
+        createdAt: new Date().toISOString(),
+      });
       rememberPaypal(null);
       await loadCheckout();
       if (!ownsCapture()) return;
@@ -601,7 +616,7 @@ async function removeDiscount() {
 
 async function renderPaypalButtons() {
   await nextTick();
-  if (!paypalContainer.value || pendingPaypal.value || disposed) return;
+  if (!paypalContainer.value || pendingPaypal.value || paypalTerminalResult.value || disposed) return;
   const version = ++paypalRenderVersion;
   paypalLoading.value = true;
   paypalError.value = "";
@@ -624,6 +639,7 @@ async function renderPaypalButtons() {
             ...currentCheckoutPayload(),
           });
           if (!pp?.id) throw new Error("Không thể khởi tạo thanh toán PayPal.");
+          rememberPaypalTerminal(null);
           rememberPaypal({ id: pp.id, phase: "created" });
           return pp.id;
         } catch (error) {
@@ -854,6 +870,11 @@ function checkoutMoney(value) {
 
     <div class="container">
       <div class="page-checkout" data-validation-scope>
+        <div v-if="paypalTerminalResult" class="paypal-recovery paypal-recovery--terminal" role="alert">
+          <h2>{{ paypalTerminalResult.title }}</h2>
+          <p>{{ paypalTerminalResult.message }}</p>
+          <button type="button" class="text-button" @click="rememberPaypalTerminal(null)">Đã hiểu</button>
+        </div>
         <div v-if="pendingPaypal" class="paypal-recovery" role="status">
           <h2>Tiếp tục giao dịch PayPal</h2>
           <p>Giao dịch trước chưa được xác nhận hoàn tất. Kiểm tra lại giao dịch này trước khi tạo thanh toán khác.</p>
@@ -877,12 +898,16 @@ function checkoutMoney(value) {
         />
 
         <AppState
-          v-else-if="!items.length && !pageError && !isSuccessModalOpen"
+          v-else-if="!items.length && !pageError && !isSuccessModalOpen && !paypalTerminalResult"
           title="Không thể thanh toán"
           description="Giỏ hàng của bạn đang trống."
           to="/products"
           action="Đi tới trang sản phẩm"
         />
+
+        <div v-else-if="paypalTerminalResult && !items.length" class="paypal-terminal-actions">
+          <router-link class="btn btn-primary" to="/products">Kiểm tra lại sản phẩm</router-link>
+        </div>
 
         <div v-else-if="!pageError" class="checkout-layout">
           <div class="checkout-information">
@@ -1217,7 +1242,7 @@ function checkoutMoney(value) {
                 >
                   <div ref="paypalContainer"></div>
                   <p v-if="paypalLoading" role="status">Đang tải PayPal...</p>
-                  <div v-if="paypalError && !pendingPaypal" role="alert">
+                  <div v-if="paypalError && !pendingPaypal && !paypalTerminalResult" role="alert">
                     <p class="form-error">{{ paypalError }}</p>
                     <button type="button" class="text-button" @click="renderPaypalButtons">Thử lại PayPal</button>
                   </div>

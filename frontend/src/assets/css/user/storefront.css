@@ -4294,6 +4294,8 @@
 .user-app.sage-storefront .sage-checkout .paypal-recovery { margin: 0 0 32px; display: grid; justify-items: start; gap: 16px; }
 .user-app.sage-storefront .sage-checkout .paypal-recovery h2 { font: 800 24px/1.2 var(--font-display); margin: 0; text-transform: uppercase; }
 .user-app.sage-storefront .sage-checkout .paypal-recovery p { margin: 0; }
+.user-app.sage-storefront .sage-checkout .paypal-recovery--terminal { border:1px solid var(--danger-border); background:var(--danger-soft); color:var(--danger); }
+
 .user-app.sage-storefront .sage-checkout .discount-box { display: grid; gap: 12px; }
 .user-app.sage-storefront .sage-checkout .discount-box .block-title { margin-bottom: 8px; }
 .user-app.sage-storefront .sage-checkout .discount-box__input-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; }
@@ -4377,6 +4379,13 @@
 }
 
 /* End Phase 04.5B */
+
+.user-app.sage-storefront .order-delivery-alert,
+.user-app.sage-storefront .order-account-alerts { margin:16px 0; padding:16px; border:1px solid #dfb36b; background:#fff8e8; color:#5f4212; }
+.user-app.sage-storefront .order-delivery-alert h3,
+.user-app.sage-storefront .order-account-alerts h3 { margin:0 0 8px; }
+.user-app.sage-storefront .order-account-alert { display:grid; gap:4px; padding:10px 0; color:inherit; text-decoration:none; border-top:1px solid rgba(95,66,18,.2); }
+.user-app.sage-storefront .order-account-alert:first-of-type { border-top:0; }
 /* Sage Phase 04.5A — Cart-only presentation; approved prototype/Blue tokens.
  * Hallmark pre-emit critique: P5 H5 E4 S5 R5 V4. No shared owner changes. */
 .user-app.sage-storefront .sage-cart { padding-bottom: var(--section-space); }

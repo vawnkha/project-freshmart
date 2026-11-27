@@ -13,6 +13,7 @@ const PAYMENT_METHODS = require("../constants/payment-methods");
 const { isInventoryItemActive } = require("../utils/inventory-query.util");
 const { checkoutFingerprint } = require("../utils/checkout-fingerprint.util");
 const { choiceKey } = require('../utils/expiry-choice.util');
+const OrderBatchAlertService = require("./order-batch-alert.service");
 
 function toObjectId(id) {
   if (id instanceof ObjectId) return id;
@@ -51,6 +52,7 @@ class OrdersService {
     this.inventoryService = new InventoryService(client);
     this.discountService = new DiscountService(client);
     this.outbox = new OutboxService(client);
+    this.batchAlerts = new OrderBatchAlertService(client);
   }
 
   timelineItem(status, note = "") {
@@ -190,6 +192,13 @@ class OrdersService {
         : null,
 
       timeline: doc.timeline || [],
+    };
+  }
+
+  sanitizeCustomerOrder(order) {
+    return {
+      ...order,
+      items: (order.items || []).map(({ batchAllocations, inventoryItemId, itemCode, ...item }) => item),
     };
   }
 
@@ -373,7 +382,7 @@ class OrdersService {
       { $sort: { created_at: -1 } },
     ]).toArray();
 
-    return docs.map((doc) => this.normalizeOrder(doc));
+    return this.batchAlerts.decorate(docs.map((doc) => this.normalizeOrder(doc)), "admin");
   }
 
   async findByUser(userId) {
@@ -420,7 +429,8 @@ class OrdersService {
       { $sort: { created_at: -1 } },
     ]).toArray();
 
-    return docs.map((doc) => this.normalizeOrder(doc));
+    const orders = await this.batchAlerts.decorate(docs.map((doc) => this.normalizeOrder(doc)), "customer");
+    return orders.map(order => this.sanitizeCustomerOrder(order));
   }
 
   async clearUserCart(userId, options = {}) {
@@ -960,7 +970,7 @@ class OrdersService {
     return this.Payment.findOne({ idempotency_key: idempotencyKey });
   }
 
-  async getOrderDetail(orderId) {
+  async getOrderDetail(orderId, { audience = "customer" } = {}) {
     const oid = toObjectId(orderId);
     if (!oid) return null;
 
@@ -1009,7 +1019,8 @@ class OrdersService {
       );
     }
 
-    return this.normalizeOrder(doc);
+    const order = await this.batchAlerts.decorate(this.normalizeOrder(doc), audience);
+    return audience === "admin" ? order : this.sanitizeCustomerOrder(order);
   }
 
   async pushStatus(orderId, status, note = "") {
@@ -1026,21 +1037,36 @@ class OrdersService {
       return this.cancelOrder(orderId, actor, note || "Hủy đơn hàng");
     }
     if (nextStatus === "shipping") {
-      return this.inventoryService.stockService.withTransaction({}, async session => {
-        const order = await this.Order.findOne({ _id: oid, status: current.status }, { session });
-        if (!order) throw new ApiError(409, "Đơn hàng đã thay đổi trạng thái");
-        for (const item of order.items || []) await new (require('./expiry-choice.service'))(this.client).assertAllocation(item, { session, committedAt: order.created_at });
-        for (const item of order.items || []) for (const row of item.batchAllocations || []) {
-          await this.inventoryService.stockService.acquireItem(row.inventoryItemId, session);
-          const batch = await this.inventoryService.InventoryBatch.findOne({ _id: toObjectId(row.batchId) }, { session });
-          if (!batch || !(batch.expiryDate instanceof Date) || !["available", "sold_out"].includes(batch.status) || !(require("../utils/expiry.util").classifyExpiry(batch.expiryDate).daysRemaining > 0)) {
-            throw new ApiError(409, "Không được giao hàng từ lô đang khóa, thiếu hạn sử dụng hoặc đã hết hạn");
+      try {
+        return await this.inventoryService.stockService.withTransaction({}, async session => {
+          const order = await this.Order.findOne({ _id: oid, status: current.status }, { session });
+          if (!order) throw new ApiError(409, "Đơn hàng đã thay đổi trạng thái");
+          for (const item of order.items || []) for (const row of item.batchAllocations || []) {
+            await this.inventoryService.stockService.acquireItem(row.inventoryItemId, session);
+          }
+          const alert = await this.batchAlerts.collect(order, "admin", { session });
+          if (alert) throw new ApiError(409, alert.message, alert.code, {
+            orderId: alert.orderId,
+            affectedItems: alert.affectedItems,
+          });
+          for (const item of order.items || []) await new (require('./expiry-choice.service'))(this.client).assertAllocation(item, { session, committedAt: order.created_at });
+          return this.Order.findOneAndUpdate({ _id: oid, status: current.status }, {
+            $set: { status: nextStatus, updated_at: new Date() }, $push: { timeline: this.timelineItem(nextStatus, note) },
+          }, { session, returnDocument: "after" });
+        });
+      } catch (error) {
+        if (["ORDER_BATCH_LOCKED", "ORDER_BATCH_EXPIRED"].includes(error.code)) {
+          for (const issue of error.details?.affectedItems || []) {
+            const batch = await this.inventoryService.InventoryBatch.findOne({ _id: toObjectId(issue.batchId) });
+            if (batch) await this.batchAlerts.notifyForBatch(batch, issue.reason, {
+              incidentKey: issue.reason === "locked"
+                ? `lock-${Number(batch.alertRevision || 0)}`
+                : `expiry-${require("../utils/expiry.util").classifyExpiry(batch.expiryDate).expiryCalendarDate || "unknown"}`,
+            });
           }
         }
-        return this.Order.findOneAndUpdate({ _id: oid, status: current.status }, {
-          $set: { status: nextStatus, updated_at: new Date() }, $push: { timeline: this.timelineItem(nextStatus, note) },
-        }, { session, returnDocument: "after" });
-      });
+        throw error;
+      }
     }
 
     const updated = await this.Order.findOneAndUpdate(
@@ -1400,20 +1426,23 @@ class OrdersService {
       const order = await this.Order.findOne({ _id: payment.order_id }, { session });
       if (!order || order.status !== "awaiting_payment") throw new ApiError(409, "Đơn hàng chưa được ghi nhận ở trạng thái chờ thanh toán");
       let reason = payment.stock_hold_expires_at && new Date(payment.stock_hold_expires_at) <= new Date() ? "Hết thời gian giữ hàng trước thanh toán" : null;
+      let batchAlert = null;
       for (const item of order.items || []) {
         try { await new (require('./expiry-choice.service'))(this.client).assertAllocation(item, { session, capture: true }); }
         catch (error) { if (error.statusCode !== 409) throw error; reason = error.message; }
       }
       for (const item of order?.items || []) for (const row of item.batchAllocations || []) {
         await this.inventoryService.stockService.acquireItem(row.inventoryItemId, session);
-        const batch = await this.inventoryService.InventoryBatch.findOne({ _id: toObjectId(row.batchId) }, { session });
-          if (batch && !["available", "sold_out"].includes(batch.status)) reason = "Lô đang khóa hoặc không đủ điều kiện trước khi bắt đầu thanh toán";
-        if (!batch || !(batch.expiryDate instanceof Date) || !(require("../utils/expiry.util").classifyExpiry(batch.expiryDate).daysRemaining > 0)) reason = "Lô đã hết hạn hoặc thiếu hạn sử dụng hợp lệ trước khi bắt đầu thanh toán";
       }
+      batchAlert = await this.batchAlerts.collect(order, "admin", { session });
+      if (batchAlert) reason = batchAlert.message;
       if (reason) {
         const released = payment.status === "awaiting_capture" && payment.capture_gate_version === 1
           ? await this.releaseUnstartedPayment(payment, session, reason) : false;
-        return { error: reason, released };
+        return { error: reason, released, code: batchAlert?.code, details: batchAlert ? {
+          orderId: batchAlert.orderId,
+          affectedItems: batchAlert.affectedItems,
+        } : undefined };
       }
       if (payment.status === "capture_unknown") return { ok: true };
       await this.Payment.updateOne({ _id: payment._id, status: "awaiting_capture" }, {

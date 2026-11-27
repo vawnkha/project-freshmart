@@ -78,8 +78,15 @@ class ExpiryMonitoringService {
     return { ...this.decorate(batch, now), alerts, proposals };
   }
   async checkBatch(batch, { session, now = new Date() } = {}) {
-    if (!TRACKED_STATUSES.includes(batch.status) || !(batch.quantity > 0)) return;
+    if (!TRACKED_STATUSES.includes(batch.status)) return;
     const expiry = classifyExpiry(batch.expiryDate instanceof Date ? batch.expiryDate : null, now);
+    if (expiry.expiryStatus === "expired") {
+      await new (require("./order-batch-alert.service"))(this.client).notifyForBatch(batch, "expired", {
+        session,
+        incidentKey: `expiry-${expiry.expiryCalendarDate || "unknown"}`,
+      });
+    }
+    if (!(batch.quantity > 0)) return;
     if (expiry.expiryStatus === "normal") return;
     const threshold = { warning: config.warningDays, urgent: config.urgentDays, expired: 0, unknown: "unknown" }[expiry.expiryStatus];
     const label = { warning: "Sắp hết hạn", urgent: "Gần hết hạn", expired: "Hết hạn — ngừng bán", unknown: "Thiếu hạn sử dụng — cần rà soát" }[expiry.expiryStatus];
